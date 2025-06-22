@@ -4,12 +4,13 @@
  */
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "backend",
+	"name": "typiks-backend",
 	"main": "src/index.js",
-	"compatibility_date": "2025-06-20",
+	"compatibility_date": "2024-09-23",
+	"compatibility_flags": ["nodejs_compat"],
 	"observability": {
 		"enabled": true
-	}
+	},
 	/**
 	 * Smart Placement
 	 * Docs: https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
@@ -43,5 +44,13 @@
 	 * Service Bindings (communicate between multiple Workers)
 	 * https://developers.cloudflare.com/workers/wrangler/configuration/#service-bindings
 	 */
-	// "services": [{ "binding": "MY_SERVICE", "service": "my-service" }]
+	// "services": [{ "binding": "MY_SERVICE", "service": "my-service" }],
+
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "typiks",
+			"database_id": "8bccfddd-18c3-4aa4-bdd6-a8d1e6c3f521"
+		}
+	]
 }

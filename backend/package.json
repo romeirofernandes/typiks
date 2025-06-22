@@ -12,5 +12,9 @@
 		"@cloudflare/vitest-pool-workers": "^0.8.19",
 		"vitest": "~3.2.0",
 		"wrangler": "^4.20.5"
+	},
+	"dependencies": {
+		"drizzle-orm": "^0.44.2",
+		"hono": "^4.8.2"
 	}
 }
