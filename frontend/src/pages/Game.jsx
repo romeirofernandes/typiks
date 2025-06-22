@@ -90,7 +90,6 @@ const Game = () => {
       setWs(websocket);
 
       websocket.onopen = () => {
-        console.log("WebSocket connected");
         setGameState("waiting");
 
         // Join the matchmaking queue with proper user info
@@ -112,7 +111,6 @@ const Game = () => {
       };
 
       websocket.onclose = (event) => {
-        console.log("WebSocket disconnected", event.code, event.reason);
       };
 
       websocket.onerror = (error) => {
@@ -254,7 +252,6 @@ const Game = () => {
 
       if (response.ok) {
         const data = await response.json();
-        console.log("Rating updated:", data.ratingChange);
 
         // Update local user stats for immediate UI update
         setUserStats((prev) => ({

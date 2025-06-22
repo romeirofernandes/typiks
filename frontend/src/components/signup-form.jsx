@@ -71,20 +71,13 @@ export function SignUpForm({ className, ...props }) {
     setLoading(true);
 
     try {
-      console.log("Starting Google sign-up...");
       const result = await signInWithPopup(auth, googleProvider);
-      console.log("Google sign-up successful:", result.user);
-
       const displayName =
         result.user.displayName || result.user.email.split("@")[0];
 
-      console.log("Creating user in database...");
       await createUserInDB(result.user.uid, result.user.email, displayName);
-
-      console.log("Navigating to dashboard...");
       navigate("/dashboard");
     } catch (error) {
-      console.error("Google sign up error:", error);
       alert(`Google sign-up failed: ${error.message}`);
     } finally {
       setLoading(false);
