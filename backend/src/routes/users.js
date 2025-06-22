@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import { drizzle } from 'drizzle-orm/d1';
-import { eq } from 'drizzle-orm';
+import { eq, desc } from 'drizzle-orm';
 import { users } from '../db/schema.js';
+import { calculateNewRatings } from '../utils/rating.js';
 
 const userRouter = new Hono();
 
@@ -9,7 +10,6 @@ userRouter.post('/', async (c) => {
 	try {
 		const db = drizzle(c.env.DB);
 		const body = await c.req.json();
-
 		const { uid, email, username } = body;
 
 		const existingUser = await db.select().from(users).where(eq(users.id, uid)).limit(1);
@@ -27,6 +27,7 @@ userRouter.post('/', async (c) => {
 				gamesPlayed: 0,
 				gamesWon: 0,
 				gamesLost: 0,
+				rating: 800, // Default rating
 				createdAt: new Date(),
 			})
 			.returning();
@@ -54,31 +55,63 @@ userRouter.get('/:id', async (c) => {
 	}
 });
 
-userRouter.patch('/:id/stats', async (c) => {
+// Update game result with rating changes
+userRouter.patch('/:id/game-result', async (c) => {
 	try {
 		const db = drizzle(c.env.DB);
 		const uid = c.req.param('id');
-		const { won } = await c.req.json();
+		const { won, opponentId, score, opponentScore } = await c.req.json();
 
-		const user = await db.select().from(users).where(eq(users.id, uid)).limit(1);
+		// Get both players
+		const [player, opponent] = await Promise.all([
+			db.select().from(users).where(eq(users.id, uid)).limit(1),
+			db.select().from(users).where(eq(users.id, opponentId)).limit(1),
+		]);
 
-		if (user.length === 0) {
-			return c.json({ error: 'User not found' }, 404);
+		if (player.length === 0 || opponent.length === 0) {
+			return c.json({ error: 'Player not found' }, 404);
 		}
 
-		const updatedUser = await db
-			.update(users)
-			.set({
-				gamesPlayed: user[0].gamesPlayed + 1,
-				gamesWon: won ? user[0].gamesWon + 1 : user[0].gamesWon,
-				gamesLost: !won ? user[0].gamesLost + 1 : user[0].gamesLost,
-			})
-			.where(eq(users.id, uid))
-			.returning();
+		const playerData = player[0];
+		const opponentData = opponent[0];
 
-		return c.json({ user: updatedUser[0] });
+		// Calculate new ratings
+		const newPlayerRating = calculateNewRatings(playerData.rating, opponentData.rating, won);
+		const newOpponentRating = calculateNewRatings(opponentData.rating, playerData.rating, !won);
+
+		// Update both players
+		const [updatedPlayer, updatedOpponent] = await Promise.all([
+			db
+				.update(users)
+				.set({
+					gamesPlayed: playerData.gamesPlayed + 1,
+					gamesWon: won ? playerData.gamesWon + 1 : playerData.gamesWon,
+					gamesLost: !won ? playerData.gamesLost + 1 : playerData.gamesLost,
+					rating: newPlayerRating,
+				})
+				.where(eq(users.id, uid))
+				.returning(),
+
+			db
+				.update(users)
+				.set({
+					gamesPlayed: opponentData.gamesPlayed + 1,
+					gamesWon: !won ? opponentData.gamesWon + 1 : opponentData.gamesWon,
+					gamesLost: won ? opponentData.gamesLost + 1 : opponentData.gamesLost,
+					rating: newOpponentRating,
+				})
+				.where(eq(users.id, opponentId))
+				.returning(),
+		]);
+
+		return c.json({
+			player: updatedPlayer[0],
+			opponent: updatedOpponent[0],
+			ratingChange: newPlayerRating - playerData.rating,
+			opponentRatingChange: newOpponentRating - opponentData.rating,
+		});
 	} catch (error) {
-		return c.json({ error: 'Failed to update stats' }, 500);
+		return c.json({ error: 'Failed to update game result' }, 500);
 	}
 });
 
@@ -93,6 +126,7 @@ userRouter.get('/:id/stats', async (c) => {
 				gamesPlayed: users.gamesPlayed,
 				gamesWon: users.gamesWon,
 				gamesLost: users.gamesLost,
+				rating: users.rating,
 			})
 			.from(users)
 			.where(eq(users.id, uid))
@@ -110,7 +144,37 @@ userRouter.get('/:id/stats', async (c) => {
 			winRate: parseFloat(winRate),
 		});
 	} catch (error) {
-		return c.json({ error: 'Failed to fetch stats' }, 500);
+		return c.json({ error: 'Failed to fetch user stats' }, 500);
+	}
+});
+
+// Get leaderboard (top 10 players by rating)
+userRouter.get('/leaderboard/top', async (c) => {
+	try {
+		const db = drizzle(c.env.DB);
+
+		const topPlayers = await db
+			.select({
+				username: users.username,
+				rating: users.rating,
+				gamesPlayed: users.gamesPlayed,
+				gamesWon: users.gamesWon,
+				gamesLost: users.gamesLost,
+			})
+			.from(users)
+			.orderBy(desc(users.rating))
+			.limit(10);
+
+		// Add ranking numbers
+		const leaderboard = topPlayers.map((player, index) => ({
+			rank: index + 1,
+			...player,
+			winRate: player.gamesPlayed > 0 ? ((player.gamesWon / player.gamesPlayed) * 100).toFixed(1) : 0,
+		}));
+
+		return c.json({ leaderboard });
+	} catch (error) {
+		return c.json({ error: 'Failed to fetch leaderboard' }, 500);
 	}
 });
 

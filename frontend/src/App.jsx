@@ -5,6 +5,8 @@ import Landing from "./pages/Landing";
 import SignUp from "./pages/SignUp";
 import SignIn from "./pages/SignIn";
 import Dashboard from "./pages/Dashboard";
+import Leaderboard from "./pages/Leaderboard";
+import WaitingRoom from "./pages/WaitingRoom";
 
 export default function App() {
   return (
@@ -19,6 +21,22 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/leaderboard"
+            element={
+              <ProtectedRoute>
+                <Leaderboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/game/waiting"
+            element={
+              <ProtectedRoute>
+                <WaitingRoom />
               </ProtectedRoute>
             }
           />

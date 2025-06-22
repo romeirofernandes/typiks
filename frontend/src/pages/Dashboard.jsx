@@ -5,6 +5,12 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
@@ -26,6 +32,8 @@ import {
   FiAward,
   FiActivity,
   FiLogOut,
+  FiStar,
+  FiMenu,
 } from "react-icons/fi";
 import { auth } from "@/firebase";
 
@@ -41,8 +49,10 @@ const Dashboard = () => {
 
       try {
         const serverUrl = import.meta.env.VITE_SERVER_URL || "localhost:8787";
-        const fullUrl = serverUrl.startsWith('http') ? serverUrl : `http://${serverUrl}`;
-        
+        const fullUrl = serverUrl.startsWith("http")
+          ? serverUrl
+          : `http://${serverUrl}`;
+
         const response = await fetch(
           `${fullUrl}/api/users/${currentUser.uid}/stats`
         );
@@ -104,8 +114,7 @@ const Dashboard = () => {
   };
 
   const handleStartGame = () => {
-    // Navigate to game page when implemented
-    console.log("Starting game...");
+    navigate("/game/waiting");
   };
 
   const handleSignOut = async () => {
@@ -115,6 +124,14 @@ const Dashboard = () => {
     } catch (error) {
       console.error("Sign out error:", error);
     }
+  };
+
+  const getRatingColor = (rating) => {
+    if (rating >= 1600) return "text-purple-500";
+    if (rating >= 1400) return "text-blue-500";
+    if (rating >= 1200) return "text-green-500";
+    if (rating >= 1000) return "text-yellow-500";
+    return "text-gray-500";
   };
 
   if (loading) {
@@ -131,30 +148,42 @@ const Dashboard = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="max-w-3xl mx-auto px-6 py-8">
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
-          className="flex items-center justify-between mb-8"
+          className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 sm:mb-8"
         >
           <div className="flex items-center gap-4">
             <div>
-              <h1 className="text-2xl font-bold">
+              <h1 className="text-xl sm:text-2xl font-bold">
                 Welcome back, {userStats?.username || "Player"}
               </h1>
-              <p className="text-muted-foreground">
+              <p className="text-muted-foreground text-sm sm:text-base">
                 Ready for your next typing challenge?
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          {/* Desktop Buttons */}
+          <div className="hidden sm:flex items-center gap-3">
             <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
               <Button onClick={handleStartGame} className="gap-2">
                 <FiPlay className="w-4 h-4" />
                 Start Playing
+              </Button>
+            </motion.div>
+
+            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+              <Button
+                variant="outline"
+                onClick={() => navigate("/leaderboard")}
+                className="gap-2"
+              >
+                <FiAward className="w-4 h-4" />
+                Leaderboard
               </Button>
             </motion.div>
 
@@ -169,22 +198,67 @@ const Dashboard = () => {
               </Button>
             </motion.div>
           </div>
+
+          {/* Mobile Menu */}
+          <div className="sm:hidden flex items-center gap-3">
+            <motion.div
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="flex-1"
+            >
+              <Button onClick={handleStartGame} className="w-full gap-2">
+                <FiPlay className="w-4 h-4" />
+                Start Playing
+              </Button>
+            </motion.div>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <motion.div
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <Button variant="outline" size="icon">
+                    <FiMenu className="w-4 h-4" />
+                  </Button>
+                </motion.div>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem
+                  onClick={() => navigate("/leaderboard")}
+                  className="gap-2 cursor-pointer"
+                >
+                  <FiAward className="w-4 h-4" />
+                  Leaderboard
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={handleSignOut}
+                  className="gap-2 cursor-pointer"
+                >
+                  <FiLogOut className="w-4 h-4" />
+                  Sign Out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </motion.div>
 
-        {/* Stats Grid */}
+        {/* Stats Grid - Removed Performance Column */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.1 }}
-          className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8"
+          className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 mb-6 sm:mb-8"
         >
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Games</CardTitle>
-              <FiActivity className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-xs sm:text-sm font-medium">
+                Total Games
+              </CardTitle>
+              <FiActivity className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
+              <div className="text-lg sm:text-2xl font-bold">
                 {userStats?.gamesPlayed || 0}
               </div>
               <p className="text-xs text-muted-foreground">Games completed</p>
@@ -193,11 +267,13 @@ const Dashboard = () => {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Games Won</CardTitle>
-              <FiAward className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-xs sm:text-sm font-medium">
+                Games Won
+              </CardTitle>
+              <FiAward className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-600">
+              <div className="text-lg sm:text-2xl font-bold text-green-600">
                 {userStats?.gamesWon || 0}
               </div>
               <p className="text-xs text-muted-foreground">
@@ -208,11 +284,13 @@ const Dashboard = () => {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Win Rate</CardTitle>
-              <FiTarget className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-xs sm:text-sm font-medium">
+                Win Rate
+              </CardTitle>
+              <FiTarget className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
+              <div className="text-lg sm:text-2xl font-bold">
                 {userStats?.winRate || 0}%
               </div>
               <p className="text-xs text-muted-foreground">
@@ -223,36 +301,40 @@ const Dashboard = () => {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Performance</CardTitle>
-              <FiTrendingUp className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-xs sm:text-sm font-medium">
+                Rating
+              </CardTitle>
+              <FiStar className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
-                {userStats?.winRate >= 70
-                  ? "Excellent"
-                  : userStats?.winRate >= 50
-                  ? "Good"
-                  : "Improving"}
+              <div
+                className={`text-lg sm:text-2xl font-bold ${getRatingColor(
+                  userStats?.rating || 800
+                )}`}
+              >
+                {userStats?.rating || 800}
               </div>
-              <p className="text-xs text-muted-foreground">Current level</p>
+              <p className="text-xs text-muted-foreground">Current rating</p>
             </CardContent>
           </Card>
         </motion.div>
 
-        {/* Charts - Fixed Height */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Charts - Fixed Height and Responsive */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
           {/* Performance Chart */}
           <motion.div
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.5, delay: 0.2 }}
           >
-            <Card className="h-80">
+            <Card className="h-72 sm:h-80">
               <CardHeader>
-                <CardTitle>Weekly Activity</CardTitle>
+                <CardTitle className="text-base sm:text-lg">
+                  Weekly Activity
+                </CardTitle>
               </CardHeader>
               <CardContent className="flex-1">
-                <ChartContainer config={chartConfig} className="h-48">
+                <ChartContainer config={chartConfig} className="h-40 sm:h-48">
                   <BarChart data={performanceData}>
                     <XAxis
                       dataKey="month"
@@ -260,6 +342,7 @@ const Dashboard = () => {
                       tickMargin={10}
                       axisLine={false}
                       tickFormatter={(value) => value.slice(0, 3)}
+                      fontSize={12}
                     />
                     <YAxis hide />
                     <ChartTooltip
@@ -279,12 +362,17 @@ const Dashboard = () => {
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.5, delay: 0.3 }}
           >
-            <Card className="h-80">
+            <Card className="h-72 sm:h-80">
               <CardHeader>
-                <CardTitle>Win/Loss Ratio</CardTitle>
+                <CardTitle className="text-base sm:text-lg">
+                  Win/Loss Ratio
+                </CardTitle>
               </CardHeader>
               <CardContent className="flex-1 flex flex-col">
-                <ChartContainer config={pieConfig} className="h-40 flex-1">
+                <ChartContainer
+                  config={pieConfig}
+                  className="h-32 sm:h-40 flex-1"
+                >
                   <PieChart>
                     <ChartTooltip
                       cursor={false}
@@ -296,7 +384,8 @@ const Dashboard = () => {
                       nameKey="name"
                       cx="50%"
                       cy="50%"
-                      innerRadius={40}
+                      innerRadius={30}
+                      outerRadius={60}
                       strokeWidth={5}
                     >
                       {chartData.map((entry, index) => (
@@ -305,14 +394,16 @@ const Dashboard = () => {
                     </Pie>
                   </PieChart>
                 </ChartContainer>
-                <div className="flex justify-center gap-4 mt-4">
+                <div className="flex justify-center gap-3 sm:gap-4 mt-2 sm:mt-4">
                   <div className="flex items-center gap-2">
                     <div className="w-3 h-3 rounded-full bg-chart-1"></div>
-                    <span className="text-sm text-muted-foreground">Wins</span>
+                    <span className="text-xs sm:text-sm text-muted-foreground">
+                      Wins
+                    </span>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="w-3 h-3 rounded-full bg-chart-2"></div>
-                    <span className="text-sm text-muted-foreground">
+                    <span className="text-xs sm:text-sm text-muted-foreground">
                       Losses
                     </span>
                   </div>
@@ -327,14 +418,16 @@ const Dashboard = () => {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.4 }}
-          className="mt-6"
+          className="mt-4 sm:mt-6"
         >
           <Card>
             <CardHeader>
-              <CardTitle>Keep Going!</CardTitle>
+              <CardTitle className="text-base sm:text-lg">
+                Keep Going!
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-muted-foreground mb-4">
+              <p className="text-muted-foreground mb-4 text-sm sm:text-base">
                 {userStats?.gamesPlayed === 0
                   ? "Start your typing journey by playing your first game!"
                   : `You've played ${userStats.gamesPlayed} games so far. ${
@@ -343,7 +436,10 @@ const Dashboard = () => {
                         : "Keep practicing to improve your skills!"
                     }`}
               </p>
-              <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+              <motion.div
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
                 <Button onClick={handleStartGame} className="w-full gap-2">
                   <FiPlay className="w-4 h-4" />
                   {userStats?.gamesPlayed === 0
