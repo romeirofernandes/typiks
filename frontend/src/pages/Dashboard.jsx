@@ -11,11 +11,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-} from "@/components/ui/chart";
-import {
   BarChart,
   Bar,
   XAxis,
@@ -24,6 +19,7 @@ import {
   Pie,
   Cell,
   ResponsiveContainer,
+  Tooltip,
 } from "recharts";
 import {
   FiPlay,
@@ -45,7 +41,7 @@ const Dashboard = () => {
 
   useEffect(() => {
     fetchUserStats();
-  }, [currentUser, location.pathname]); // Refresh when returning to dashboard
+  }, [currentUser, location.pathname]);
 
   const fetchUserStats = async () => {
     if (!currentUser) return;
@@ -76,12 +72,12 @@ const Dashboard = () => {
         {
           name: "Wins",
           value: userStats.gamesWon,
-          fill: "hsl(var(--chart-1))",
+          fill: "#22c55e", // Direct green color
         },
         {
           name: "Losses",
           value: userStats.gamesLost,
-          fill: "hsl(var(--chart-2))",
+          fill: "#ef4444", // Direct red color
         },
       ]
     : [];
@@ -94,24 +90,6 @@ const Dashboard = () => {
         { month: "Week 4", games: Math.floor(userStats.gamesPlayed * 0.25) },
       ]
     : [];
-
-  const chartConfig = {
-    games: {
-      label: "Games",
-      color: "hsl(var(--chart-1))",
-    },
-  };
-
-  const pieConfig = {
-    wins: {
-      label: "Wins",
-      color: "hsl(var(--chart-1))",
-    },
-    losses: {
-      label: "Losses",
-      color: "hsl(var(--chart-2))",
-    },
-  };
 
   const handleStartGame = () => {
     navigate("/game");
@@ -132,6 +110,31 @@ const Dashboard = () => {
     if (rating >= 1200) return "text-green-500";
     if (rating >= 1000) return "text-yellow-500";
     return "text-gray-500";
+  };
+
+  // Custom tooltip for bar chart
+  const CustomBarTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="bg-background border border-border rounded-lg p-2 shadow-lg">
+          <p className="font-medium">{`${label}`}</p>
+          <p className="text-primary">{`Games: ${payload[0].value}`}</p>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  // Custom tooltip for pie chart
+  const CustomPieTooltip = ({ active, payload }) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="bg-background border border-border rounded-lg p-2 shadow-lg">
+          <p className="font-medium">{`${payload[0].name}: ${payload[0].value}`}</p>
+        </div>
+      );
+    }
+    return null;
   };
 
   if (loading) {
@@ -316,7 +319,7 @@ const Dashboard = () => {
           </Card>
         </motion.div>
 
-        {/* Charts - Fixed Height and Responsive */}
+        {/* Charts - Fixed with pure Recharts */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
           {/* Performance Chart */}
           <motion.div
@@ -324,15 +327,18 @@ const Dashboard = () => {
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.5, delay: 0.2 }}
           >
-            <Card className="h-72 sm:h-80">
+            <Card className="h-80">
               <CardHeader>
                 <CardTitle className="text-base sm:text-lg">
                   Weekly Activity
                 </CardTitle>
               </CardHeader>
-              <CardContent className="flex-1">
-                <ChartContainer config={chartConfig} className="h-40 sm:h-48">
-                  <BarChart data={performanceData}>
+              <CardContent className="h-56 p-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={performanceData}
+                    margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
+                  >
                     <XAxis
                       dataKey="month"
                       tickLine={false}
@@ -342,13 +348,13 @@ const Dashboard = () => {
                       fontSize={12}
                     />
                     <YAxis hide />
-                    <ChartTooltip
-                      cursor={false}
-                      content={<ChartTooltipContent hideLabel />}
+                    <Tooltip
+                      content={<CustomBarTooltip />}
+                      cursor={{ fill: "rgba(59, 130, 246, 0.1)" }}
                     />
-                    <Bar dataKey="games" fill="var(--color-games)" radius={8} />
+                    <Bar dataKey="games" fill="#3b82f6" radius={[4, 4, 0, 0]} />
                   </BarChart>
-                </ChartContainer>
+                </ResponsiveContainer>
               </CardContent>
             </Card>
           </motion.div>
@@ -359,48 +365,43 @@ const Dashboard = () => {
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.5, delay: 0.3 }}
           >
-            <Card className="h-72 sm:h-80">
+            <Card className="h-80">
               <CardHeader>
                 <CardTitle className="text-base sm:text-lg">
                   Win/Loss Ratio
                 </CardTitle>
               </CardHeader>
-              <CardContent className="flex-1 flex flex-col">
-                <ChartContainer
-                  config={pieConfig}
-                  className="h-32 sm:h-40 flex-1"
-                >
-                  <PieChart>
-                    <ChartTooltip
-                      cursor={false}
-                      content={<ChartTooltipContent hideLabel />}
-                    />
-                    <Pie
-                      data={chartData}
-                      dataKey="value"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={30}
-                      outerRadius={60}
-                      strokeWidth={5}
-                    >
-                      {chartData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.fill} />
-                      ))}
-                    </Pie>
-                  </PieChart>
-                </ChartContainer>
-                <div className="flex justify-center gap-3 sm:gap-4 mt-2 sm:mt-4">
+              <CardContent className="h-56 flex flex-col p-0">
+                <div className="flex-1 pt-4">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Tooltip content={<CustomPieTooltip />} />
+                      <Pie
+                        data={chartData}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={30}
+                        outerRadius={70}
+                        strokeWidth={2}
+                        stroke="#ffffff"
+                      >
+                        {chartData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.fill} />
+                        ))}
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="flex justify-center gap-4 pb-4">
                   <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full bg-chart-1"></div>
-                    <span className="text-xs sm:text-sm text-muted-foreground">
-                      Wins
-                    </span>
+                    <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                    <span className="text-sm text-muted-foreground">Wins</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full bg-chart-2"></div>
-                    <span className="text-xs sm:text-sm text-muted-foreground">
+                    <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                    <span className="text-sm text-muted-foreground">
                       Losses
                     </span>
                   </div>
