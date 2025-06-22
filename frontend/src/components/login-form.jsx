@@ -20,6 +20,32 @@ export function LoginForm({ className, ...props }) {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const createOrGetUser = async (uid, email, username) => {
+    try {
+      const response = await fetch(
+        `${
+          import.meta.env.VITE_SERVER_URL || "http://localhost:8787"
+        }/api/users`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ uid, email, username }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error("Failed to create/get user in DB:", error);
+      throw error;
+    }
+  };
+
   const handleEmailLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -39,7 +65,13 @@ export function LoginForm({ className, ...props }) {
     setLoading(true);
 
     try {
-      await signInWithPopup(auth, googleProvider);
+      const result = await signInWithPopup(auth, googleProvider);
+      const displayName =
+        result.user.displayName || result.user.email.split("@")[0];
+
+      // Create or get user in database
+      await createOrGetUser(result.user.uid, result.user.email, displayName);
+
       navigate("/dashboard");
     } catch (error) {
       console.error("Google login error:", error);
@@ -93,7 +125,7 @@ export function LoginForm({ className, ...props }) {
                   onClick={handleGoogleLogin}
                   disabled={loading}
                 >
-                  Login with Google
+                  {loading ? "Signing in with Google..." : "Login with Google"}
                 </Button>
               </div>
             </div>

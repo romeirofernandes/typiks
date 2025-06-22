@@ -23,16 +23,27 @@ export function SignUpForm({ className, ...props }) {
 
   const createUserInDB = async (uid, email, username) => {
     try {
-      const response = await fetch(`http://${import.meta.env.VITE_SERVER_URL}/api/users`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ uid, email, username }),
-      });
+      const response = await fetch(
+        `${
+          import.meta.env.VITE_SERVER_URL || "http://localhost:8787"
+        }/api/users`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ uid, email, username }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
       return await response.json();
     } catch (error) {
       console.error("Failed to create user in DB:", error);
+      throw error;
     }
   };
 
@@ -47,7 +58,7 @@ export function SignUpForm({ className, ...props }) {
         password
       );
       await createUserInDB(userCredential.user.uid, email, username);
-      navigate("/dashboard"); // Create this page later
+      navigate("/dashboard");
     } catch (error) {
       console.error("Sign up error:", error);
       alert(error.message);
@@ -60,14 +71,21 @@ export function SignUpForm({ className, ...props }) {
     setLoading(true);
 
     try {
+      console.log("Starting Google sign-up...");
       const result = await signInWithPopup(auth, googleProvider);
+      console.log("Google sign-up successful:", result.user);
+
       const displayName =
         result.user.displayName || result.user.email.split("@")[0];
+
+      console.log("Creating user in database...");
       await createUserInDB(result.user.uid, result.user.email, displayName);
+
+      console.log("Navigating to dashboard...");
       navigate("/dashboard");
     } catch (error) {
       console.error("Google sign up error:", error);
-      alert(error.message);
+      alert(`Google sign-up failed: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -128,7 +146,9 @@ export function SignUpForm({ className, ...props }) {
                   onClick={handleGoogleSignUp}
                   disabled={loading}
                 >
-                  Sign Up with Google
+                  {loading
+                    ? "Signing up with Google..."
+                    : "Sign Up with Google"}
                 </Button>
               </div>
             </div>
