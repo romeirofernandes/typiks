@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import {cors} from "hono/cors";
+import userRouter from './routes/users'
 
 const app = new Hono();
 
@@ -11,5 +12,7 @@ app.use('*', cors({
 app.get('/', (c)=> {
 	return c.text('Server is healthy.')
 });
+
+app.route('/api/users', userRouter)
 
 export default app;
