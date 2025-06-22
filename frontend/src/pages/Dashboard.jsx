@@ -187,7 +187,7 @@ const Dashboard = () => {
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
-          className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 sm:mb-8"
+          className="flex items-center justify-between gap-4 mb-6 sm:mb-8"
         >
           <div className="flex items-center gap-4">
             <div>
@@ -230,7 +230,7 @@ const Dashboard = () => {
           </div>
 
           {/* Mobile Menu - Fixed */}
-          <div className="sm:hidden flex items-center gap-3">
+          <div className="sm:hidden">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <motion.div
