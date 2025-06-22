@@ -25,24 +25,32 @@ const Game = () => {
   const [userStats, setUserStats] = useState(null);
   const inputRef = useRef(null);
   const timerRef = useRef(null);
+  const wsRef = useRef(null);
 
   useEffect(() => {
     fetchUserStats();
+
+    return () => {
+      cleanup();
+    };
   }, [currentUser]);
 
   useEffect(() => {
-    if (userStats) {
+    if (userStats && gameState === "connecting") {
       connectWebSocket();
     }
-    return () => {
-      if (ws) {
-        ws.close();
-      }
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-    };
   }, [userStats]);
+
+  const cleanup = () => {
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  };
 
   const fetchUserStats = async () => {
     if (!currentUser) return;
@@ -70,16 +78,19 @@ const Game = () => {
     if (!userStats) return;
 
     try {
+      cleanup(); // Clean up any existing connections
+
       const serverUrl = import.meta.env.VITE_SERVER_URL || "localhost:8787";
       const wsUrl = serverUrl.startsWith("http")
         ? serverUrl.replace("http", "ws")
         : `ws://${serverUrl}`;
 
       const websocket = new WebSocket(`${wsUrl}/ws`);
+      wsRef.current = websocket;
+      setWs(websocket);
 
       websocket.onopen = () => {
         console.log("WebSocket connected");
-        setWs(websocket);
         setGameState("waiting");
 
         // Join the matchmaking queue with proper user info
@@ -100,18 +111,15 @@ const Game = () => {
         handleWebSocketMessage(message);
       };
 
-      websocket.onclose = () => {
-        console.log("WebSocket disconnected");
-        setGameState("connecting");
+      websocket.onclose = (event) => {
+        console.log("WebSocket disconnected", event.code, event.reason);
       };
 
       websocket.onerror = (error) => {
         console.error("WebSocket error:", error);
-        setGameState("connecting");
       };
     } catch (error) {
       console.error("Failed to connect WebSocket:", error);
-      setGameState("connecting");
     }
   };
 
@@ -131,16 +139,40 @@ const Game = () => {
         setGameState("playing");
         setCountdown(null);
         startTimer();
+        // Reset scores and progress
+        setMyScore(0);
+        setOpponentScore(0);
+        setCurrentWordIndex(0);
+        setOpponentWordIndex(0);
         setTimeout(() => inputRef.current?.focus(), 100);
         break;
 
       case "PLAYER_PROGRESS":
-        if (message.playerId === currentUser.uid) {
-          setMyScore(message.score);
-          setCurrentWordIndex(message.currentWordIndex);
-        } else {
-          setOpponentScore(message.opponentScore);
-          setOpponentWordIndex(message.opponentCurrentWordIndex);
+        // Handle the corrected progress data structure
+        const myData =
+          message.player1.id === currentUser.uid
+            ? message.player1
+            : message.player2;
+        const opponentData =
+          message.player1.id === currentUser.uid
+            ? message.player2
+            : message.player1;
+
+        setMyScore(myData.score);
+        setCurrentWordIndex(myData.currentWordIndex);
+        setOpponentScore(opponentData.score);
+        setOpponentWordIndex(opponentData.currentWordIndex);
+        break;
+
+      case "WRONG_WORD":
+        // Optional: Add visual feedback for wrong words
+        if (inputRef.current) {
+          inputRef.current.style.borderColor = "red";
+          setTimeout(() => {
+            if (inputRef.current) {
+              inputRef.current.style.borderColor = "";
+            }
+          }, 500);
         }
         break;
 
@@ -149,14 +181,35 @@ const Game = () => {
         setGameState("finished");
         if (timerRef.current) {
           clearInterval(timerRef.current);
+          timerRef.current = null;
         }
         // Update ratings after game ends
         updateGameResults(message.results);
         break;
 
       case "OPPONENT_DISCONNECTED":
-        alert("Your opponent disconnected. You win!");
-        navigate("/dashboard");
+        // Handle opponent disconnect more gracefully
+        setGameState("finished");
+        setGameResults({
+          player1: {
+            id: currentUser.uid,
+            username: userStats.username,
+            score: myScore,
+            won: true,
+          },
+          player2: {
+            id: "disconnected",
+            username: opponent?.username || "Opponent",
+            score: opponentScore,
+            won: false,
+          },
+          isDraw: false,
+          reason: "opponent_disconnected",
+        });
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
         break;
     }
   };
@@ -167,6 +220,11 @@ const Game = () => {
       const fullUrl = serverUrl.startsWith("http")
         ? serverUrl
         : `http://${serverUrl}`;
+
+      // Don't update rating if opponent disconnected
+      if (results.reason === "opponent_disconnected") {
+        return;
+      }
 
       // Determine if current user won
       const currentUserResult =
@@ -217,10 +275,15 @@ const Game = () => {
   };
 
   const startTimer = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+    }
+
     timerRef.current = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
           clearInterval(timerRef.current);
+          timerRef.current = null;
           return 0;
         }
         return prev - 1;
@@ -236,9 +299,9 @@ const Game = () => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
 
-      if (gameState !== "playing" || !input.trim()) return;
+      if (gameState !== "playing" || !input.trim() || !wsRef.current) return;
 
-      ws.send(
+      wsRef.current.send(
         JSON.stringify({
           type: "PLAYER_INPUT",
           input: input.trim(),
@@ -250,10 +313,10 @@ const Game = () => {
   };
 
   const handleBackToDashboard = () => {
-    if (ws) {
-      ws.send(JSON.stringify({ type: "LEAVE_QUEUE" }));
-      ws.close();
+    if (wsRef.current) {
+      wsRef.current.send(JSON.stringify({ type: "LEAVE_QUEUE" }));
     }
+    cleanup();
     navigate("/dashboard");
   };
 
@@ -319,7 +382,20 @@ const Game = () => {
               exit={{ opacity: 0 }}
               className="text-center py-20"
             >
-              <p>Connecting to game server...</p>
+              <Card className="max-w-md mx-auto">
+                <CardContent className="py-8">
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{
+                      duration: 1,
+                      repeat: Infinity,
+                      ease: "linear",
+                    }}
+                    className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full mx-auto mb-4"
+                  />
+                  <p>Connecting to game server...</p>
+                </CardContent>
+              </Card>
             </motion.div>
           )}
 
@@ -401,7 +477,7 @@ const Game = () => {
                     animate={{ scale: 1, opacity: 1 }}
                     className="text-6xl font-bold text-primary"
                   >
-                    {countdown || "GO!"}
+                    {countdown === 0 ? "GO!" : countdown}
                   </motion.div>
                 </CardContent>
               </Card>
@@ -428,10 +504,7 @@ const Game = () => {
                   <CardContent>
                     <div className="text-2xl font-bold">{myScore}</div>
                     <div className="text-sm text-muted-foreground">
-                      Word {currentWordIndex + 1} | Rating:{" "}
-                      <span className={getRatingColor(userStats.rating)}>
-                        {userStats.rating}
-                      </span>
+                      Word {currentWordIndex + 1} / {words.length}
                     </div>
                   </CardContent>
                 </Card>
@@ -446,10 +519,7 @@ const Game = () => {
                   <CardContent>
                     <div className="text-2xl font-bold">{opponentScore}</div>
                     <div className="text-sm text-muted-foreground">
-                      Word {opponentWordIndex + 1} | Rating:{" "}
-                      <span className={getRatingColor(opponent?.rating)}>
-                        {opponent?.rating}
-                      </span>
+                      Word {opponentWordIndex + 1} / {words.length}
                     </div>
                   </CardContent>
                 </Card>
@@ -460,7 +530,7 @@ const Game = () => {
                 <CardContent className="py-8">
                   <div className="text-center">
                     <div className="text-4xl font-bold mb-6">
-                      {words[currentWordIndex]}
+                      {words[currentWordIndex] || "Loading..."}
                     </div>
                     <Input
                       ref={inputRef}
@@ -518,7 +588,9 @@ const Game = () => {
               <Card className="max-w-md mx-auto">
                 <CardHeader>
                   <CardTitle>
-                    {gameResults.isDraw
+                    {gameResults.reason === "opponent_disconnected"
+                      ? "Opponent Disconnected - You Win!"
+                      : gameResults.isDraw
                       ? "Draw!"
                       : gameResults.player1.id === currentUser.uid &&
                         gameResults.player1.won
@@ -549,16 +621,17 @@ const Game = () => {
                     </div>
                   </div>
 
-                  <div className="text-sm text-muted-foreground">
-                    {userStats && (
-                      <p>
-                        Your new rating:{" "}
-                        <span className={getRatingColor(userStats.rating)}>
-                          {userStats.rating}
-                        </span>
-                      </p>
+                  {gameResults.reason !== "opponent_disconnected" &&
+                    userStats && (
+                      <div className="text-sm text-muted-foreground">
+                        <p>
+                          Your new rating:{" "}
+                          <span className={getRatingColor(userStats.rating)}>
+                            {userStats.rating}
+                          </span>
+                        </p>
+                      </div>
                     )}
-                  </div>
 
                   <Button onClick={handleBackToDashboard} className="w-full">
                     Back to Dashboard

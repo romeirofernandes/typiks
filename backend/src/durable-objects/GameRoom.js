@@ -6,6 +6,7 @@ export class GameRoom {
 		this.waitingPlayers = new Map(); // playerId -> {sessionId, userInfo}
 		this.activeGames = new Map(); // gameId -> game data
 		this.playerToGame = new Map(); // playerId -> gameId
+		this.playerToSession = new Map(); // playerId -> sessionId
 	}
 
 	async fetch(request) {
@@ -35,12 +36,14 @@ export class GameRoom {
 				switch (message.type) {
 					case 'JOIN_QUEUE':
 						playerId = message.playerId;
+						this.playerToSession.set(playerId, sessionId);
 						this.addWaitingPlayer(playerId, sessionId, message.userInfo);
 						break;
 
 					case 'LEAVE_QUEUE':
 						if (playerId) {
 							this.removeWaitingPlayer(playerId);
+							this.playerToSession.delete(playerId);
 						}
 						break;
 
@@ -59,6 +62,7 @@ export class GameRoom {
 			this.sessions.delete(sessionId);
 			if (playerId) {
 				this.handlePlayerDisconnect(playerId);
+				this.playerToSession.delete(playerId);
 			}
 		});
 
@@ -67,6 +71,7 @@ export class GameRoom {
 			this.sessions.delete(sessionId);
 			if (playerId) {
 				this.handlePlayerDisconnect(playerId);
+				this.playerToSession.delete(playerId);
 			}
 		});
 	}
@@ -102,7 +107,7 @@ export class GameRoom {
 
 	createGame(player1Id, player1Data, player2Id, player2Data) {
 		const gameId = `game_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-		const words = this.generateWords(50);
+		const words = this.generateWords(30); // Reduced to 30 words for better gameplay
 
 		const game = {
 			id: gameId,
@@ -124,6 +129,7 @@ export class GameRoom {
 			status: 'countdown',
 			startTime: null,
 			endTime: null,
+			gameTimer: null,
 		};
 
 		this.activeGames.set(gameId, game);
@@ -157,17 +163,34 @@ export class GameRoom {
 		if (!game) return;
 
 		let count = 3;
-		const countdown = setInterval(() => {
-			this.sendToPlayers(game, {
-				type: 'COUNTDOWN',
-				count,
-			});
 
+		// Send initial countdown immediately
+		this.sendToPlayers(game, {
+			type: 'COUNTDOWN',
+			count: count,
+		});
+
+		const countdown = setInterval(() => {
 			count--;
 
-			if (count < 0) {
+			if (count > 0) {
+				this.sendToPlayers(game, {
+					type: 'COUNTDOWN',
+					count: count,
+				});
+			} else {
+				// Send GO! message
+				this.sendToPlayers(game, {
+					type: 'COUNTDOWN',
+					count: 0,
+				});
+
 				clearInterval(countdown);
-				this.startGame(gameId);
+
+				// Start game after a brief delay
+				setTimeout(() => {
+					this.startGame(gameId);
+				}, 500);
 			}
 		}, 1000);
 	}
@@ -178,7 +201,7 @@ export class GameRoom {
 
 		game.status = 'playing';
 		game.startTime = Date.now();
-		game.endTime = game.startTime + 60 * 1000;
+		game.endTime = game.startTime + 60 * 1000; // 1 minute game
 
 		this.sendToPlayers(game, {
 			type: 'GAME_START',
@@ -187,8 +210,9 @@ export class GameRoom {
 			startTime: game.startTime,
 		});
 
-		setTimeout(() => {
-			this.endGame(gameId);
+		// Set game end timer
+		game.gameTimer = setTimeout(() => {
+			this.endGame(gameId, 'timeout');
 		}, 60000);
 	}
 
@@ -209,28 +233,63 @@ export class GameRoom {
 			player.score++;
 			player.currentWordIndex++;
 
+			// Send update to both players with CORRECT data
 			this.sendToPlayers(game, {
 				type: 'PLAYER_PROGRESS',
-				playerId,
-				score: player.score,
-				currentWordIndex: player.currentWordIndex,
-				opponentScore: opponent.score,
-				opponentCurrentWordIndex: opponent.currentWordIndex,
+				player1: {
+					id: game.player1.id,
+					score: game.player1.score,
+					currentWordIndex: game.player1.currentWordIndex,
+				},
+				player2: {
+					id: game.player2.id,
+					score: game.player2.score,
+					currentWordIndex: game.player2.currentWordIndex,
+				},
 			});
 
+			// Check if player finished all words or time is up
 			if (player.currentWordIndex >= game.words.length) {
-				this.endGame(gameId);
+				this.endGame(gameId, 'completed');
 			}
+		} else {
+			// Send failed attempt (optional - for feedback)
+			this.sendToPlayer(this.playerToSession.get(playerId), {
+				type: 'WRONG_WORD',
+			});
 		}
 	}
 
-	endGame(gameId) {
+	endGame(gameId, reason = 'timeout') {
 		const game = this.activeGames.get(gameId);
 		if (!game) return;
 
+		// Clear the game timer if it exists
+		if (game.gameTimer) {
+			clearTimeout(game.gameTimer);
+		}
+
 		game.status = 'finished';
-		const player1Won = game.player1.score > game.player2.score;
-		const player2Won = game.player2.score > game.player1.score;
+
+		// Determine winner based on score, then progress
+		let winner = null;
+		if (game.player1.score > game.player2.score) {
+			winner = 'player1';
+		} else if (game.player2.score > game.player1.score) {
+			winner = 'player2';
+		} else {
+			// Same score, check who is further ahead
+			if (game.player1.currentWordIndex > game.player2.currentWordIndex) {
+				winner = 'player1';
+			} else if (game.player2.currentWordIndex > game.player1.currentWordIndex) {
+				winner = 'player2';
+			}
+			// If still tied, it's a draw (winner remains null)
+		}
+
+		const player1Won = winner === 'player1';
+		const player2Won = winner === 'player2';
+		const isDraw = winner === null;
 
 		this.sendToPlayers(game, {
 			type: 'GAME_END',
@@ -239,18 +298,22 @@ export class GameRoom {
 					id: game.player1.id,
 					username: game.player1.userInfo.username,
 					score: game.player1.score,
+					progress: game.player1.currentWordIndex,
 					won: player1Won,
 				},
 				player2: {
 					id: game.player2.id,
 					username: game.player2.userInfo.username,
 					score: game.player2.score,
+					progress: game.player2.currentWordIndex,
 					won: player2Won,
 				},
-				isDraw: game.player1.score === game.player2.score,
+				isDraw,
+				reason,
 			},
 		});
 
+		// Clean up
 		this.playerToGame.delete(game.player1.id);
 		this.playerToGame.delete(game.player2.id);
 		this.activeGames.delete(gameId);
@@ -263,7 +326,14 @@ export class GameRoom {
 		if (gameId) {
 			const game = this.activeGames.get(gameId);
 			if (game) {
-				const opponentSessionId = game.player1.id === playerId ? game.player2.sessionId : game.player1.sessionId;
+				// Clear game timer
+				if (game.gameTimer) {
+					clearTimeout(game.gameTimer);
+				}
+
+				const isPlayer1 = game.player1.id === playerId;
+				const opponent = isPlayer1 ? game.player2 : game.player1;
+				const opponentSessionId = opponent.sessionId;
 
 				this.sendToPlayer(opponentSessionId, {
 					type: 'OPPONENT_DISCONNECTED',
@@ -278,88 +348,86 @@ export class GameRoom {
 
 	generateWords(count) {
 		const wordList = [
-			'the',
-			'quick',
-			'brown',
-			'fox',
-			'jumps',
-			'over',
-			'lazy',
+			'cat',
 			'dog',
-			'hello',
-			'world',
-			'javascript',
-			'python',
-			'react',
-			'node',
-			'server',
-			'client',
-			'database',
-			'api',
-			'function',
-			'variable',
-			'array',
-			'object',
-			'string',
-			'number',
-			'boolean',
-			'null',
-			'undefined',
-			'promise',
-			'async',
-			'await',
-			'fetch',
-			'response',
-			'request',
-			'method',
-			'class',
-			'component',
-			'props',
-			'state',
-			'hook',
-			'effect',
-			'context',
-			'reducer',
-			'action',
-			'dispatch',
-			'store',
-			'middleware',
-			'router',
-			'route',
-			'path',
-			'query',
-			'typing',
-			'speed',
-			'accuracy',
-			'words',
-			'minute',
-			'test',
-			'challenge',
-			'practice',
-			'keyboard',
-			'fingers',
-			'position',
-			'touch',
-			'method',
-			'skill',
-			'improve',
-			'learn',
+			'run',
+			'jump',
+			'play',
+			'work',
+			'home',
+			'love',
+			'life',
+			'time',
+			'good',
+			'great',
+			'best',
 			'fast',
 			'slow',
-			'medium',
-			'easy',
-			'hard',
-			'difficult',
-			'simple',
-			'complex',
-			'game',
-			'player',
-			'opponent',
-			'match',
-			'score',
-			'winner',
-			'loser',
-			'draw',
+			'big',
+			'small',
+			'new',
+			'old',
+			'young',
+			'red',
+			'blue',
+			'green',
+			'white',
+			'black',
+			'light',
+			'dark',
+			'bright',
+			'clear',
+			'nice',
+			'hot',
+			'cold',
+			'warm',
+			'cool',
+			'fire',
+			'water',
+			'earth',
+			'wind',
+			'tree',
+			'rock',
+			'book',
+			'pen',
+			'paper',
+			'desk',
+			'chair',
+			'door',
+			'window',
+			'wall',
+			'floor',
+			'roof',
+			'car',
+			'bike',
+			'walk',
+			'road',
+			'path',
+			'way',
+			'go',
+			'come',
+			'see',
+			'look',
+			'hear',
+			'feel',
+			'know',
+			'think',
+			'want',
+			'need',
+			'have',
+			'get',
+			'give',
+			'take',
+			'make',
+			'do',
+			'say',
+			'tell',
+			'ask',
+			'try',
+			'help',
+			'find',
+			'keep',
+			'lose',
 		];
 
 		const words = [];
@@ -373,7 +441,11 @@ export class GameRoom {
 	sendToPlayer(sessionId, message) {
 		const webSocket = this.sessions.get(sessionId);
 		if (webSocket && webSocket.readyState === WebSocket.READY_STATE_OPEN) {
-			webSocket.send(JSON.stringify(message));
+			try {
+				webSocket.send(JSON.stringify(message));
+			} catch (error) {
+				console.error('Error sending message:', error);
+			}
 		}
 	}
 
