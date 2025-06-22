@@ -52,5 +52,19 @@
 			"database_name": "typiks",
 			"database_id": "8bccfddd-18c3-4aa4-bdd6-a8d1e6c3f521"
 		}
+	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "GAME_ROOM",
+				"class_name": "GameRoom"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_classes": ["GameRoom"]
+		}
 	]
 }

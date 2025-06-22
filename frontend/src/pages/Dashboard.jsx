@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/context/AuthContext";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -27,7 +27,6 @@ import {
 } from "recharts";
 import {
   FiPlay,
-  FiTrendingUp,
   FiTarget,
   FiAward,
   FiActivity,
@@ -40,36 +39,37 @@ import { auth } from "@/firebase";
 const Dashboard = () => {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [userStats, setUserStats] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchUserStats = async () => {
-      if (!currentUser) return;
-
-      try {
-        const serverUrl = import.meta.env.VITE_SERVER_URL || "localhost:8787";
-        const fullUrl = serverUrl.startsWith("http")
-          ? serverUrl
-          : `http://${serverUrl}`;
-
-        const response = await fetch(
-          `${fullUrl}/api/users/${currentUser.uid}/stats`
-        );
-
-        if (response.ok) {
-          const data = await response.json();
-          setUserStats(data);
-        }
-      } catch (error) {
-        console.error("Failed to fetch user stats:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchUserStats();
-  }, [currentUser]);
+  }, [currentUser, location.pathname]); // Refresh when returning to dashboard
+
+  const fetchUserStats = async () => {
+    if (!currentUser) return;
+
+    try {
+      const serverUrl = import.meta.env.VITE_SERVER_URL || "localhost:8787";
+      const fullUrl = serverUrl.startsWith("http")
+        ? serverUrl
+        : `http://${serverUrl}`;
+
+      const response = await fetch(
+        `${fullUrl}/api/users/${currentUser.uid}/stats`
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setUserStats(data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch user stats:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const chartData = userStats
     ? [
@@ -114,7 +114,7 @@ const Dashboard = () => {
   };
 
   const handleStartGame = () => {
-    navigate("/game/waiting");
+    navigate("/game");
   };
 
   const handleSignOut = async () => {
@@ -159,11 +159,8 @@ const Dashboard = () => {
           <div className="flex items-center gap-4">
             <div>
               <h1 className="text-xl sm:text-2xl font-bold">
-                Welcome back, {userStats?.username || "Player"}
+                {userStats?.username || "Player"}
               </h1>
-              <p className="text-muted-foreground text-sm sm:text-base">
-                Ready for your next typing challenge?
-              </p>
             </div>
           </div>
 
@@ -243,7 +240,7 @@ const Dashboard = () => {
           </div>
         </motion.div>
 
-        {/* Stats Grid - Removed Performance Column */}
+        {/* Stats Grid */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
