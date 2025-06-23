@@ -7,7 +7,7 @@ const app = new Hono();
 app.use(
 	'*',
 	cors({
-		origin: ['https://typiks.vercel.app'],
+		origin: ['https://typiks.vercel.app', 'http://localhost:5173'],
 		credentials: true,
 	})
 );

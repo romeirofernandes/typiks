@@ -77,7 +77,7 @@ export class GameRoom {
 	}
 
 	generateSessionId() {
-		return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+		return `session_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
 	}
 
 	addWaitingPlayer(playerId, sessionId, userInfo) {
@@ -106,8 +106,8 @@ export class GameRoom {
 	}
 
 	createGame(player1Id, player1Data, player2Id, player2Data) {
-		const gameId = `game_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-		const words = this.generateWords(30); // Reduced to 30 words for better gameplay
+		const gameId = `game_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+		const words = this.generateWords(30); 
 
 		const game = {
 			id: gameId,
@@ -136,7 +136,6 @@ export class GameRoom {
 		this.playerToGame.set(player1Id, gameId);
 		this.playerToGame.set(player2Id, gameId);
 
-		// Notify players that match is found
 		this.sendToPlayer(player1Data.sessionId, {
 			type: 'MATCH_FOUND',
 			gameId,
@@ -164,7 +163,6 @@ export class GameRoom {
 
 		let count = 3;
 
-		// Send initial countdown immediately
 		this.sendToPlayers(game, {
 			type: 'COUNTDOWN',
 			count: count,
@@ -187,7 +185,6 @@ export class GameRoom {
 
 				clearInterval(countdown);
 
-				// Start game after a brief delay
 				setTimeout(() => {
 					this.startGame(gameId);
 				}, 500);
@@ -201,7 +198,7 @@ export class GameRoom {
 
 		game.status = 'playing';
 		game.startTime = Date.now();
-		game.endTime = game.startTime + 60 * 1000; // 1 minute game
+		game.endTime = game.startTime + 60 * 1000;
 
 		this.sendToPlayers(game, {
 			type: 'GAME_START',
@@ -210,7 +207,6 @@ export class GameRoom {
 			startTime: game.startTime,
 		});
 
-		// Set game end timer
 		game.gameTimer = setTimeout(() => {
 			this.endGame(gameId, 'timeout');
 		}, 60000);
@@ -233,7 +229,6 @@ export class GameRoom {
 			player.score++;
 			player.currentWordIndex++;
 
-			// Send update to both players with CORRECT data
 			this.sendToPlayers(game, {
 				type: 'PLAYER_PROGRESS',
 				player1: {
@@ -248,12 +243,10 @@ export class GameRoom {
 				},
 			});
 
-			// Check if player finished all words or time is up
 			if (player.currentWordIndex >= game.words.length) {
 				this.endGame(gameId, 'completed');
 			}
 		} else {
-			// Send failed attempt (optional - for feedback)
 			this.sendToPlayer(this.playerToSession.get(playerId), {
 				type: 'WRONG_WORD',
 			});
@@ -264,27 +257,23 @@ export class GameRoom {
 		const game = this.activeGames.get(gameId);
 		if (!game) return;
 
-		// Clear the game timer if it exists
 		if (game.gameTimer) {
 			clearTimeout(game.gameTimer);
 		}
 
 		game.status = 'finished';
 
-		// Determine winner based on score, then progress
 		let winner = null;
 		if (game.player1.score > game.player2.score) {
 			winner = 'player1';
 		} else if (game.player2.score > game.player1.score) {
 			winner = 'player2';
 		} else {
-			// Same score, check who is further ahead
 			if (game.player1.currentWordIndex > game.player2.currentWordIndex) {
 				winner = 'player1';
 			} else if (game.player2.currentWordIndex > game.player1.currentWordIndex) {
 				winner = 'player2';
 			}
-			// If still tied, it's a draw (winner remains null)
 		}
 
 		const player1Won = winner === 'player1';
@@ -313,7 +302,6 @@ export class GameRoom {
 			},
 		});
 
-		// Clean up
 		this.playerToGame.delete(game.player1.id);
 		this.playerToGame.delete(game.player2.id);
 		this.activeGames.delete(gameId);
@@ -326,7 +314,6 @@ export class GameRoom {
 		if (gameId) {
 			const game = this.activeGames.get(gameId);
 			if (game) {
-				// Clear game timer
 				if (game.gameTimer) {
 					clearTimeout(game.gameTimer);
 				}
@@ -347,7 +334,7 @@ export class GameRoom {
 	}
 
 	generateWords(count) {
-		const wordList = [
+		const shortWords = [
 			'cat',
 			'dog',
 			'run',
@@ -375,8 +362,6 @@ export class GameRoom {
 			'black',
 			'light',
 			'dark',
-			'bright',
-			'clear',
 			'nice',
 			'hot',
 			'cold',
@@ -394,7 +379,6 @@ export class GameRoom {
 			'desk',
 			'chair',
 			'door',
-			'window',
 			'wall',
 			'floor',
 			'roof',
@@ -428,14 +412,278 @@ export class GameRoom {
 			'find',
 			'keep',
 			'lose',
+			'hand',
+			'head',
+			'eye',
+			'face',
+			'place',
+			'right',
+			'left',
+			'high',
+			'low',
+			'here',
+			'there',
+			'where',
+			'when',
+			'what',
+			'who',
+			'why',
+			'how',
+			'all',
+			'any',
+			'each',
+			'every',
+			'some',
+			'many',
+			'few',
+			'more',
+			'most',
+			'other',
+			'such',
+			'no',
+			'nor',
+			'not',
+			'only',
+			'own',
+			'same',
+			'so',
+			'than',
+			'too',
+			'very',
+			'can',
+			'will',
+			'just',
+			'should',
+			'now',
 		];
 
-		const words = [];
-		for (let i = 0; i < count; i++) {
-			const randomIndex = Math.floor(Math.random() * wordList.length);
-			words.push(wordList[randomIndex]);
+		const mediumWords = [
+			'window',
+			'bright',
+			'clear',
+			'strong',
+			'happy',
+			'simple',
+			'quiet',
+			'quick',
+			'smooth',
+			'rough',
+			'sharp',
+			'soft',
+			'hard',
+			'empty',
+			'full',
+			'open',
+			'close',
+			'start',
+			'begin',
+			'finish',
+			'end',
+			'middle',
+			'center',
+			'around',
+			'between',
+			'during',
+			'before',
+			'after',
+			'above',
+			'below',
+			'under',
+			'over',
+			'inside',
+			'outside',
+			'beside',
+			'behind',
+			'front',
+			'back',
+			'near',
+			'far',
+			'close',
+			'public',
+			'private',
+			'secret',
+			'hidden',
+			'visible',
+			'clear',
+			'dark',
+			'bright',
+			'morning',
+			'evening',
+			'night',
+			'today',
+			'tomorrow',
+			'yesterday',
+			'week',
+			'month',
+			'year',
+			'season',
+			'spring',
+			'summer',
+			'autumn',
+			'winter',
+			'weather',
+			'sunny',
+			'cloudy',
+			'rainy',
+			'snowy',
+			'windy',
+			'stormy',
+			'peaceful',
+			'busy',
+			'active',
+			'quiet',
+			'noisy',
+			'silent',
+			'loud',
+			'soft',
+			'gentle',
+			'rough',
+			'smooth',
+		];
+
+		const longWords = [
+			'beautiful',
+			'wonderful',
+			'amazing',
+			'incredible',
+			'fantastic',
+			'excellent',
+			'outstanding',
+			'remarkable',
+			'extraordinary',
+			'magnificent',
+			'spectacular',
+			'impressive',
+			'brilliant',
+			'marvelous',
+			'splendid',
+			'superb',
+			'terrific',
+			'tremendous',
+			'phenomenal',
+			'exceptional',
+			'breathtaking',
+			'stunning',
+			'captivating',
+			'enchanting',
+			'fascinating',
+			'intriguing',
+			'mysterious',
+			'adventure',
+			'challenge',
+			'opportunity',
+			'experience',
+			'knowledge',
+			'understanding',
+			'intelligence',
+			'creativity',
+			'imagination',
+			'inspiration',
+			'motivation',
+			'determination',
+			'perseverance',
+			'achievement',
+			'accomplishment',
+			'development',
+			'improvement',
+			'progress',
+			'advancement',
+			'innovation',
+			'technology',
+			'information',
+			'communication',
+			'transportation',
+			'education',
+			'entertainment',
+			'celebration',
+			'organization',
+			'relationship',
+			'friendship',
+			'partnership',
+			'leadership',
+			'membership',
+			'scholarship',
+			'championship',
+			'performance',
+			'appearance',
+			'disappearance',
+			'independence',
+			'dependence',
+			'confidence',
+			'difference',
+			'preference',
+			'reference',
+			'interference',
+		];
+
+		const challengingWords = [
+			'psychology',
+			'philosophy',
+			'mathematics',
+			'architecture',
+			'engineering',
+			'photography',
+			'biography',
+			'geography',
+			'democracy',
+			'vocabulary',
+			'laboratory',
+			'observatory',
+			'contemporary',
+			'revolutionary',
+			'evolutionary',
+			'extraordinary',
+			'constitutional',
+			'international',
+			'environmental',
+			'experimental',
+			'fundamental',
+			'instrumental',
+			'governmental',
+			'developmental',
+			'educational',
+			'professional',
+			'traditional',
+			'additional',
+			'conditional',
+			'exceptional',
+			'operational',
+			'functional',
+			'emotional',
+			'rational',
+			'national',
+			'regional',
+			'personal',
+			'universal',
+			'commercial',
+			'financial',
+			'technical',
+			'practical',
+			'magical',
+			'logical',
+			'physical',
+			'chemical',
+			'medical',
+			'political',
+			'critical',
+			'typical',
+		];
+
+		const allWords = [
+			...shortWords, 
+			...mediumWords, 
+			...longWords, 
+			...challengingWords, 
+		];
+
+		if (count > allWords.length) {
+			count = allWords.length;
 		}
-		return words;
+		const shuffled = [...allWords].sort(() => Math.random() - 0.5);
+
+		const selectedWords = shuffled.slice(0, count);
+
+		return selectedWords.sort(() => Math.random() - 0.5);
 	}
 
 	sendToPlayer(sessionId, message) {
