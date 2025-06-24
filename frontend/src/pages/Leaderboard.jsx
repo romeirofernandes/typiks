@@ -6,9 +6,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   ArrowLeftIcon,
   StarIcon,
-  BadgeIcon,
-  PersonIcon,
-  TokensIcon,
 } from "@radix-ui/react-icons";
 import { TbAward } from "react-icons/tb";
 
@@ -186,7 +183,6 @@ const Leaderboard = () => {
                         {/* Player */}
                         <td className="p-4">
                           <div className="flex items-center gap-2">
-                            <PersonIcon className="w-4 h-4 text-muted-foreground" />
                             <span className="font-semibold">
                               {player.username}
                             </span>
