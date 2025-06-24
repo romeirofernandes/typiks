@@ -3,7 +3,14 @@ import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { FiArrowLeft, FiStar, FiTarget, FiAward } from "react-icons/fi";
+import {
+  ArrowLeftIcon,
+  StarIcon,
+  BadgeIcon,
+  PersonIcon,
+  TokensIcon,
+} from "@radix-ui/react-icons";
+import { TbAward } from "react-icons/tb";
 
 const Leaderboard = () => {
   const navigate = useNavigate();
@@ -37,17 +44,13 @@ const Leaderboard = () => {
   const getRankIcon = (rank) => {
     switch (rank) {
       case 1:
-        return <FiAward className="w-6 h-6 text-yellow-500" />;
+        return <TbAward className="w-5 h-5 text-yellow-500" />;
       case 2:
-        return <FiAward className="w-5 h-5 text-gray-400" />;
+        return <TbAward className="w-5 h-5 text-gray-400" />;
       case 3:
-        return <FiAward className="w-5 h-5 text-amber-600" />;
+        return <TbAward className="w-5 h-5 text-amber-600" />;
       default:
-        return (
-          <span className="w-6 text-center font-bold text-muted-foreground">
-            {rank}
-          </span>
-        );
+        return <span className="text-muted-foreground">#{rank}</span>;
     }
   };
 
@@ -59,9 +62,40 @@ const Leaderboard = () => {
     return "text-gray-500";
   };
 
+  const getRatingBadge = (rating) => {
+    if (rating >= 1600)
+      return {
+        label: "Expert",
+        color:
+          "bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-300",
+      };
+    if (rating >= 1400)
+      return {
+        label: "Advanced",
+        color:
+          "bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-300",
+      };
+    if (rating >= 1200)
+      return {
+        label: "Intermediate",
+        color:
+          "bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-300",
+      };
+    if (rating >= 1000)
+      return {
+        label: "Beginner",
+        color:
+          "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300",
+      };
+    return {
+      label: "Novice",
+      color: "bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-300",
+    };
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <motion.div
           animate={{ rotate: 360 }}
           transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
@@ -73,139 +107,299 @@ const Leaderboard = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="max-w-3xl mx-auto px-6 py-8">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="flex items-center justify-between mb-8"
+          transition={{ duration: 0.6 }}
+          className="flex items-center gap-4 mb-8"
         >
-          <div className="flex items-center gap-4">
-            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-              <Button
-                variant="outline"
-                onClick={() => navigate("/dashboard")}
-                className="gap-2"
-              >
-                <FiArrowLeft className="w-4 h-4" />
-              </Button>
-            </motion.div>
-            <div>
-              <h1 className="text-3xl font-bold">Leaderboard</h1>
-              <p className="text-muted-foreground">Top 10 Typists</p>
-            </div>
-          </div>
-        </motion.div>
-
-        {/* Leaderboard */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.1 }}
-          className="space-y-4"
-        >
-          {leaderboard.map((player, index) => (
-            <motion.div
-              key={player.username}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.3, delay: index * 0.1 }}
+          <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+            <Button
+              variant="outline"
+              onClick={() => navigate("/dashboard")}
+              className="gap-2"
             >
-              <Card
-                className={`${
-                  player.rank <= 3 ? "border-primary/50 shadow-lg" : ""
-                }`}
-              >
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="flex items-center justify-center w-12 h-12">
-                        {getRankIcon(player.rank)}
-                      </div>
-
-                      <div>
-                        <h3 className="text-lg font-semibold">
-                          {player.username}
-                        </h3>
-                        <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                          <span className="flex items-center gap-1">
-                            <FiTarget className="w-3 h-3" />
-                            {player.winRate}% Win Rate
-                          </span>
-                          <span>{player.gamesPlayed} Games</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="text-right">
-                      <div
-                        className={`text-2xl font-bold ${getRatingColor(
-                          player.rating
-                        )}`}
-                      >
-                        {player.rating}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        Rating
-                      </div>
-                    </div>
-                  </div>
-
-                  {player.rank <= 3 && (
-                    <div className="mt-4 pt-4 border-t border-border/50">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-green-600">
-                          Wins: {player.gamesWon}
-                        </span>
-                        <span className="text-red-500">
-                          Losses: {player.gamesLost}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </motion.div>
-          ))}
+              <ArrowLeftIcon className="w-4 h-4" />
+            </Button>
+          </motion.div>
         </motion.div>
 
-        {/* Rating Scale */}
+        {/* Leaderboard Table */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.3 }}
-          className="mt-8"
+          transition={{ duration: 0.6, delay: 0.2 }}
         >
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <FiStar className="w-5 h-5" />
-                Rating Scale
+                <StarIcon className="w-5 h-5 text-primary" />
+                Rankings
               </CardTitle>
             </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="text-left p-4 font-medium text-muted-foreground">
+                        Rank
+                      </th>
+                      <th className="text-left p-4 font-medium text-muted-foreground">
+                        Player
+                      </th>
+                      <th className="text-left p-4 font-medium text-muted-foreground">
+                        Rating
+                      </th>
+                      <th className="text-left p-4 font-medium text-muted-foreground">
+                        Level
+                      </th>
+                      <th className="text-left p-4 font-medium text-muted-foreground">
+                        Games
+                      </th>
+                      <th className="text-left p-4 font-medium text-muted-foreground">
+                        Win Rate
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {leaderboard.map((player, index) => (
+                      <motion.tr
+                        key={player.username}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: index * 0.05 }}
+                        className={`border-b border-border hover:bg-muted/50 transition-colors ${
+                          player.rank <= 3 ? "bg-primary/5" : ""
+                        }`}
+                      >
+                        {/* Rank */}
+                        <td className="p-4">
+                          <div className="flex items-center gap-2">
+                            {getRankIcon(player.rank)}
+                            <span className="font-medium">{player.rank}</span>
+                          </div>
+                        </td>
+
+                        {/* Player */}
+                        <td className="p-4">
+                          <div className="flex items-center gap-2">
+                            <PersonIcon className="w-4 h-4 text-muted-foreground" />
+                            <span className="font-semibold">
+                              {player.username}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Rating */}
+                        <td className="p-4">
+                          <span
+                            className={`text-xl font-bold ${getRatingColor(
+                              player.rating
+                            )}`}
+                          >
+                            {player.rating}
+                          </span>
+                        </td>
+
+                        {/* Level Badge */}
+                        <td className="p-4">
+                          <span
+                            className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              getRatingBadge(player.rating).color
+                            }`}
+                          >
+                            {getRatingBadge(player.rating).label}
+                          </span>
+                        </td>
+
+                        {/* Games */}
+                        <td className="p-4">
+                          <div className="flex items-center gap-1">
+                            <span>{player.gamesPlayed}</span>
+                          </div>
+                        </td>
+
+                        {/* Win Rate */}
+                        <td className="p-4">
+                          <div className="flex items-center gap-1">
+                            <span className="font-medium">
+                              {player.winRate}%
+                            </span>
+                          </div>
+                        </td>
+                      </motion.tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.4 }}
+          className="mt-8"
+        >
+          <Card>
+            <CardHeader>
+              <CardTitle>Rating Scale</CardTitle>
+            </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-purple-500"></div>
-                  <span>Expert (1600+)</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-blue-500"></div>
-                  <span>Advanced (1400+)</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-green-500"></div>
-                  <span>Intermediate (1200+)</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-                  <span>Beginner (1000+)</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-gray-500"></div>
-                  <span>Novice (800+)</span>
-                </div>
+              {/* Mobile Layout - Stacked */}
+              <div className="grid grid-cols-1 gap-3 sm:hidden">
+                {[
+                  {
+                    label: "Expert",
+                    range: "1600+",
+                    color:
+                      "bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-300",
+                  },
+                  {
+                    label: "Advanced",
+                    range: "1400+",
+                    color:
+                      "bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-300",
+                  },
+                  {
+                    label: "Intermediate",
+                    range: "1200+",
+                    color:
+                      "bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-300",
+                  },
+                  {
+                    label: "Beginner",
+                    range: "1000+",
+                    color:
+                      "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300",
+                  },
+                  {
+                    label: "Novice",
+                    range: "800+",
+                    color:
+                      "bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-300",
+                  },
+                ].map((tier) => (
+                  <div
+                    key={tier.label}
+                    className="flex items-center justify-between p-3 rounded-lg border border-border"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`px-3 py-1 rounded-full text-sm font-medium ${tier.color}`}
+                      >
+                        {tier.label}
+                      </div>
+                    </div>
+                    <div className="text-sm font-medium text-muted-foreground">
+                      {tier.range}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Tablet Layout - 2 columns */}
+              <div className="hidden sm:grid lg:hidden grid-cols-2 gap-3">
+                {[
+                  {
+                    label: "Expert",
+                    range: "1600+",
+                    color:
+                      "bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-300",
+                  },
+                  {
+                    label: "Advanced",
+                    range: "1400+",
+                    color:
+                      "bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-300",
+                  },
+                  {
+                    label: "Intermediate",
+                    range: "1200+",
+                    color:
+                      "bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-300",
+                  },
+                  {
+                    label: "Beginner",
+                    range: "1000+",
+                    color:
+                      "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300",
+                  },
+                  {
+                    label: "Novice",
+                    range: "800+",
+                    color:
+                      "bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-300",
+                  },
+                ].map((tier) => (
+                  <div
+                    key={tier.label}
+                    className="text-center p-3 rounded-lg border border-border"
+                  >
+                    <div
+                      className={`px-3 py-1 rounded-full text-sm font-medium ${tier.color} mb-2 inline-block`}
+                    >
+                      {tier.label}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {tier.range}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Desktop Layout - 5 columns */}
+              <div className="hidden lg:grid grid-cols-5 gap-3">
+                {[
+                  {
+                    label: "Expert",
+                    range: "1600+",
+                    color:
+                      "bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-300",
+                  },
+                  {
+                    label: "Advanced",
+                    range: "1400+",
+                    color:
+                      "bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-300",
+                  },
+                  {
+                    label: "Intermediate",
+                    range: "1200+",
+                    color:
+                      "bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-300",
+                  },
+                  {
+                    label: "Beginner",
+                    range: "1000+",
+                    color:
+                      "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300",
+                  },
+                  {
+                    label: "Novice",
+                    range: "800+",
+                    color:
+                      "bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-300",
+                  },
+                ].map((tier) => (
+                  <div
+                    key={tier.label}
+                    className="text-center p-3 rounded-lg border border-border"
+                  >
+                    <div
+                      className={`px-3 py-1 rounded-full text-sm font-medium ${tier.color} mb-2 inline-block`}
+                    >
+                      {tier.label}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {tier.range}
+                    </div>
+                  </div>
+                ))}
               </div>
             </CardContent>
           </Card>
