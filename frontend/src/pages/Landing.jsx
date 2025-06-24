@@ -112,6 +112,7 @@ const Landing = () => {
                 muted
                 loop
                 playsInline
+                preload="metadata"
               >
                 <source src="/phone.mp4" type="video/mp4" />
                 Your browser does not support the video tag.
@@ -123,6 +124,7 @@ const Landing = () => {
                 muted
                 loop
                 playsInline
+                preload="metadata"
               >
                 <source src="/desktop.mp4" type="video/mp4" />
                 Your browser does not support the video tag.
