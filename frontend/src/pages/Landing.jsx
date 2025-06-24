@@ -1,14 +1,53 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 
 const Landing = () => {
   const navigate = useNavigate();
+  const [totalGames, setTotalGames] = useState(0);
+
+  useEffect(() => {
+    fetchTotalGames();
+  }, []);
+
+  const fetchTotalGames = async () => {
+    try {
+      const serverUrl = import.meta.env.VITE_SERVER_URL || "localhost:8787";
+      const fullUrl = serverUrl.startsWith("http")
+        ? serverUrl
+        : `http://${serverUrl}`;
+
+      const response = await fetch(`${fullUrl}/api/stats`);
+
+      if (response.ok) {
+        const data = await response.json();
+        setTotalGames(data.totalGames);
+      }
+    } catch (error) {
+      console.error("Failed to fetch total games:", error);
+    }
+  };
+
+  const formatNumber = (num) => {
+    if (num >= 1000000) return (num / 1000000).toFixed(1) + "M";
+    if (num >= 1000) return (num / 1000).toFixed(1) + "K";
+    return num.toString();
+  };
 
   return (
     <div className="relative min-h-screen flex flex-col">
       <div className="absolute inset-0 -z-50 h-full w-full bg-white [background:radial-gradient(125%_125%_at_50%_10%,#f8fafc_40%,#22c55e_100%)] dark:[background:radial-gradient(125%_125%_at_50%_10%,#1e293b_40%,#16a34a_100%)]"></div>
+
+      {/* Subtle stats in top corner */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.5, delay: 2 }}
+        className="absolute top-6 right-6 text-xs text-foreground/60 font-mono"
+      >
+        {totalGames > 0 && `${formatNumber(totalGames)} games played`}
+      </motion.div>
 
       <div className="relative mx-auto flex w-full sm:max-w-3xl flex-col items-center justify-center flex-1 px-6 sm:px-6">
         <div className="w-full flex flex-col justify-center items-center space-y-4 sm:space-y-4">
