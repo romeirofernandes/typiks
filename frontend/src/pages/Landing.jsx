@@ -52,9 +52,9 @@ const Landing = () => {
           >
             <Button
               onClick={() => navigate("/signup")}
-              className="w-48 sm:w-60 transform bg-primary text-primary-foreground hover:bg-primary/90 px-6 sm:px-8 py-3 sm:py-4 text-base sm:text-lg font-medium transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg"
+              className="w-48 sm:w-60 transform bg-primary text-primary-foreground hover:bg-primary/90 px-6 sm:px-6 sm:py-5 text-base sm:text-lg font-medium transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg"
             >
-              Start Typing
+              Start Typiks
             </Button>
           </motion.div>
 
@@ -66,14 +66,28 @@ const Landing = () => {
             className="relative z-10 w-full rounded-2xl sm:rounded-3xl border border-border bg-card p-3 sm:p-4 shadow-lg"
           >
             <div className="w-full overflow-hidden rounded-xl border border-border bg-muted/50">
-              {/* Placeholder for demo video */}
-              <div className="aspect-[5/4] sm:aspect-[18/9] h-auto w-full sm:w-3xl flex items-center justify-center bg-muted text-muted-foreground">
-                <div className="text-center">
-                  <div className="text-3xl sm:text-4xl mb-2">🎮</div>
-                  <p className="text-base sm:text-lg font-medium">Demo Video</p>
-                  <p className="text-xs sm:text-sm">Coming Soon</p>
-                </div>
-              </div>
+              {/* Mobile Video - Shows only on mobile */}
+              <video
+                className="block sm:hidden w-full h-auto object-cover rounded-lg"
+                autoPlay
+                muted
+                loop
+                playsInline
+              >
+                <source src="/phone.mp4" type="video/mp4" />
+                Your browser does not support the video tag.
+              </video>
+
+              <video
+                className="hidden sm:block w-full h-auto object-cover rounded-lg"
+                autoPlay
+                muted
+                loop
+                playsInline
+              >
+                <source src="/desktop.mp4" type="video/mp4" />
+                Your browser does not support the video tag.
+              </video>
             </div>
           </motion.div>
         </div>

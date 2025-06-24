@@ -47,7 +47,7 @@ const Leaderboard = () => {
       case 3:
         return <TbAward className="w-5 h-5 text-amber-600" />;
       default:
-        return <span className="text-muted-foreground">#{rank}</span>;
+        return <span className="text-muted-foreground" />;
     }
   };
 
