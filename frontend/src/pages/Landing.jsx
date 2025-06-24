@@ -113,7 +113,7 @@ const Landing = () => {
                 loop
                 playsInline
               >
-                <source src="/phone.mp4" type="video/mp4" />
+                <source src="/phone-optimized.mp4" type="video/mp4" />
                 Your browser does not support the video tag.
               </video>
 
@@ -124,7 +124,7 @@ const Landing = () => {
                 loop
                 playsInline
               >
-                <source src="/desktop.mp4" type="video/mp4" />
+                <source src="/desktop-optimized.mp4" type="video/mp4" />
                 Your browser does not support the video tag.
               </video>
             </div>
