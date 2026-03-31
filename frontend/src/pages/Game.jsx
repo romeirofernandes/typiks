@@ -142,8 +142,14 @@ const Game = () => {
         setCountdown(message.count);
         break;
 
-      case "GAME_START":
-        setWords(message.words);
+      case "GAME_START": {
+        setWords(Array.isArray(message.words) ? message.words : []);
+        setTimeLeft(
+          Number.isFinite(message.duration)
+            ? Math.max(0, Math.round(message.duration / 1000))
+            : 60
+        );
+
         setGameState("playing");
         setCountdown(null);
         startTimer();
@@ -154,6 +160,7 @@ const Game = () => {
         setOpponentWordIndex(0);
         setTimeout(() => inputRef.current?.focus(), 100);
         break;
+      }
 
       case "PLAYER_PROGRESS":
         // Handle the corrected progress data structure
