@@ -39,6 +39,12 @@ export default function Navbar() {
     }
   };
 
+  const scrollToSection = (sectionId) => {
+    const el = document.getElementById(sectionId);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   return (
     <header className="fixed top-6 left-0 right-0 z-50 flex justify-center px-4 w-full">
       {/* Outer border wrapper */}
@@ -52,12 +58,18 @@ export default function Navbar() {
 
           {/* Middle: Links */}
           <div className="hidden md:flex items-center gap-8 text-sm font-medium text-muted-foreground lowercase">
-            <Link to="#features" className="hover:text-foreground transition-colors">
+            <button
+              type="button"
+              onClick={() => scrollToSection("demo")}
+              className="hover:text-foreground transition-colors">
+              demo
+            </button>
+            <button
+              type="button"
+              onClick={() => scrollToSection("features")}
+              className="hover:text-foreground transition-colors">
               features
-            </Link>
-            <Link to="#testimonials" className="hover:text-foreground transition-colors">
-              testimonials
-            </Link>
+            </button>
           </div>
 
           {/* Right: Actions */}

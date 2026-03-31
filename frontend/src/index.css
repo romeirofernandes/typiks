@@ -199,6 +199,9 @@ button {
   * {
     @apply border-border outline-ring/50;
     }
+  html {
+    scroll-behavior: smooth;
+  }
   body {
     @apply bg-background text-foreground;
     letter-spacing: var(--tracking-normal);
@@ -237,5 +240,14 @@ button {
   }
   to {
     clip-path: polygon(130% 0, -30% 0, -15% 100%, 110% 115%);
+  }
+}
+
+@keyframes typiks-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
   }
 }

@@ -1,4 +1,4 @@
-'use client';;
+'use client';
 import { cn } from "@/lib/utils";
 import {
   IconArrowNarrowLeft,
@@ -30,8 +30,9 @@ export function Keyboard({
   theme = "typiks",
   enableSound = true,
   enableHaptics = true,
+  disableNativeBehavior = true,
   soundUrl = "/sounds/sound.ogg",
-  onKeyEvent
+  onKeyEvent,
 }) {
   const containerRef = useRef(null);
 
@@ -41,8 +42,10 @@ export function Keyboard({
       theme={theme}
       enableSound={enableSound}
       enableHaptics={enableHaptics}
+      disableNativeBehavior={disableNativeBehavior}
       soundUrl={soundUrl}
-      onKeyEvent={onKeyEvent}>
+      onKeyEvent={onKeyEvent}
+    >
       <div ref={containerRef} className={cn("inline-block", className)}>
         <KeyboardLayout />
       </div>
@@ -68,8 +71,9 @@ function KeyboardProvider({
   theme,
   enableSound,
   enableHaptics,
+  disableNativeBehavior,
   soundUrl,
-  onKeyEvent
+  onKeyEvent,
 }) {
   const audioContextRef = useRef(null);
   const audioBufferRef = useRef(null);
@@ -78,7 +82,6 @@ function KeyboardProvider({
 
   const [pressedKeys, setPressedKeys] = useState(new Set());
   const [lastPressedKey, setLastPressedKey] = useState(null);
-  const [isVisible, setIsVisible] = useState(true);
 
   useEffect(() => {
     if (!enableSound || !soundUrl) {
@@ -94,9 +97,7 @@ function KeyboardProvider({
         audioContextRef.current = audioContext;
 
         const response = await fetch(soundUrl);
-        if (!response.ok) {
-          return;
-        }
+        if (!response.ok) return;
 
         const arrayBuffer = await response.arrayBuffer();
         const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
@@ -105,7 +106,7 @@ function KeyboardProvider({
           audioBufferRef.current = audioBuffer;
         }
       } catch {
-        // Sound is optional. Keep UI interactive if loading fails.
+        // Sound is optional — keep UI interactive if loading fails.
       }
     };
 
@@ -114,108 +115,101 @@ function KeyboardProvider({
     return () => {
       cancelled = true;
       audioBufferRef.current = null;
-
       const context = audioContextRef.current;
       audioContextRef.current = null;
       void context?.close();
     };
   }, [enableSound, soundUrl]);
 
-  const playSound = useCallback((phase, keyCode) => {
-    if (!enableSound) {
-      return;
-    }
+  const playSound = useCallback(
+    (phase, keyCode) => {
+      if (!enableSound) return;
 
-    const audioContext = audioContextRef.current;
-    const audioBuffer = audioBufferRef.current;
-    if (!audioContext || !audioBuffer) {
-      return;
-    }
+      const audioContext = audioContextRef.current;
+      const audioBuffer = audioBufferRef.current;
+      if (!audioContext || !audioBuffer) return;
 
-    const soundDef =
-      phase === "down" ? SOUND_DEFINES_DOWN[keyCode] : SOUND_DEFINES_UP[keyCode];
-    if (!soundDef) {
-      return;
-    }
+      const soundDef =
+        phase === "down" ? SOUND_DEFINES_DOWN[keyCode] : SOUND_DEFINES_UP[keyCode];
+      if (!soundDef) return;
 
-    const [startMs, durationMs] = soundDef;
+      const [startMs, durationMs] = soundDef;
 
-    if (audioContext.state === "suspended") {
-      void audioContext.resume();
-    }
+      if (audioContext.state === "suspended") {
+        void audioContext.resume();
+      }
 
-    const source = audioContext.createBufferSource();
-    source.buffer = audioBuffer;
-    source.connect(audioContext.destination);
-    source.start(0, startMs / 1000, durationMs / 1000);
-  }, [enableSound]);
+      const source = audioContext.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(audioContext.destination);
+      source.start(0, startMs / 1000, durationMs / 1000);
+    },
+    [enableSound]
+  );
 
-  const emitKeyEvent = useCallback((phase, code, source) => {
-    onKeyEvent?.({ code, phase, source });
-  }, [onKeyEvent]);
+  const emitKeyEvent = useCallback(
+    (phase, code, source) => {
+      onKeyEvent?.({ code, phase, source });
+    },
+    [onKeyEvent]
+  );
 
   const triggerPointerHaptic = useCallback(() => {
-    if (!enableHaptics) {
-      return;
-    }
-
-    void trigger([
-      { duration: 25 },
-    ], { intensity: 0.7 })
+    if (!enableHaptics) return;
+    void trigger([{ duration: 25 }], { intensity: 0.7 });
   }, [enableHaptics, trigger]);
 
-  const pressKey = useCallback((keyCode, source) => {
-    if (pressedKeysRef.current.has(keyCode)) {
-      return;
-    }
+  const pressKey = useCallback(
+    (keyCode, source) => {
+      if (pressedKeysRef.current.has(keyCode)) return;
 
-    const next = new Set(pressedKeysRef.current);
-    next.add(keyCode);
-    pressedKeysRef.current = next;
-    setPressedKeys(next);
+      const next = new Set(pressedKeysRef.current);
+      next.add(keyCode);
+      pressedKeysRef.current = next;
+      setPressedKeys(next);
 
-    setLastPressedKey(keyCode);
-    playSound("down", keyCode);
-    emitKeyEvent("down", keyCode, source);
-  }, [emitKeyEvent, playSound]);
+      setLastPressedKey(keyCode);
+      playSound("down", keyCode);
+      emitKeyEvent("down", keyCode, source);
+    },
+    [emitKeyEvent, playSound]
+  );
 
-  const releaseKey = useCallback((keyCode, source) => {
-    if (!pressedKeysRef.current.has(keyCode)) {
-      return;
-    }
+  const releaseKey = useCallback(
+    (keyCode, source) => {
+      if (!pressedKeysRef.current.has(keyCode)) return;
 
-    const next = new Set(pressedKeysRef.current);
-    next.delete(keyCode);
-    pressedKeysRef.current = next;
-    setPressedKeys(next);
+      const next = new Set(pressedKeysRef.current);
+      next.delete(keyCode);
+      pressedKeysRef.current = next;
+      setPressedKeys(next);
 
-    playSound("up", keyCode);
-    emitKeyEvent("up", keyCode, source);
-  }, [emitKeyEvent, playSound]);
-
-  const releaseAllKeys = useCallback((source = "physical") => {
-    const keysToRelease = Array.from(pressedKeysRef.current);
-    if (keysToRelease.length === 0) {
-      return;
-    }
-
-    pressedKeysRef.current = new Set();
-    setPressedKeys(new Set());
-
-    for (const keyCode of keysToRelease) {
+      playSound("up", keyCode);
       emitKeyEvent("up", keyCode, source);
-    }
-  }, [emitKeyEvent]);
+    },
+    [emitKeyEvent, playSound]
+  );
 
-  useEffect(() => {
-    const handleBlur = () => {
-      releaseAllKeys();
-    };
+  const releaseAllKeys = useCallback(
+    (source = "physical") => {
+      const keysToRelease = Array.from(pressedKeysRef.current);
+      if (keysToRelease.length === 0) return;
 
-    const handleVisibilityChange = () => {
-      if (document.visibilityState !== "visible") {
-        releaseAllKeys();
+      pressedKeysRef.current = new Set();
+      setPressedKeys(new Set());
+
+      for (const keyCode of keysToRelease) {
+        emitKeyEvent("up", keyCode, source);
       }
+    },
+    [emitKeyEvent]
+  );
+
+  // Release all keys when window loses focus or tab is hidden
+  useEffect(() => {
+    const handleBlur = () => releaseAllKeys();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") releaseAllKeys();
     };
 
     window.addEventListener("blur", handleBlur);
@@ -227,36 +221,22 @@ function KeyboardProvider({
     };
   }, [releaseAllKeys]);
 
+  // Physical keyboard listeners
   useEffect(() => {
-    const element = containerRef.current;
-    if (!element || typeof IntersectionObserver === "undefined") {
-      return;
-    }
-
-    const observer = new IntersectionObserver(([entry]) => {
-      setIsVisible(entry.isIntersecting);
-    }, { threshold: 0.1 });
-
-    observer.observe(element);
-
-    return () => {
-      observer.disconnect();
-    };
-  }, [containerRef]);
-
-  useEffect(() => {
-    if (!isVisible) {
-      return;
-    }
-
     const handleKeyDown = (event) => {
-      if (event.repeat) {
-        return;
+      if (disableNativeBehavior && shouldBlockNativeKeyBehavior(event)) {
+        event.preventDefault();
+        event.stopPropagation();
       }
+      if (event.repeat) return;
       pressKey(event.code, "physical");
     };
 
     const handleKeyUp = (event) => {
+      if (disableNativeBehavior && shouldBlockNativeKeyBehavior(event)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
       releaseKey(event.code, "physical");
     };
 
@@ -267,7 +247,7 @@ function KeyboardProvider({
       document.removeEventListener("keydown", handleKeyDown);
       document.removeEventListener("keyup", handleKeyUp);
     };
-  }, [isVisible, pressKey, releaseKey]);
+  }, [disableNativeBehavior, pressKey, releaseKey]);
 
   return (
     <KeyboardContext.Provider
@@ -279,7 +259,8 @@ function KeyboardProvider({
         pressKey,
         releaseKey,
         releaseAllKeys,
-      }}>
+      }}
+    >
       {children}
     </KeyboardContext.Provider>
   );
@@ -292,15 +273,11 @@ function KeyboardProvider({
 function KeyboardLayout() {
   return (
     <div>
-      <div
-        className="bg-card/80 border-2 border-border p-3 rounded-[16px] w-fit h-fit">
-        <div
-          className="bg-muted/50 border border-border rounded-[5px] rounded-t-[8px] h-[278px]">
+      <div className="bg-card/80 border-2 border-border p-3 rounded-[16px] w-fit h-fit">
+        <div className="bg-muted/50 border border-border rounded-[5px] rounded-t-[8px] h-[278px]">
           <div className="-space-y-1 -translate-y-1 rounded-[5px] overflow-hidden">
             <Row>
-              <Key keyCode={KEYCODE.Escape}>
-                {"esc"}
-              </Key>
+              <Key keyCode={KEYCODE.Escape}>{"esc"}</Key>
 
               <Key keyCode={KEYCODE.F1}>
                 <IconBrightnessDown className="size-[10px]" />
@@ -356,9 +333,7 @@ function KeyboardLayout() {
               <Key keyCode={KEYCODE.F13}>
                 <IconFrame className="size-[10px]" />
               </Key>
-              <Key keyCode={KEYCODE.Delete}>
-                {"del"}
-              </Key>
+              <Key keyCode={KEYCODE.Delete}>{"del"}</Key>
               <Key keyCode={KEYCODE.F14}>
                 <IconBulb className="size-[12px]" />
               </Key>
@@ -369,7 +344,6 @@ function KeyboardLayout() {
                 <span>{"~"}</span>
                 <span>{"`"}</span>
               </Key>
-
               <Key keyCode={KEYCODE.Digit1}>
                 <span>{"!"}</span>
                 <span>{"1"}</span>
@@ -386,7 +360,6 @@ function KeyboardLayout() {
                 <span>{"$"}</span>
                 <span>{"4"}</span>
               </Key>
-
               <Key keyCode={KEYCODE.Digit5}>
                 <span>{"%"}</span>
                 <span>{"5"}</span>
@@ -407,7 +380,6 @@ function KeyboardLayout() {
                 <span>{"("}</span>
                 <span>{"9"}</span>
               </Key>
-
               <Key keyCode={KEYCODE.Digit0}>
                 <span>{")"}</span>
                 <span>{"0"}</span>
@@ -420,32 +392,24 @@ function KeyboardLayout() {
                 <span>{"+"}</span>
                 <span>{"="}</span>
               </Key>
-
               <Key keyCode={KEYCODE.Backspace} width={100}>
                 <IconArrowNarrowLeft className="size-[12px]" />
               </Key>
-              <Key keyCode={KEYCODE.PageUp}>
-                {"pgup"}
-              </Key>
+              <Key keyCode={KEYCODE.PageUp}>{"pgup"}</Key>
             </Row>
 
             <Row>
-              <Key keyCode={KEYCODE.Tab} width={75}>
-                {"tab"}
-              </Key>
-
+              <Key keyCode={KEYCODE.Tab} width={75}>{"tab"}</Key>
               <Key keyCode={KEYCODE.KeyQ}>{"Q"}</Key>
               <Key keyCode={KEYCODE.KeyW}>{"W"}</Key>
               <Key keyCode={KEYCODE.KeyE}>{"E"}</Key>
               <Key keyCode={KEYCODE.KeyR}>{"R"}</Key>
-
               <Key keyCode={KEYCODE.KeyT}>{"T"}</Key>
               <Key keyCode={KEYCODE.KeyY}>{"Y"}</Key>
               <Key keyCode={KEYCODE.KeyU}>{"U"}</Key>
               <Key keyCode={KEYCODE.KeyI}>{"I"}</Key>
               <Key keyCode={KEYCODE.KeyO}>{"O"}</Key>
               <Key keyCode={KEYCODE.KeyP}>{"P"}</Key>
-
               <Key keyCode={KEYCODE.BracketLeft}>
                 <span>{"{"}</span>
                 <span>{"["}</span>
@@ -454,32 +418,24 @@ function KeyboardLayout() {
                 <span>{"}"}</span>
                 <span>{"]"}</span>
               </Key>
-
               <Key keyCode={KEYCODE.Backslash} width={75}>
                 <span>{"|"}</span>
                 <span>{"\\"}</span>
               </Key>
-              <Key keyCode={KEYCODE.PageDown}>
-                {"pgdn"}
-              </Key>
+              <Key keyCode={KEYCODE.PageDown}>{"pgdn"}</Key>
             </Row>
 
             <Row>
-              <Key keyCode={KEYCODE.CapsLock} width={100}>
-                {"caps lock"}
-              </Key>
-
+              <Key keyCode={KEYCODE.CapsLock} width={100}>{"caps lock"}</Key>
               <Key keyCode={KEYCODE.KeyA}>{"A"}</Key>
               <Key keyCode={KEYCODE.KeyS}>{"S"}</Key>
               <Key keyCode={KEYCODE.KeyD}>{"D"}</Key>
               <Key keyCode={KEYCODE.KeyF}>{"F"}</Key>
-
               <Key keyCode={KEYCODE.KeyG}>{"G"}</Key>
               <Key keyCode={KEYCODE.KeyH}>{"H"}</Key>
               <Key keyCode={KEYCODE.KeyJ}>{"J"}</Key>
               <Key keyCode={KEYCODE.KeyK}>{"K"}</Key>
               <Key keyCode={KEYCODE.KeyL}>{"L"}</Key>
-
               <Key keyCode={KEYCODE.Semicolon}>
                 <span>{":"}</span>
                 <span>{";"}</span>
@@ -488,29 +444,19 @@ function KeyboardLayout() {
                 <span>{"\""}</span>
                 <span>{"'"}</span>
               </Key>
-
-              <Key keyCode={KEYCODE.Enter} width={100}>
-                {"return"}
-              </Key>
-              <Key keyCode={KEYCODE.Home}>
-                {"home"}
-              </Key>
+              <Key keyCode={KEYCODE.Enter} width={100}>{"return"}</Key>
+              <Key keyCode={KEYCODE.Home}>{"home"}</Key>
             </Row>
 
             <Row>
-              <Key keyCode={KEYCODE.ShiftLeft} width={123}>
-                {"shift"}
-              </Key>
-
+              <Key keyCode={KEYCODE.ShiftLeft} width={123}>{"shift"}</Key>
               <Key keyCode={KEYCODE.KeyZ}>{"Z"}</Key>
               <Key keyCode={KEYCODE.KeyX}>{"X"}</Key>
               <Key keyCode={KEYCODE.KeyC}>{"C"}</Key>
               <Key keyCode={KEYCODE.KeyV}>{"V"}</Key>
-
               <Key keyCode={KEYCODE.KeyB}>{"B"}</Key>
               <Key keyCode={KEYCODE.KeyN}>{"N"}</Key>
               <Key keyCode={KEYCODE.KeyM}>{"M"}</Key>
-
               <Key keyCode={KEYCODE.Comma}>
                 <span>{"<"}</span>
                 <span>{","}</span>
@@ -523,40 +469,25 @@ function KeyboardLayout() {
                 <span>{"?"}</span>
                 <span>{"/"}</span>
               </Key>
-
-              <Key keyCode={KEYCODE.ShiftRight} width={77}>
-                {"shift"}
-              </Key>
+              <Key keyCode={KEYCODE.ShiftRight} width={77}>{"shift"}</Key>
               <Key keyCode={KEYCODE.ArrowUp}>
                 <IconChevronUp className="size-[12px]" />
               </Key>
-              <Key keyCode={KEYCODE.End}>
-                {"end"}
-              </Key>
+              <Key keyCode={KEYCODE.End}>{"end"}</Key>
             </Row>
 
             <Row>
-              <Key keyCode={KEYCODE.ControlLeft} width={62}>
-                {"ctrl"}
-              </Key>
-              <Key keyCode={KEYCODE.AltLeft} width={62}>
-                {"option"}
-              </Key>
+              <Key keyCode={KEYCODE.ControlLeft} width={62}>{"ctrl"}</Key>
+              <Key keyCode={KEYCODE.AltLeft} width={62}>{"option"}</Key>
               <Key keyCode={KEYCODE.MetaLeft} width={62}>
                 <IconCommand className="size-[12px]" />
               </Key>
-
               <Key keyCode={KEYCODE.Space} width={314} />
-
               <Key keyCode={KEYCODE.MetaRight}>
                 <IconCommand className="size-[12px]" />
               </Key>
-              <Key keyCode={KEYCODE.Fn}>
-                {"fn"}
-              </Key>
-              <Key keyCode={KEYCODE.ControlRight}>
-                {"ctrl"}
-              </Key>
+              <Key keyCode={KEYCODE.Fn}>{"fn"}</Key>
+              <Key keyCode={KEYCODE.ControlRight}>{"ctrl"}</Key>
               <Key keyCode={KEYCODE.ArrowLeft}>
                 <IconChevronLeft className="size-[12px]" />
               </Key>
@@ -574,42 +505,31 @@ function KeyboardLayout() {
   );
 }
 
-function Row({
-  children
-}) {
+function Row({ children }) {
   return <div className="flex">{children}</div>;
 }
 
-function Key({
-  width = 50,
-  children,
-  className,
-  keyCode
-}) {
-  const { themeName, pressedKeys, pressKey, releaseKey, triggerPointerHaptic } = useKeyboardContext();
+function Key({ width = 50, children, className, keyCode }) {
+  const { themeName, pressedKeys, pressKey, releaseKey, triggerPointerHaptic } =
+    useKeyboardContext();
   const isPressed = keyCode ? pressedKeys.has(keyCode) : false;
   const keyVariantSlot = resolveKeyVariant(themeName, keyCode);
   const keyVariant = KEYBOARD_THEMES[themeName].variants[keyVariantSlot];
 
   const handlePointerDown = (event) => {
-    if (!keyCode || event.button !== 0 || isPressed) {
-      return;
-    }
+    if (!keyCode || event.button !== 0 || isPressed) return;
 
     event.preventDefault();
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
     } catch {
-      // Ignore capture failures on browsers/platforms that do not support this path.
+      // Ignore capture failures on browsers/platforms that do not support this.
     }
     pressKey(keyCode, "pointer");
   };
 
   const handlePointerRelease = () => {
-    if (!keyCode || !isPressed) {
-      return;
-    }
-
+    if (!keyCode || !isPressed) return;
     releaseKey(keyCode, "pointer");
   };
 
@@ -618,13 +538,21 @@ function Key({
       type="button"
       onClick={triggerPointerHaptic}
       aria-label={keyCode}
+      tabIndex={-1}
+      onMouseDown={(event) => {
+        event.preventDefault();
+      }}
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerRelease}
       onPointerCancel={handlePointerRelease}
-      onPointerLeave={handlePointerRelease}
+      // NOTE: onPointerLeave intentionally removed — it was causing key jamming.
+      // setPointerCapture keeps the pointer locked to this element during a press,
+      // so onLostPointerCapture reliably fires when the pointer is truly released,
+      // even if the cursor moves off the key mid-press.
       onLostPointerCapture={handlePointerRelease}
       style={{ height: 50, width }}
-      className="flex items-end cursor-pointer touch-none appearance-none border-0 bg-transparent p-0 text-left focus:outline-none">
+      className="flex items-end cursor-pointer touch-none appearance-none border-0 bg-transparent p-0 text-left focus:outline-none"
+    >
       <div
         className={cn(
           "relative overflow-hidden h-[50px] rounded-[4px] rounded-t-[12px] border border-border/70 flex items-start justify-center transition-all duration-100",
@@ -633,7 +561,8 @@ function Key({
         style={{
           width: `${width}px`,
           backgroundColor: toRgba(keyVariant.bg, 0.8),
-        }}>
+        }}
+      >
         <div
           className={cn(
             "relative z-10 h-[37px] rounded-[6px] border border-t-0 border-border/70 transition-all duration-100",
@@ -644,7 +573,8 @@ function Key({
             width: `${width - 13}px`,
             backgroundColor: keyVariant.bg,
             color: keyVariant.text,
-          }}>
+          }}
+        >
           {children}
         </div>
 
@@ -652,12 +582,14 @@ function Key({
           className={cn(
             "absolute z-0 bottom-0 right-0 h-px w-8 rotate-70 translate-x-3.5 bg-foreground/15 transition-all duration-100",
             isPressed && "rotate-60"
-          )} />
+          )}
+        />
         <div
           className={cn(
             "absolute z-0 bottom-0 left-0 h-px w-8 -rotate-70 -translate-x-3.5 bg-foreground/15 transition-all duration-100",
             isPressed && "-rotate-60"
-          )} />
+          )}
+        />
       </div>
     </button>
   );
@@ -667,7 +599,7 @@ function Key({
 // Keyboard constants
 // -----------------------------------------------------------------------------
 
-export let KEYCODE = ((function(KEYCODE) {
+export let KEYCODE = ((function (KEYCODE) {
   KEYCODE["Escape"] = "Escape";
   KEYCODE["F1"] = "F1";
   KEYCODE["F2"] = "F2";
@@ -756,100 +688,134 @@ export let KEYCODE = ((function(KEYCODE) {
   return KEYCODE;
 })({}));
 
+const HANDLED_KEYCODES = new Set(Object.values(KEYCODE));
+
+/**
+ * Decides whether to swallow a native key event when disableNativeBehavior=true.
+ *
+ * Rules (all must pass to block):
+ * 1. The key is one we render on the keyboard.
+ * 2. No modifier combo is held (Cmd/Ctrl/Alt) — we never block shortcuts like
+ *    Cmd+R, Cmd+Shift+R, Cmd+T, Ctrl+C, Alt+Tab, etc.
+ * 3. The focused element is not an input/textarea/select or contenteditable.
+ * 4. Space/Enter are not blocked when focus is on a button/link/role=button —
+ *    this fixes spacebar triggering theme toggles and other nav buttons.
+ */
+function shouldBlockNativeKeyBehavior(event) {
+  // Never block modifier combos — lets Cmd+R, Cmd+Shift+R, Ctrl+C, Alt+Tab, etc. through
+  if (event.metaKey || event.ctrlKey || event.altKey) {
+    return false;
+  }
+
+  if (!HANDLED_KEYCODES.has(event.code)) {
+    return false;
+  }
+
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return true;
+  }
+
+  // Always allow native behaviour inside text inputs
+  if (target.isContentEditable) return false;
+  const tag = target.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return false;
+
+  // Space and Enter activate focused buttons/links natively — don't block those.
+  // Without this, pressing Space scrolls the keyboard visual but also fires
+  // the focused theme toggle / nav button click simultaneously.
+  if (event.code === "Space" || event.code === "Enter") {
+    const role = target.getAttribute("role");
+    if (tag === "BUTTON" || tag === "A" || role === "button" || role === "link") {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 const DEFAULT_KEY_VARIANT_SLOT = "light";
 
-const CLASSIC_DARK_KEYS = [
-  KEYCODE.F5,
-  KEYCODE.F6,
-  KEYCODE.F7,
-  KEYCODE.F8,
-  KEYCODE.F9,
-  KEYCODE.F13,
-  KEYCODE.Delete,
-  KEYCODE.F14,
+const TYPIKS_ACCENT_KEYS = [KEYCODE.Escape, KEYCODE.Enter];
+
+const TYPIKS_ACCENT2_KEYS = [
   KEYCODE.Backspace,
-  KEYCODE.PageUp,
+  KEYCODE.Delete,
+  KEYCODE.ArrowLeft,
+  KEYCODE.ArrowRight,
+  KEYCODE.ArrowUp,
+  KEYCODE.ArrowDown,
+];
+
+const TYPIKS_ACCENT3_KEYS = [
   KEYCODE.Tab,
-  KEYCODE.Backslash,
-  KEYCODE.PageDown,
   KEYCODE.CapsLock,
-  KEYCODE.Enter,
-  KEYCODE.Home,
   KEYCODE.ShiftLeft,
   KEYCODE.ShiftRight,
-  KEYCODE.End,
-  KEYCODE.ControlLeft,
-  KEYCODE.AltLeft,
-  KEYCODE.MetaLeft,
-  KEYCODE.MetaRight,
-  KEYCODE.Fn,
-  KEYCODE.ControlRight,
+  KEYCODE.Space,
+];
+
+const CLASSIC_DARK_KEYS = [
+  KEYCODE.F5, KEYCODE.F6, KEYCODE.F7, KEYCODE.F8, KEYCODE.F9,
+  KEYCODE.F13, KEYCODE.Delete, KEYCODE.F14,
+  KEYCODE.Backspace, KEYCODE.PageUp,
+  KEYCODE.Tab, KEYCODE.Backslash, KEYCODE.PageDown,
+  KEYCODE.CapsLock, KEYCODE.Enter, KEYCODE.Home,
+  KEYCODE.ShiftLeft, KEYCODE.ShiftRight, KEYCODE.End,
+  KEYCODE.ControlLeft, KEYCODE.AltLeft, KEYCODE.MetaLeft,
+  KEYCODE.MetaRight, KEYCODE.Fn, KEYCODE.ControlRight,
 ];
 
 const MINT_DARK_KEYS = [
-  KEYCODE.F5,
-  KEYCODE.F6,
-  KEYCODE.F7,
-  KEYCODE.F8,
-  KEYCODE.F9,
-  KEYCODE.F13,
-  KEYCODE.Delete,
-  KEYCODE.F14,
-  KEYCODE.Backspace,
-  KEYCODE.PageUp,
-  KEYCODE.Tab,
-  KEYCODE.PageDown,
-  KEYCODE.CapsLock,
-  KEYCODE.Home,
-  KEYCODE.ShiftLeft,
-  KEYCODE.ShiftRight,
-  KEYCODE.End,
-  KEYCODE.ControlLeft,
-  KEYCODE.AltLeft,
-  KEYCODE.MetaLeft,
-  KEYCODE.MetaRight,
-  KEYCODE.Fn,
-  KEYCODE.ControlRight,
+  KEYCODE.F5, KEYCODE.F6, KEYCODE.F7, KEYCODE.F8, KEYCODE.F9,
+  KEYCODE.F13, KEYCODE.Delete, KEYCODE.F14,
+  KEYCODE.Backspace, KEYCODE.PageUp,
+  KEYCODE.Tab, KEYCODE.PageDown,
+  KEYCODE.CapsLock, KEYCODE.Home,
+  KEYCODE.ShiftLeft, KEYCODE.ShiftRight, KEYCODE.End,
+  KEYCODE.ControlLeft, KEYCODE.AltLeft, KEYCODE.MetaLeft,
+  KEYCODE.MetaRight, KEYCODE.Fn, KEYCODE.ControlRight,
 ];
 
 // DEFINE YOUR CUSTOM THEMES HERE
 const KEYBOARD_THEMES = {
   typiks: {
     variants: {
-      accent: { bg: "var(--primary)", text: "var(--primary-foreground)" },
-      dark: { bg: "var(--muted)", text: "var(--foreground)" },
-      light: { bg: "var(--card)", text: "var(--card-foreground)" },
+      accent:  { bg: "var(--primary)",   text: "var(--primary-foreground)" },
+      accent2: { bg: "var(--chart-2)",   text: "var(--foreground)" },
+      accent3: { bg: "var(--chart-4)",   text: "var(--foreground)" },
+      dark:    { bg: "var(--muted)",     text: "var(--foreground)" },
+      light:   { bg: "var(--card)",      text: "var(--card-foreground)" },
     },
     keyVariantOverrides: buildKeyVariantOverrides({
-      accent: [KEYCODE.Escape],
-      dark: CLASSIC_DARK_KEYS,
+      accent:  TYPIKS_ACCENT_KEYS,
+      accent2: TYPIKS_ACCENT2_KEYS,
+      accent3: TYPIKS_ACCENT3_KEYS,
+      dark:    CLASSIC_DARK_KEYS,
     }),
   },
   classic: {
     variants: {
       accent: { bg: "var(--chart-3)", text: "var(--foreground)" },
-      dark: { bg: "var(--muted)", text: "var(--foreground)" },
-      light: { bg: "var(--card)", text: "var(--card-foreground)" },
+      dark:   { bg: "var(--muted)",   text: "var(--foreground)" },
+      light:  { bg: "var(--card)",    text: "var(--card-foreground)" },
     },
     keyVariantOverrides: buildKeyVariantOverrides({
       accent: [KEYCODE.Escape],
-      dark: CLASSIC_DARK_KEYS,
+      dark:   CLASSIC_DARK_KEYS,
     }),
   },
   mint: {
     variants: {
       accent: { bg: "var(--chart-2)", text: "var(--foreground)" },
-      dark: { bg: "var(--chart-4)", text: "var(--foreground)" },
-      light: { bg: "var(--card)", text: "var(--card-foreground)" },
+      dark:   { bg: "var(--chart-4)", text: "var(--foreground)" },
+      light:  { bg: "var(--card)",    text: "var(--card-foreground)" },
     },
     keyVariantOverrides: buildKeyVariantOverrides({
       accent: [
-        KEYCODE.Escape,
-        KEYCODE.Enter,
-        KEYCODE.ArrowLeft,
-        KEYCODE.ArrowRight,
-        KEYCODE.ArrowUp,
-        KEYCODE.ArrowDown,
+        KEYCODE.Escape, KEYCODE.Enter,
+        KEYCODE.ArrowLeft, KEYCODE.ArrowRight,
+        KEYCODE.ArrowUp, KEYCODE.ArrowDown,
       ],
       dark: MINT_DARK_KEYS,
     }),
@@ -857,17 +823,14 @@ const KEYBOARD_THEMES = {
   royal: {
     variants: {
       accent: { bg: "var(--chart-1)", text: "var(--foreground)" },
-      dark: { bg: "var(--chart-5)", text: "var(--foreground)" },
-      light: { bg: "var(--card)", text: "var(--card-foreground)" },
+      dark:   { bg: "var(--chart-5)", text: "var(--foreground)" },
+      light:  { bg: "var(--card)",    text: "var(--card-foreground)" },
     },
     keyVariantOverrides: buildKeyVariantOverrides({
       accent: [
-        KEYCODE.Escape,
-        KEYCODE.Enter,
-        KEYCODE.ArrowLeft,
-        KEYCODE.ArrowRight,
-        KEYCODE.ArrowUp,
-        KEYCODE.ArrowDown,
+        KEYCODE.Escape, KEYCODE.Enter,
+        KEYCODE.ArrowLeft, KEYCODE.ArrowRight,
+        KEYCODE.ArrowUp, KEYCODE.ArrowDown,
       ],
       dark: MINT_DARK_KEYS,
     }),
@@ -875,95 +838,77 @@ const KEYBOARD_THEMES = {
   dolch: {
     variants: {
       accent: { bg: "var(--destructive)", text: "var(--destructive-foreground)" },
-      dark: { bg: "var(--secondary)", text: "var(--secondary-foreground)" },
-      light: { bg: "var(--card)", text: "var(--card-foreground)" },
+      dark:   { bg: "var(--secondary)",   text: "var(--secondary-foreground)" },
+      light:  { bg: "var(--card)",        text: "var(--card-foreground)" },
     },
     keyVariantOverrides: buildKeyVariantOverrides({
       accent: [KEYCODE.Escape, KEYCODE.Enter, KEYCODE.Space],
-      dark: [...MINT_DARK_KEYS, KEYCODE.Backquote, KEYCODE.Backslash],
+      dark:   [...MINT_DARK_KEYS, KEYCODE.Backquote, KEYCODE.Backslash],
     }),
   },
   sand: {
     variants: {
       accent: { bg: "var(--chart-4)", text: "var(--foreground)" },
-      dark: { bg: "var(--chart-5)", text: "var(--foreground)" },
-      light: { bg: "var(--card)", text: "var(--card-foreground)" },
+      dark:   { bg: "var(--chart-5)", text: "var(--foreground)" },
+      light:  { bg: "var(--card)",    text: "var(--card-foreground)" },
     },
     keyVariantOverrides: buildKeyVariantOverrides({
       accent: [KEYCODE.Escape, KEYCODE.Enter],
-      dark: MINT_DARK_KEYS,
+      dark:   MINT_DARK_KEYS,
     }),
   },
   scarlet: {
     variants: {
       accent: { bg: "var(--destructive)", text: "var(--destructive-foreground)" },
-      dark: { bg: "var(--destructive)", text: "var(--destructive-foreground)" },
-      light: { bg: "var(--card)", text: "var(--card-foreground)" },
+      dark:   { bg: "var(--destructive)", text: "var(--destructive-foreground)" },
+      light:  { bg: "var(--card)",        text: "var(--card-foreground)" },
     },
     keyVariantOverrides: buildKeyVariantOverrides({
       accent: [KEYCODE.Escape, KEYCODE.Enter],
-      dark: MINT_DARK_KEYS,
+      dark:   MINT_DARK_KEYS,
     }),
   },
 };
 
-function buildKeyVariantOverrides(
-  {
-    accent = [],
-    dark = [],
-    light = []
-  }
-) {
+function buildKeyVariantOverrides({ accent = [], accent2 = [], accent3 = [], dark = [], light = [] }) {
   const entries = [];
-
-  for (const keyCode of accent) {
-    entries.push([keyCode, "accent"]);
-  }
-  for (const keyCode of dark) {
-    entries.push([keyCode, "dark"]);
-  }
-  for (const keyCode of light) {
-    entries.push([keyCode, "light"]);
-  }
-
+  for (const keyCode of light)   entries.push([keyCode, "light"]);
+  for (const keyCode of dark)    entries.push([keyCode, "dark"]);
+  for (const keyCode of accent3) entries.push([keyCode, "accent3"]);
+  for (const keyCode of accent2) entries.push([keyCode, "accent2"]);
+  for (const keyCode of accent)  entries.push([keyCode, "accent"]);
   return Object.fromEntries(entries);
 }
 
 function resolveKeyVariant(themeName, keyCode) {
-  if (!keyCode) {
-    return DEFAULT_KEY_VARIANT_SLOT;
-  }
-  return (
-    KEYBOARD_THEMES[themeName].keyVariantOverrides[keyCode] ??
-    DEFAULT_KEY_VARIANT_SLOT
-  );
+  if (!keyCode) return DEFAULT_KEY_VARIANT_SLOT;
+  return KEYBOARD_THEMES[themeName].keyVariantOverrides[keyCode] ?? DEFAULT_KEY_VARIANT_SLOT;
 }
 
 function toRgba(color, alpha) {
-  if (color.startsWith("var(") || color.startsWith("oklch(") || color.startsWith("hsl(") || color.startsWith("rgb(")) {
+  if (
+    color.startsWith("var(") ||
+    color.startsWith("oklch(") ||
+    color.startsWith("hsl(") ||
+    color.startsWith("rgb(")
+  ) {
     const percent = Math.round(alpha * 100);
     return `color-mix(in oklab, ${color} ${percent}%, transparent)`;
   }
 
-  if (!color.startsWith("#")) {
-    return color;
-  }
+  if (!color.startsWith("#")) return color;
 
   const value = color.slice(1);
-  const hex = value.length === 3
-    ? value
-        .split("")
-        .map((char) => `${char}${char}`)
-        .join("")
-    : value;
+  const hex =
+    value.length === 3
+      ? value.split("").map((char) => `${char}${char}`).join("")
+      : value;
 
-  if (hex.length !== 6) {
-    return color;
-  }
+  if (hex.length !== 6) return color;
 
-  const red = Number.parseInt(hex.slice(0, 2), 16);
+  const red   = Number.parseInt(hex.slice(0, 2), 16);
   const green = Number.parseInt(hex.slice(2, 4), 16);
-  const blue = Number.parseInt(hex.slice(4, 6), 16);
+  const blue  = Number.parseInt(hex.slice(4, 6), 16);
 
   return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
 }
