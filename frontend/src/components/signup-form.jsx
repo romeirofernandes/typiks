@@ -13,12 +13,17 @@ import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { createUserWithEmailAndPassword, signInWithPopup } from "firebase/auth";
 import { auth, googleProvider } from "@/firebase";
+import { ViewIcon, ViewOffIcon } from "hugeicons-react";
+import GoogleLogo from "@/components/icons/GoogleLogo";
 
 export function SignUpForm({ className, ...props }) {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [username, setUsername] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const createUserInDB = async (uid, email, username) => {
@@ -52,6 +57,10 @@ export function SignUpForm({ className, ...props }) {
     setLoading(true);
 
     try {
+      if (password !== confirmPassword) {
+        alert("Passwords do not match");
+        return;
+      }
       const userCredential = await createUserWithEmailAndPassword(
         auth,
         email,
@@ -120,13 +129,49 @@ export function SignUpForm({ className, ...props }) {
               </div>
               <div className="grid gap-3">
                 <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    aria-label={showPassword ? "hide password" : "show password"}
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {showPassword ? <ViewOffIcon size={18} /> : <ViewIcon size={18} />}
+                  </button>
+                </div>
+              </div>
+              <div className="grid gap-3">
+                <Label htmlFor="confirm-password">Confirm Password</Label>
+                <div className="relative">
+                  <Input
+                    id="confirm-password"
+                    type={showConfirmPassword ? "text" : "password"}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    aria-label={showConfirmPassword ? "hide password" : "show password"}
+                    onClick={() => setShowConfirmPassword((v) => !v)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {showConfirmPassword ? (
+                      <ViewOffIcon size={18} />
+                    ) : (
+                      <ViewIcon size={18} />
+                    )}
+                  </button>
+                </div>
               </div>
               <div className="flex flex-col gap-3">
                 <Button type="submit" className="w-full" disabled={loading}>
@@ -139,6 +184,7 @@ export function SignUpForm({ className, ...props }) {
                   onClick={handleGoogleSignUp}
                   disabled={loading}
                 >
+                  <GoogleLogo />
                   {loading
                     ? "Signing up with Google..."
                     : "Sign Up with Google"}
