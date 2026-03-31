@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
@@ -13,7 +13,6 @@ const Game = () => {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
   const [gameState, setGameState] = useState("connecting");
-  const [ws, setWs] = useState(null);
   const [opponent, setOpponent] = useState(null);
   const [countdown, setCountdown] = useState(null);
   const [words, setWords] = useState([]);
@@ -28,33 +27,22 @@ const Game = () => {
   const inputRef = useRef(null);
   const timerRef = useRef(null);
   const wsRef = useRef(null);
-
-  useEffect(() => {
-    fetchUserStats();
-
-    return () => {
-      cleanup();
-    };
-  }, [currentUser]);
-
-  useEffect(() => {
-    if (userStats && gameState === "connecting") {
-      connectWebSocket();
-    }
-  }, [userStats]);
+  const isConnectingRef = useRef(false);
+  const connectAttemptRef = useRef(0);
 
   const cleanup = () => {
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
     }
+    isConnectingRef.current = false;
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
   };
 
-  const fetchUserStats = async () => {
+  const fetchUserStats = useCallback(async () => {
     if (!currentUser) return;
 
     try {
@@ -80,15 +68,36 @@ const Game = () => {
     } catch (error) {
       console.error("Failed to fetch user stats:", error);
     }
-  };
+  }, [currentUser]);
 
-  const connectWebSocket = async () => {
-    if (!userStats) return;
+  const connectWebSocket = useCallback(async () => {
+    if (!userStats || !currentUser) return;
+    if (isConnectingRef.current) return;
+    if (
+      wsRef.current &&
+      (wsRef.current.readyState === WebSocket.OPEN ||
+        wsRef.current.readyState === WebSocket.CONNECTING)
+    ) {
+      return;
+    }
+
+    isConnectingRef.current = true;
+    const attemptId = ++connectAttemptRef.current;
 
     try {
-      cleanup(); // Clean up any existing connections
+      // Only tear down an existing socket if we're about to replace it.
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
 
       const idToken = await currentUser.getIdToken();
+
+      // Ignore stale async connect attempts that lost the race.
+      if (attemptId !== connectAttemptRef.current) {
+        isConnectingRef.current = false;
+        return;
+      }
 
       const serverUrl = import.meta.env.VITE_SERVER_URL || "localhost:8787";
       const wsUrl = serverUrl.startsWith("http")
@@ -97,9 +106,14 @@ const Game = () => {
 
       const websocket = new WebSocket(`${wsUrl}/ws`);
       wsRef.current = websocket;
-      setWs(websocket);
 
       websocket.onopen = () => {
+        if (attemptId !== connectAttemptRef.current || wsRef.current !== websocket) {
+          websocket.close();
+          return;
+        }
+
+        isConnectingRef.current = false;
         setGameState("waiting");
 
         // Join the matchmaking queue with proper user info
@@ -120,16 +134,60 @@ const Game = () => {
         handleWebSocketMessage(message);
       };
 
-      websocket.onclose = (event) => {
+      websocket.onclose = () => {
+        if (wsRef.current === websocket) {
+          wsRef.current = null;
+        }
+        isConnectingRef.current = false;
+
+          setGameState((prev) => {
+            if (prev === "playing" || prev === "countdown" || prev === "waiting") {
+              setGameResults({
+                player1: {
+                  id: currentUser?.uid || "current-player",
+                  username: userStats?.username || "You",
+                  score: 0,
+                  won: false,
+                },
+                player2: {
+                  id: opponent?.id || "opponent",
+                  username: opponent?.username || "Opponent",
+                  score: 0,
+                  won: false,
+                },
+                isDraw: false,
+                reason: "connection_lost",
+              });
+              return "finished";
+            }
+
+            return prev;
+          });
       };
 
       websocket.onerror = (error) => {
         console.error("WebSocket error:", error);
+        isConnectingRef.current = false;
       };
     } catch (error) {
       console.error("Failed to connect WebSocket:", error);
+      isConnectingRef.current = false;
     }
-  };
+  }, [currentUser, userStats]);
+
+  useEffect(() => {
+    fetchUserStats();
+
+    return () => {
+      cleanup();
+    };
+  }, [fetchUserStats]);
+
+  useEffect(() => {
+    if (userStats && gameState === "connecting" && !wsRef.current) {
+      connectWebSocket();
+    }
+  }, [connectWebSocket, gameState, userStats]);
 
   const handleWebSocketMessage = (message) => {
     switch (message.type) {
@@ -163,6 +221,7 @@ const Game = () => {
       }
 
       case "PLAYER_PROGRESS":
+      {
         // Handle the corrected progress data structure
         const myData =
           message.player1.id === currentUser.uid
@@ -178,6 +237,53 @@ const Game = () => {
         setOpponentScore(opponentData.score);
         setOpponentWordIndex(opponentData.currentWordIndex);
         break;
+      }
+
+      case "GAME_RESUMED": {
+        setOpponent(message.opponent || null);
+        setWords(Array.isArray(message.words) ? message.words : []);
+
+        const myData =
+          message.player1?.id === currentUser.uid
+            ? message.player1
+            : message.player2;
+        const opponentData =
+          message.player1?.id === currentUser.uid
+            ? message.player2
+            : message.player1;
+
+        setMyScore(Number.isFinite(myData?.score) ? myData.score : 0);
+        setCurrentWordIndex(
+          Number.isFinite(myData?.currentWordIndex)
+            ? myData.currentWordIndex
+            : 0
+        );
+        setOpponentScore(
+          Number.isFinite(opponentData?.score) ? opponentData.score : 0
+        );
+        setOpponentWordIndex(
+          Number.isFinite(opponentData?.currentWordIndex)
+            ? opponentData.currentWordIndex
+            : 0
+        );
+
+        if (message.status === "playing") {
+          const resumedDuration = Number.isFinite(message.duration)
+            ? Math.max(0, Math.round(message.duration / 1000))
+            : 60;
+          setCountdown(null);
+          setTimeLeft(resumedDuration);
+          setGameState("playing");
+          startTimer();
+          setTimeout(() => inputRef.current?.focus(), 100);
+        } else if (message.status === "countdown") {
+          setGameState("countdown");
+        } else {
+          setGameState("waiting");
+        }
+
+        break;
+      }
 
       case "WRONG_WORD":
         // Optional: Add visual feedback for wrong words
@@ -225,6 +331,9 @@ const Game = () => {
           clearInterval(timerRef.current);
           timerRef.current = null;
         }
+        break;
+
+      default:
         break;
     }
   };
@@ -316,21 +425,27 @@ const Game = () => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
 
-      if (gameState !== "playing" || !input.trim() || !wsRef.current) return;
+        if (gameState !== "playing" || !input.trim() || !wsRef.current) return;
+        if (wsRef.current.readyState !== WebSocket.OPEN) return;
 
-      wsRef.current.send(
-        JSON.stringify({
-          type: "PLAYER_INPUT",
-          input: input.trim(),
-        })
-      );
+        try {
+          wsRef.current.send(
+            JSON.stringify({
+              type: "PLAYER_INPUT",
+              input: input.trim(),
+            })
+          );
+        } catch (error) {
+          console.error("Failed to send player input:", error);
+          return;
+        }
 
       setInput("");
     }
   };
 
   const handleBackToDashboard = () => {
-    if (wsRef.current) {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: "LEAVE_QUEUE" }));
     }
     cleanup();

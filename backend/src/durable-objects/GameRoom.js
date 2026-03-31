@@ -1,6 +1,8 @@
 import { verifyFirebaseIdToken } from '../middleware/firebaseAuth.js';
 import { generateSeed, generateWords, WORD_DIFFICULTIES } from '../utils/wordGenerator.js';
 
+const MAX_PLAYER_INPUT_LENGTH = 32;
+
 export class GameRoom {
 	constructor(controller, env) {
 		this.controller = controller;
@@ -42,7 +44,7 @@ export class GameRoom {
 		const webSocketPair = new WebSocketPair();
 		const [client, server] = Object.values(webSocketPair);
 
-		this.handleSession(server, request);
+		this.handleSession(server);
 
 		return new Response(null, {
 			status: 101,
@@ -50,7 +52,114 @@ export class GameRoom {
 		});
 	}
 
-	async handleSession(webSocket, request) {
+	parseMessage(data) {
+		if (typeof data !== 'string') return null;
+
+		try {
+			const parsed = JSON.parse(data);
+			if (!parsed || typeof parsed !== 'object') {
+				return null;
+			}
+			return parsed;
+		} catch {
+			return null;
+		}
+	}
+
+	generateEntityId(prefix) {
+		if (typeof crypto?.randomUUID === 'function') {
+			return `${prefix}_${crypto.randomUUID()}`;
+		}
+
+		return `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+	}
+
+	isSocketOpen(webSocket) {
+		if (!webSocket) return false;
+
+		const openStates = [WebSocket.OPEN, WebSocket.READY_STATE_OPEN, 1].filter((state) => Number.isFinite(state));
+		return openStates.includes(webSocket.readyState);
+	}
+
+	handleSessionTermination(sessionId, playerId) {
+		this.sessions.delete(sessionId);
+
+		if (!playerId) {
+			return;
+		}
+
+		const ownedSessionId = this.playerToSession.get(playerId);
+		if (ownedSessionId !== sessionId) {
+			return;
+		}
+
+		this.handlePlayerDisconnect(playerId);
+		this.playerToSession.delete(playerId);
+	}
+
+	closeSession(sessionId, code = 1000, reason = 'Session replaced') {
+		const previousSocket = this.sessions.get(sessionId);
+		if (!previousSocket) {
+			return;
+		}
+
+		try {
+			previousSocket.close(code, reason);
+		} catch {
+			// ignore close errors from stale sockets
+		}
+
+		this.sessions.delete(sessionId);
+	}
+
+	buildProgressPayload(game) {
+		return {
+			player1: {
+				id: game.player1.id,
+				score: game.player1.score,
+				currentWordIndex: game.player1.currentWordIndex,
+			},
+			player2: {
+				id: game.player2.id,
+				score: game.player2.score,
+				currentWordIndex: game.player2.currentWordIndex,
+			},
+		};
+	}
+
+	rebindPlayerToCurrentGame(playerId, sessionId) {
+		const gameId = this.playerToGame.get(playerId);
+		if (!gameId) return false;
+
+		const game = this.activeGames.get(gameId);
+		if (!game) {
+			this.playerToGame.delete(playerId);
+			return false;
+		}
+
+		const isPlayer1 = game.player1.id === playerId;
+		const player = isPlayer1 ? game.player1 : game.player2;
+		const opponent = isPlayer1 ? game.player2 : game.player1;
+		player.sessionId = sessionId;
+
+		this.sendToPlayer(sessionId, {
+			type: 'GAME_RESUMED',
+			gameId,
+			status: game.status,
+			opponent: {
+				id: opponent.id,
+				username: opponent.userInfo.username,
+				rating: opponent.userInfo.rating,
+			},
+			words: game.words,
+			duration: game.endTime ? Math.max(0, game.endTime - Date.now()) : 0,
+			...this.buildProgressPayload(game),
+		});
+
+		return true;
+	}
+
+	async handleSession(webSocket) {
 		webSocket.accept();
 
 		const sessionId = this.generateSessionId();
@@ -60,13 +169,27 @@ export class GameRoom {
 
 		webSocket.addEventListener('message', async (event) => {
 			try {
-				const message = JSON.parse(event.data);
+				const message = this.parseMessage(event.data);
+				if (!message || typeof message.type !== 'string') {
+					return;
+				}
 
 				switch (message.type) {
 					case 'JOIN_QUEUE':
 						try {
 							playerId = await this.authenticateAndGetPlayerId(message);
+
+							const previousSessionId = this.playerToSession.get(playerId);
+							if (previousSessionId && previousSessionId !== sessionId) {
+								this.closeSession(previousSessionId, 1000, 'Replaced by newer session');
+							}
+
 							this.playerToSession.set(playerId, sessionId);
+
+							if (this.rebindPlayerToCurrentGame(playerId, sessionId)) {
+								break;
+							}
+
 							this.addWaitingPlayer(playerId, sessionId, this.sanitizeUserInfo(message.userInfo));
 						} catch (error) {
 							console.error('JOIN_QUEUE auth failed:', error);
@@ -91,6 +214,9 @@ export class GameRoom {
 							this.handlePlayerInput(playerId, message.input);
 						}
 						break;
+
+					default:
+						break;
 				}
 			} catch (error) {
 				console.error('Error handling WebSocket message:', error);
@@ -98,25 +224,17 @@ export class GameRoom {
 		});
 
 		webSocket.addEventListener('close', () => {
-			this.sessions.delete(sessionId);
-			if (playerId) {
-				this.handlePlayerDisconnect(playerId);
-				this.playerToSession.delete(playerId);
-			}
+			this.handleSessionTermination(sessionId, playerId);
 		});
 
 		webSocket.addEventListener('error', (error) => {
 			console.error('WebSocket error:', error);
-			this.sessions.delete(sessionId);
-			if (playerId) {
-				this.handlePlayerDisconnect(playerId);
-				this.playerToSession.delete(playerId);
-			}
+			this.handleSessionTermination(sessionId, playerId);
 		});
 	}
 
 	generateSessionId() {
-		return `session_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+		return this.generateEntityId('session');
 	}
 
 	addWaitingPlayer(playerId, sessionId, userInfo) {
@@ -145,7 +263,7 @@ export class GameRoom {
 	}
 
 	createGame(player1Id, player1Data, player2Id, player2Data) {
-		const gameId = `game_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+		const gameId = this.generateEntityId('game');
 		const wordSeed = generateSeed();
 		const difficulty = WORD_DIFFICULTIES.medium;
 		const words = generateWords(wordSeed, difficulty, 30);
@@ -256,6 +374,11 @@ export class GameRoom {
 	}
 
 	handlePlayerInput(playerId, input) {
+		if (typeof input !== 'string') return;
+
+		const normalizedInput = input.trim().toLowerCase();
+		if (!normalizedInput || normalizedInput.length > MAX_PLAYER_INPUT_LENGTH) return;
+
 		const gameId = this.playerToGame.get(playerId);
 		if (!gameId) return;
 
@@ -264,26 +387,20 @@ export class GameRoom {
 
 		const isPlayer1 = game.player1.id === playerId;
 		const player = isPlayer1 ? game.player1 : game.player2;
-		const opponent = isPlayer1 ? game.player2 : game.player1;
 
 		const currentWord = game.words[player.currentWordIndex];
+		if (typeof currentWord !== 'string') {
+			this.endGame(gameId, 'completed');
+			return;
+		}
 
-		if (input.trim().toLowerCase() === currentWord.toLowerCase()) {
+		if (normalizedInput === currentWord.toLowerCase()) {
 			player.score++;
 			player.currentWordIndex++;
 
 			this.sendToPlayers(game, {
 				type: 'PLAYER_PROGRESS',
-				player1: {
-					id: game.player1.id,
-					score: game.player1.score,
-					currentWordIndex: game.player1.currentWordIndex,
-				},
-				player2: {
-					id: game.player2.id,
-					score: game.player2.score,
-					currentWordIndex: game.player2.currentWordIndex,
-				},
+				...this.buildProgressPayload(game),
 			});
 
 			if (player.currentWordIndex >= game.words.length) {
@@ -377,8 +494,12 @@ export class GameRoom {
 	}
 
 	sendToPlayer(sessionId, message) {
+		if (typeof sessionId !== 'string' || sessionId.length === 0) {
+			return;
+		}
+
 		const webSocket = this.sessions.get(sessionId);
-		if (webSocket && webSocket.readyState === WebSocket.READY_STATE_OPEN) {
+		if (this.isSocketOpen(webSocket)) {
 			try {
 				webSocket.send(JSON.stringify(message));
 			} catch (error) {
