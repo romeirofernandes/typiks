@@ -12,6 +12,8 @@ app.use(
 	cors({
 		origin: ['https://typiks.vercel.app', 'http://localhost:5173'],
 		credentials: true,
+		allowHeaders: ['Content-Type', 'Authorization'],
+		allowMethods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
 	})
 );
 

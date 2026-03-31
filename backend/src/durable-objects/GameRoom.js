@@ -1,3 +1,5 @@
+import { verifyFirebaseIdToken } from '../middleware/firebaseAuth.js';
+
 export class GameRoom {
 	constructor(controller, env) {
 		this.controller = controller;
@@ -7,6 +9,32 @@ export class GameRoom {
 		this.activeGames = new Map(); // gameId -> game data
 		this.playerToGame = new Map(); // playerId -> gameId
 		this.playerToSession = new Map(); // playerId -> sessionId
+	}
+
+	async authenticateAndGetPlayerId(message) {
+		const idToken = message?.idToken;
+		if (typeof idToken !== 'string' || idToken.length === 0) {
+			throw new Error('Missing idToken');
+		}
+		const claims = await verifyFirebaseIdToken(idToken, {
+			projectId: this.env.FIREBASE_PROJECT_ID,
+		});
+		return claims.uid;
+	}
+
+	sanitizeUserInfo(userInfo) {
+		const safe = {
+			username: 'player',
+			rating: 800,
+		};
+		if (!userInfo || typeof userInfo !== 'object') return safe;
+		if (typeof userInfo.username === 'string' && userInfo.username.trim().length > 0) {
+			safe.username = userInfo.username.trim().slice(0, 32);
+		}
+		if (Number.isFinite(userInfo.rating)) {
+			safe.rating = Math.max(0, Math.min(3000, Math.floor(userInfo.rating)));
+		}
+		return safe;
 	}
 
 	async fetch(request) {
@@ -35,9 +63,19 @@ export class GameRoom {
 
 				switch (message.type) {
 					case 'JOIN_QUEUE':
-						playerId = message.playerId;
-						this.playerToSession.set(playerId, sessionId);
-						this.addWaitingPlayer(playerId, sessionId, message.userInfo);
+						try {
+							playerId = await this.authenticateAndGetPlayerId(message);
+							this.playerToSession.set(playerId, sessionId);
+							this.addWaitingPlayer(playerId, sessionId, this.sanitizeUserInfo(message.userInfo));
+						} catch (error) {
+							console.error('JOIN_QUEUE auth failed:', error);
+							try {
+								webSocket.send(JSON.stringify({ type: 'ERROR', error: 'UNAUTHORIZED' }));
+							} catch {
+								// ignore
+							}
+							webSocket.close(1008, 'Unauthorized');
+						}
 						break;
 
 					case 'LEAVE_QUEUE':

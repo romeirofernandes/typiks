@@ -23,8 +23,9 @@ export function LoginForm({ className, ...props }) {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const createOrGetUser = async (uid, email, username) => {
+  const createOrGetUser = async (user, username) => {
     try {
+      const idToken = await user.getIdToken();
       const response = await fetch(
         `${
           import.meta.env.VITE_SERVER_URL || "http://localhost:8787"
@@ -33,8 +34,9 @@ export function LoginForm({ className, ...props }) {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            Authorization: `Bearer ${idToken}`,
           },
-          body: JSON.stringify({ uid, email, username }),
+          body: JSON.stringify({ username }),
         }
       );
 
@@ -73,7 +75,7 @@ export function LoginForm({ className, ...props }) {
         result.user.displayName || result.user.email.split("@")[0];
 
       // Create or get user in database
-      await createOrGetUser(result.user.uid, result.user.email, displayName);
+      await createOrGetUser(result.user, displayName);
 
       navigate("/dashboard");
     } catch (error) {

@@ -26,8 +26,9 @@ export function SignUpForm({ className, ...props }) {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const createUserInDB = async (uid, email, username) => {
+  const createUserInDB = async (user, username) => {
     try {
+      const idToken = await user.getIdToken();
       const response = await fetch(
         `${
           import.meta.env.VITE_SERVER_URL || "http://localhost:8787"
@@ -36,8 +37,9 @@ export function SignUpForm({ className, ...props }) {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            Authorization: `Bearer ${idToken}`,
           },
-          body: JSON.stringify({ uid, email, username }),
+          body: JSON.stringify({ username }),
         }
       );
 
@@ -66,7 +68,7 @@ export function SignUpForm({ className, ...props }) {
         email,
         password
       );
-      await createUserInDB(userCredential.user.uid, email, username);
+      await createUserInDB(userCredential.user, username);
       navigate("/dashboard");
     } catch (error) {
       console.error("Sign up error:", error);
@@ -84,7 +86,7 @@ export function SignUpForm({ className, ...props }) {
       const displayName =
         result.user.displayName || result.user.email.split("@")[0];
 
-      await createUserInDB(result.user.uid, result.user.email, displayName);
+      await createUserInDB(result.user, displayName);
       navigate("/dashboard");
     } catch (error) {
       alert(`Google sign-up failed: ${error.message}`);

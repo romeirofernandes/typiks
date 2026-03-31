@@ -58,13 +58,19 @@ const Game = () => {
     if (!currentUser) return;
 
     try {
+      const idToken = await currentUser.getIdToken();
       const serverUrl = import.meta.env.VITE_SERVER_URL || "localhost:8787";
       const fullUrl = serverUrl.startsWith("http")
         ? serverUrl
         : `http://${serverUrl}`;
 
       const response = await fetch(
-        `${fullUrl}/api/users/${currentUser.uid}/stats`
+        `${fullUrl}/api/users/${currentUser.uid}/stats`,
+        {
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+          },
+        }
       );
 
       if (response.ok) {
@@ -82,6 +88,8 @@ const Game = () => {
     try {
       cleanup(); // Clean up any existing connections
 
+      const idToken = await currentUser.getIdToken();
+
       const serverUrl = import.meta.env.VITE_SERVER_URL || "localhost:8787";
       const wsUrl = serverUrl.startsWith("http")
         ? serverUrl.replace("http", "ws")
@@ -98,7 +106,7 @@ const Game = () => {
         websocket.send(
           JSON.stringify({
             type: "JOIN_QUEUE",
-            playerId: currentUser.uid,
+            idToken,
             userInfo: {
               username: userStats.username,
               rating: userStats.rating,
@@ -221,6 +229,8 @@ const Game = () => {
         ? serverUrl
         : `http://${serverUrl}`;
 
+      const idToken = await currentUser.getIdToken();
+
       // Don't update rating if opponent disconnected
       if (results.reason === "opponent_disconnected") {
         return;
@@ -242,6 +252,7 @@ const Game = () => {
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",
+            Authorization: `Bearer ${idToken}`,
           },
           body: JSON.stringify({
             won: currentUserResult.won,

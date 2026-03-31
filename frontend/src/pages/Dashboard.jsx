@@ -50,13 +50,19 @@ const Dashboard = () => {
     if (!currentUser) return;
 
     try {
+      const idToken = await currentUser.getIdToken();
       const serverUrl = import.meta.env.VITE_SERVER_URL || "localhost:8787";
       const fullUrl = serverUrl.startsWith("http")
         ? serverUrl
         : `http://${serverUrl}`;
 
       const response = await fetch(
-        `${fullUrl}/api/users/${currentUser.uid}/stats`
+        `${fullUrl}/api/users/${currentUser.uid}/stats`,
+        {
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+          },
+        }
       );
 
       if (response.ok) {
