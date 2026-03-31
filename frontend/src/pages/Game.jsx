@@ -347,11 +347,6 @@ const Game = () => {
 
       const idToken = await currentUser.getIdToken();
 
-      // Don't update rating if opponent disconnected
-      if (results.reason === "opponent_disconnected") {
-        return;
-      }
-
       // Determine if current user won
       const currentUserResult =
         results.player1.id === currentUser.uid
@@ -759,17 +754,16 @@ const Game = () => {
                     </div>
                   </div>
 
-                  {gameResults.reason !== "opponent_disconnected" &&
-                    userStats && (
-                      <div className="text-sm text-muted-foreground">
-                        <p>
-                          Your new rating:{" "}
-                          <span className={getRatingColor(userStats.rating)}>
-                            {userStats.rating}
-                          </span>
-                        </p>
-                      </div>
-                    )}
+                  {userStats && (
+                    <div className="text-sm text-muted-foreground">
+                      <p>
+                        Your new rating:{" "}
+                        <span className={getRatingColor(userStats.rating)}>
+                          {userStats.rating}
+                        </span>
+                      </p>
+                    </div>
+                  )}
 
                   <Button onClick={handleBackToDashboard} className="w-full">
                     Back to Dashboard

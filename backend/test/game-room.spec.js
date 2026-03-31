@@ -69,7 +69,7 @@ describe('GameRoom websocket session handling', () => {
 		expect(room.playerToSession.get('p1')).toBe('session-p1-new');
 	});
 
-	it('tears down game when the owning session disconnects', () => {
+	it('ends game and awards win to connected opponent on disconnect', () => {
 		const room = createRoom();
 		const game = createGame();
 		const gameId = game.id;
@@ -89,7 +89,16 @@ describe('GameRoom websocket session handling', () => {
 		expect(room.playerToGame.has('p1')).toBe(false);
 		expect(room.playerToGame.has('p2')).toBe(false);
 		expect(room.playerToSession.has('p1')).toBe(false);
-		expect(opponentSocket.sentMessages).toContainEqual({ type: 'OPPONENT_DISCONNECTED' });
+		expect(opponentSocket.sentMessages).toHaveLength(1);
+		expect(opponentSocket.sentMessages[0]).toMatchObject({
+			type: 'GAME_END',
+			results: {
+				reason: 'opponent_disconnected',
+				isDraw: false,
+				player1: { id: 'p1', won: false },
+				player2: { id: 'p2', won: true },
+			},
+		});
 	});
 
 	it('rebinds reconnecting players to the active game session', () => {

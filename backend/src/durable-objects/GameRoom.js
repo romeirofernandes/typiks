@@ -413,7 +413,7 @@ export class GameRoom {
 		}
 	}
 
-	endGame(gameId, reason = 'timeout') {
+	endGame(gameId, reason = 'timeout', options = {}) {
 		const game = this.activeGames.get(gameId);
 		if (!game) return;
 
@@ -424,15 +424,27 @@ export class GameRoom {
 		game.status = 'finished';
 
 		let winner = null;
-		if (game.player1.score > game.player2.score) {
-			winner = 'player1';
-		} else if (game.player2.score > game.player1.score) {
-			winner = 'player2';
-		} else {
-			if (game.player1.currentWordIndex > game.player2.currentWordIndex) {
-				winner = 'player1';
-			} else if (game.player2.currentWordIndex > game.player1.currentWordIndex) {
+
+		if (reason === 'opponent_disconnected') {
+			const disconnectedPlayerId = options?.disconnectedPlayerId;
+			if (disconnectedPlayerId === game.player1.id) {
 				winner = 'player2';
+			} else if (disconnectedPlayerId === game.player2.id) {
+				winner = 'player1';
+			}
+		}
+
+		if (!winner) {
+			if (game.player1.score > game.player2.score) {
+				winner = 'player1';
+			} else if (game.player2.score > game.player1.score) {
+				winner = 'player2';
+			} else {
+				if (game.player1.currentWordIndex > game.player2.currentWordIndex) {
+					winner = 'player1';
+				} else if (game.player2.currentWordIndex > game.player1.currentWordIndex) {
+					winner = 'player2';
+				}
 			}
 		}
 
@@ -474,22 +486,13 @@ export class GameRoom {
 		if (gameId) {
 			const game = this.activeGames.get(gameId);
 			if (game) {
-				if (game.gameTimer) {
-					clearTimeout(game.gameTimer);
-				}
-
-				const isPlayer1 = game.player1.id === playerId;
-				const opponent = isPlayer1 ? game.player2 : game.player1;
-				const opponentSessionId = opponent.sessionId;
-
-				this.sendToPlayer(opponentSessionId, {
-					type: 'OPPONENT_DISCONNECTED',
+				this.endGame(gameId, 'opponent_disconnected', {
+					disconnectedPlayerId: playerId,
 				});
-
-				this.playerToGame.delete(game.player1.id);
-				this.playerToGame.delete(game.player2.id);
-				this.activeGames.delete(gameId);
+				return;
 			}
+
+			this.playerToGame.delete(playerId);
 		}
 	}
 
