@@ -1,7 +1,6 @@
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "@/context/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
-// import Landing from "./pages/Landing";
 import NewLanding from "./pages/NewLanding";
 import SignUp from "./pages/SignUp";
 import SignIn from "./pages/SignIn";
@@ -15,7 +14,6 @@ export default function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          {/* <Route path="/" element={<Landing />} /> */}
           <Route path="/" element={<NewLanding />} />
           <Route path="/signup" element={<SignUp />} />
           <Route path="/signin" element={<SignIn />} />

@@ -4,7 +4,9 @@ import HeroSection from "@/components/landing/HeroSection";
 import DemoVideoSection from "@/components/landing/DemoVideoSection";
 import FeaturesSection from "@/components/landing/FeaturesSection";
 import TestimonialsMarqueeSection from "@/components/landing/TestimonialsMarqueeSection";
+import CtaSection from "@/components/landing/CtaSection";
 import Footer from "@/components/landing/Footer";
+import BackToTopButton from "@/components/landing/BackToTopButton";
 
 export default function NewLanding() {
   return (
@@ -16,8 +18,10 @@ export default function NewLanding() {
           <DemoVideoSection />
           <FeaturesSection />
           <TestimonialsMarqueeSection />
+          <CtaSection />
         </main>
         <Footer />
+        <BackToTopButton />
       </div>
     </BackgroundGrid>
   );

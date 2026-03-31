@@ -251,3 +251,69 @@ button {
     transform: translateX(-50%);
   }
 }
+
+@layer utilities {
+  .typiks-glow-card {
+    isolation: isolate;
+    --pointer-x: 0;
+    --pointer-y: 0;
+    --glow-x: calc((var(--pointer-x, 0) * 50%) + 50%);
+    --glow-y: calc((var(--pointer-y, 0) * 50%) + 50%);
+  }
+
+  .typiks-glow-card::before,
+  .typiks-glow-card::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: var(--card-radius);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 200ms ease;
+    z-index: 0;
+  }
+
+  .typiks-glow-card::before {
+    background: radial-gradient(
+      650px circle at var(--glow-x) var(--glow-y),
+      var(--primary),
+      transparent 55%
+    );
+    filter: blur(var(--glow-bg-blur, 24px));
+  }
+
+  .typiks-glow-card::after {
+    background: radial-gradient(
+      650px circle at var(--glow-x) var(--glow-y),
+      var(--primary),
+      transparent 60%
+    );
+    filter: blur(var(--glow-border-blur, 14px));
+
+    padding: var(--glow-border-width, 3px);
+    box-sizing: border-box;
+
+    -webkit-mask:
+      linear-gradient(var(--foreground) 0 0) content-box,
+      linear-gradient(var(--foreground) 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+  }
+
+  .typiks-glow-card:hover::before,
+  .typiks-glow-card:focus-within::before {
+    opacity: var(--glow-bg-opacity, 0.16);
+  }
+
+  .typiks-glow-card:hover::after,
+  .typiks-glow-card:focus-within::after {
+    opacity: var(--glow-border-opacity, 0.65);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .typiks-glow-card::before,
+    .typiks-glow-card::after {
+      transition: none;
+    }
+  }
+}

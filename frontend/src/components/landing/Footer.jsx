@@ -6,7 +6,7 @@ export default function Footer() {
           <span className="font-semibold text-foreground">typiks</span> © 2026 all rights reserved.
         </div>
         <div>
-          crafted by romeiro
+          crafted by <span className="text-primary">romeiro</span>
         </div>
       </div>
     </footer>

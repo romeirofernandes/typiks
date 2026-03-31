@@ -11,7 +11,7 @@ export default function HeroSection() {
   };
 
   return (
-    <section className="h-[100vh] flex items-center justify-center pt-16 sm:pt-20 pb-10 px-4 [font-family:var(--font-sans)] normal-case overflow-x-hidden">
+    <section className="h-[100vh] flex items-center justify-center pt-32 sm:pt-20 pb-10 px-4 [font-family:var(--font-sans)] normal-case overflow-x-hidden">
       <div className="w-full max-w-5xl mx-auto text-center flex flex-col items-center gap-7 sm:gap-8">
         <div className="space-y-4 sm:space-y-6">
           <h1 className="text-4xl sm:text-5xl md:text-8xl font-bold tracking-tighter text-foreground leading-[1.05]">
