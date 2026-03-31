@@ -12,7 +12,7 @@ const WaitingRoom = () => {
 
   useEffect(() => {
     // Redirect to game page immediately
-    navigate("/game", { replace: true });
+    navigate("/game", { replace: true, state: { fromDashboard: true } });
   }, [navigate]);
 
   return (

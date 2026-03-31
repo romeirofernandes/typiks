@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import { FiArrowLeft, FiUser, FiClock } from "react-icons/fi";
 const Game = () => {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [gameState, setGameState] = useState("connecting");
   const [opponent, setOpponent] = useState(null);
   const [countdown, setCountdown] = useState(null);
@@ -29,6 +30,8 @@ const Game = () => {
   const wsRef = useRef(null);
   const isConnectingRef = useRef(false);
   const connectAttemptRef = useRef(0);
+  const gameEndedRef = useRef(false);
+  const resultPersistedRef = useRef(false);
 
   const cleanup = () => {
     if (wsRef.current) {
@@ -140,29 +143,14 @@ const Game = () => {
         }
         isConnectingRef.current = false;
 
-          setGameState((prev) => {
-            if (prev === "playing" || prev === "countdown" || prev === "waiting") {
-              setGameResults({
-                player1: {
-                  id: currentUser?.uid || "current-player",
-                  username: userStats?.username || "You",
-                  score: 0,
-                  won: false,
-                },
-                player2: {
-                  id: opponent?.id || "opponent",
-                  username: opponent?.username || "Opponent",
-                  score: 0,
-                  won: false,
-                },
-                isDraw: false,
-                reason: "connection_lost",
-              });
-              return "finished";
-            }
+        if (gameEndedRef.current) {
+          return;
+        }
 
-            return prev;
-          });
+        navigate("/dashboard", {
+          replace: true,
+          state: { gameNotice: "connection_lost" },
+        });
       };
 
       websocket.onerror = (error) => {
@@ -173,15 +161,20 @@ const Game = () => {
       console.error("Failed to connect WebSocket:", error);
       isConnectingRef.current = false;
     }
-  }, [currentUser, userStats]);
+  }, [currentUser, navigate, userStats]);
 
   useEffect(() => {
+    if (!location.state?.fromDashboard) {
+      navigate("/dashboard", { replace: true });
+      return;
+    }
+
     fetchUserStats();
 
     return () => {
       cleanup();
     };
-  }, [fetchUserStats]);
+  }, [fetchUserStats, location.state, navigate]);
 
   useEffect(() => {
     if (userStats && gameState === "connecting" && !wsRef.current) {
@@ -201,6 +194,8 @@ const Game = () => {
         break;
 
       case "GAME_START": {
+        gameEndedRef.current = false;
+        resultPersistedRef.current = false;
         setWords(Array.isArray(message.words) ? message.words : []);
         setTimeLeft(
           Number.isFinite(message.duration)
@@ -298,6 +293,7 @@ const Game = () => {
         break;
 
       case "GAME_END":
+        gameEndedRef.current = true;
         setGameResults(message.results);
         setGameState("finished");
         if (timerRef.current) {
@@ -309,9 +305,10 @@ const Game = () => {
         break;
 
       case "OPPONENT_DISCONNECTED":
-        // Handle opponent disconnect more gracefully
+        gameEndedRef.current = true;
         setGameState("finished");
-        setGameResults({
+        {
+          const fallbackResults = {
           player1: {
             id: currentUser.uid,
             username: userStats.username,
@@ -319,14 +316,17 @@ const Game = () => {
             won: true,
           },
           player2: {
-            id: "disconnected",
+            id: opponent?.id || "disconnected",
             username: opponent?.username || "Opponent",
             score: opponentScore,
             won: false,
           },
           isDraw: false,
           reason: "opponent_disconnected",
-        });
+          };
+          setGameResults(fallbackResults);
+          updateGameResults(fallbackResults);
+        }
         if (timerRef.current) {
           clearInterval(timerRef.current);
           timerRef.current = null;
@@ -340,6 +340,10 @@ const Game = () => {
 
   const updateGameResults = async (results) => {
     try {
+      if (resultPersistedRef.current) {
+        return;
+      }
+
       const serverUrl = import.meta.env.VITE_SERVER_URL || "localhost:8787";
       const fullUrl = serverUrl.startsWith("http")
         ? serverUrl
@@ -356,6 +360,11 @@ const Game = () => {
         results.player1.id === currentUser.uid
           ? results.player2
           : results.player1;
+
+      if (!opponentResult?.id || opponentResult.id === "disconnected") {
+        console.warn("Skipping game result persistence due to missing opponent id");
+        return;
+      }
 
       const response = await fetch(
         `${fullUrl}/api/users/${currentUser.uid}/game-result`,
@@ -375,6 +384,7 @@ const Game = () => {
       );
 
       if (response.ok) {
+        resultPersistedRef.current = true;
         const data = await response.json();
 
         // Update local user stats for immediate UI update
@@ -389,6 +399,9 @@ const Game = () => {
                 ).toFixed(1)
               : 0,
         }));
+      } else {
+        const errorBody = await response.text();
+        console.error("Failed to persist game results:", response.status, errorBody);
       }
     } catch (error) {
       console.error("Failed to update game results:", error);

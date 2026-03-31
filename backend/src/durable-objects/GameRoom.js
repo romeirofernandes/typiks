@@ -300,6 +300,7 @@ export class GameRoom {
 			type: 'MATCH_FOUND',
 			gameId,
 			opponent: {
+				id: player2Id,
 				username: player2Data.userInfo.username,
 				rating: player2Data.userInfo.rating,
 			},
@@ -309,6 +310,7 @@ export class GameRoom {
 			type: 'MATCH_FOUND',
 			gameId,
 			opponent: {
+				id: player1Id,
 				username: player1Data.userInfo.username,
 				rating: player1Data.userInfo.rating,
 			},

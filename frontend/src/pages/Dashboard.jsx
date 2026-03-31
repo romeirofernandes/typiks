@@ -126,7 +126,7 @@ const Dashboard = () => {
     : [{ game: 0, rating: 800 }];
 
   const handleStartGame = () => {
-    navigate("/game");
+    navigate("/game", { state: { fromDashboard: true } });
   };
 
   const handleSignOut = async () => {
