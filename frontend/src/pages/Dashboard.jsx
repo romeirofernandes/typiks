@@ -1,518 +1,106 @@
-import React, { useState, useEffect } from "react";
-import { motion } from "framer-motion";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { useNavigate, useLocation } from "react-router-dom";
-import { Button } from "@/components/ui/button";
-import { ThemeToggleButton } from "@/components/theme-toggle-button";
-import BackgroundGrid from "@/components/landing/BackgroundGrid";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  PieChart,
-  Pie,
-  Cell,
-  ResponsiveContainer,
-  Tooltip,
-} from "recharts";
-import {
-  FiPlay,
-  FiTarget,
-  FiAward,
-  FiActivity,
-  FiLogOut,
-  FiStar,
-  FiMenu,
-  FiTrendingUp,
-} from "react-icons/fi";
-import { auth } from "@/firebase";
 
-const Dashboard = () => {
+import { CardTitle } from "@/components/ui/card";
+
+export default function Dashboard() {
   const { currentUser } = useAuth();
-  const navigate = useNavigate();
-  const location = useLocation();
-  const [userStats, setUserStats] = useState(null);
+
   const [loading, setLoading] = useState(true);
+  const [userStats, setUserStats] = useState(null);
 
   useEffect(() => {
-    fetchUserStats();
-  }, [currentUser, location.pathname]);
+    const fetchUserStats = async () => {
+      if (!currentUser) {
+        setLoading(false);
+        return;
+      }
 
-  const fetchUserStats = async () => {
-    if (!currentUser) return;
+      try {
+        const idToken = await currentUser.getIdToken();
+        const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
+        const fullUrl = serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
 
-    try {
-      const idToken = await currentUser.getIdToken();
-      const serverUrl = import.meta.env.VITE_SERVER_URL || "localhost:8787";
-      const fullUrl = serverUrl.startsWith("http")
-        ? serverUrl
-        : `http://${serverUrl}`;
-
-      const response = await fetch(
-        `${fullUrl}/api/users/${currentUser.uid}/stats`,
-        {
+        const response = await fetch(`${fullUrl}/api/users/${currentUser.uid}/stats`, {
           headers: {
             Authorization: `Bearer ${idToken}`,
           },
-        }
-      );
+        });
 
-      if (response.ok) {
-        const data = await response.json();
-        setUserStats(data);
+        if (response.ok) {
+          const data = await response.json();
+          setUserStats(data);
+        }
+      } catch (error) {
+        console.error("Failed to fetch user stats:", error);
+      } finally {
+        setLoading(false);
       }
-    } catch (error) {
-      console.error("Failed to fetch user stats:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
 
-  const chartData = userStats
-    ? [
-        {
-          name: "Wins",
-          value: userStats.gamesWon,
-          fill: "var(--chart-1)",
-        },
-        {
-          name: "Losses",
-          value: userStats.gamesLost,
-          fill: "var(--destructive)",
-        },
-      ]
-    : [];
+    fetchUserStats();
+  }, [currentUser]);
 
-  // Create a realistic rating progression chart
-  const ratingProgressData = userStats
-    ? (() => {
-        const currentRating = userStats.rating || 800;
-        const totalGames = userStats.gamesPlayed || 0;
-        const winRate = (userStats.gamesWon || 0) / Math.max(totalGames, 1);
+  const currentHour = new Date().getHours();
+  let greeting = "Good evening";
+  if (currentHour < 12) greeting = "Good morning";
+  else if (currentHour < 18) greeting = "Good afternoon";
 
-        if (totalGames === 0) {
-          return [{ game: 0, rating: 800 }];
-        }
+  const username =
+    userStats?.username ||
+    currentUser?.displayName ||
+    currentUser?.email?.split("@")[0] ||
+    "username";
 
-        const data = [{ game: 0, rating: 800 }];
-        let rating = 800;
-
-        // Simulate rating progression based on actual stats
-        for (let i = 1; i <= Math.min(totalGames, 10); i++) {
-          // Simulate wins/losses based on actual win rate
-          const won = Math.random() < winRate;
-          const change = won
-            ? Math.floor(Math.random() * 25) + 10
-            : -(Math.floor(Math.random() * 25) + 10);
-          rating = Math.max(400, Math.min(2000, rating + change));
-          data.push({ game: i, rating });
-        }
-
-        // Ensure the last point matches current rating
-        if (data.length > 1) {
-          data[data.length - 1].rating = currentRating;
-        }
-
-        return data;
-      })()
-    : [{ game: 0, rating: 800 }];
-
-  const handleStartGame = () => {
-    navigate("/game", { state: { fromDashboard: true } });
-  };
-
-  const handleSignOut = async () => {
-    try {
-      await auth.signOut();
-      navigate("/");
-    } catch (error) {
-      console.error("Sign out error:", error);
-    }
-  };
-
-  const getRatingColor = (rating) => {
-    if (rating >= 1600) return "text-chart-5";
-    if (rating >= 1400) return "text-chart-4";
-    if (rating >= 1200) return "text-chart-3";
-    if (rating >= 1000) return "text-chart-2";
-    return "text-muted-foreground";
-  };
-
-  // Custom tooltip for rating progression
-  const CustomRatingTooltip = ({ active, payload, label }) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="bg-popover border border-border rounded-lg p-3 shadow-lg">
-          <p className="font-medium text-popover-foreground">Game {label}</p>
-          <p className="text-primary font-semibold">
-            Rating: {payload[0].value}
-          </p>
-        </div>
-      );
-    }
-    return null;
-  };
-
-  // Custom tooltip for pie chart
-  const CustomPieTooltip = ({ active, payload }) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="bg-popover border border-border rounded-lg p-3 shadow-lg">
-          <p className="font-medium text-popover-foreground">
-            {payload[0].name}: {payload[0].value}
-          </p>
-        </div>
-      );
-    }
-    return null;
-  };
+  const quickStats = [
+    {
+      label: "Games",
+      value: userStats?.gamesPlayed || 0,
+    },
+    {
+      label: "Wins",
+      value: userStats?.gamesWon || 0,
+    },
+    {
+      label: "Rating",
+      value: userStats?.rating || 800,
+    },
+  ];
 
   if (loading) {
     return (
-      <BackgroundGrid>
-        <div className="min-h-svh flex items-center justify-center text-foreground">
-          <motion.div
-            animate={{ rotate: 360 }}
-            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-            className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full"
-          />
-        </div>
-      </BackgroundGrid>
+      <div className="flex h-full min-h-[60svh] items-center justify-center text-foreground">
+        <div className="size-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
     );
   }
 
   return (
-    <BackgroundGrid>
-      <div className="min-h-svh text-foreground font-mono">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
-        {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="flex items-center justify-between gap-4 mb-6 sm:mb-8"
-        >
-          <div className="flex items-center gap-4">
-            <div>
-              <h1 className="text-xl sm:text-2xl font-bold">
-                {userStats?.username || "Player"}
-              </h1>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <ThemeToggleButton variant="secondary" />
-
-            {/* Desktop Buttons */}
-            <div className="hidden sm:flex items-center gap-3">
-              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.96 }}>
-                <Button onClick={handleStartGame} className="gap-2">
-                  <FiPlay className="w-4 h-4" />
-                  Start Playing
-                </Button>
-              </motion.div>
-
-              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.96 }}>
-                <Button
-                  variant="outline"
-                  onClick={() => navigate("/leaderboard")}
-                  className="gap-2"
-                >
-                  <FiAward className="w-4 h-4" />
-                  Leaderboard
-                </Button>
-              </motion.div>
-
-              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.96 }}>
-                <Button
-                  variant="outline"
-                  onClick={handleSignOut}
-                  className="gap-2"
-                >
-                  <FiLogOut className="w-4 h-4" />
-                  Sign Out
-                </Button>
-              </motion.div>
-            </div>
-
-            {/* Mobile Menu */}
-            <div className="sm:hidden">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.96 }}>
-                    <Button variant="outline" size="icon" className="size-10">
-                      <FiMenu className="w-4 h-4" />
-                    </Button>
-                  </motion.div>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuItem
-                    onClick={handleStartGame}
-                    className="gap-2 cursor-pointer"
-                  >
-                    <FiPlay className="w-4 h-4" />
-                    Start Playing
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => navigate("/leaderboard")}
-                    className="gap-2 cursor-pointer"
-                  >
-                    <FiAward className="w-4 h-4" />
-                    Leaderboard
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={handleSignOut}
-                    className="gap-2 cursor-pointer"
-                  >
-                    <FiLogOut className="w-4 h-4" />
-                    Sign Out
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          </div>
-        </motion.div>
-
-        {/* Stats Grid */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.1 }}
-          className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 mb-6 sm:mb-8"
-        >
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-xs sm:text-sm font-medium">
-                Total Games
-              </CardTitle>
-              <FiActivity className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-lg sm:text-2xl font-bold">
-                {userStats?.gamesPlayed || 0}
-              </div>
-              <p className="text-xs text-muted-foreground">Games completed</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-xs sm:text-sm font-medium">
-                Games Won
-              </CardTitle>
-              <FiAward className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-lg sm:text-2xl font-bold text-primary">
-                {userStats?.gamesWon || 0}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Victories achieved
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-xs sm:text-sm font-medium">
-                Win Rate
-              </CardTitle>
-              <FiTarget className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-lg sm:text-2xl font-bold">
-                {userStats?.winRate || 0}%
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Success percentage
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-xs sm:text-sm font-medium">
-                Rating
-              </CardTitle>
-              <FiStar className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div
-                className={`text-lg sm:text-2xl font-bold ${getRatingColor(
-                  userStats?.rating || 800
-                )}`}
-              >
-                {userStats?.rating || 800}
-              </div>
-              <p className="text-xs text-muted-foreground">Current rating</p>
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        {/* Charts - Fixed with Rating Progress and Win/Loss Pie */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-          {/* Rating Progress Chart */}
-                <motion.div
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.5, delay: 0.2 }}
-                >
-                <Card className="h-80">
-                  <CardHeader>
-                  <CardTitle className="text-base sm:text-lg flex items-center gap-2">
-                    <FiTrendingUp className="w-4 h-4" />
-                    Rating Progress
-                  </CardTitle>
-                  </CardHeader>
-                  <CardContent className="h-56 p-0">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart
-                    data={ratingProgressData}
-                    margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
-                    >
-                    <XAxis
-                      dataKey="game"
-                      tickLine={false}
-                      tickMargin={10}
-                      axisLine={false}
-                      fontSize={12}
-                      stroke="var(--muted-foreground)"
-                    />
-                    <YAxis hide domain={["dataMin - 50", "dataMax + 50"]} />
-                    <Tooltip
-                      content={<CustomRatingTooltip />}
-                      cursor={{
-                      stroke: "var(--secondary)",
-                      strokeWidth: 2,
-                      strokeDasharray: "5 5",
-                      }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="rating"
-                      stroke="var(--chart-1)"
-                      strokeWidth={3}
-                      dot={{
-                      fill: "var(--chart-1)",
-                      strokeWidth: 2,
-                      stroke: "var(--background)",
-                      r: 4,
-                      }}
-                      activeDot={{
-                      r: 6,
-                      fill: "var(--chart-1)",
-                      stroke: "var(--background)",
-                      strokeWidth: 2,
-                      }}
-                      connectNulls={true}
-                    />
-                    </LineChart>
-                  </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-                </motion.div>
-
-                {/* Win/Loss Ratio */}
-          <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.5, delay: 0.3 }}
-          >
-            <Card className="h-80">
-              <CardHeader>
-                <CardTitle className="text-base sm:text-lg">
-                  Win/Loss Ratio
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="h-56 flex flex-col p-0">
-                <div className="flex-1 pt-4">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Tooltip content={<CustomPieTooltip />} />
-                      <Pie
-                        data={chartData}
-                        dataKey="value"
-                        nameKey="name"
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={30}
-                        outerRadius={70}
-                        strokeWidth={2}
-                        stroke="var(--background)"
-                      >
-                        {chartData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.fill} />
-                        ))}
-                      </Pie>
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="flex justify-center gap-4 pb-4">
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full bg-chart-1"></div>
-                    <span className="text-sm text-muted-foreground">Wins</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full bg-destructive"></div>
-                    <span className="text-sm text-muted-foreground">
-                      Losses
-                    </span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        </div>
-
-        {/* Recent Achievement Card */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.4 }}
-          className="mt-4 sm:mt-6"
-        >
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base sm:text-lg">
-                Keep Going!
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground mb-4 text-sm sm:text-base">
-                {userStats?.gamesPlayed === 0
-                  ? "Start your typing journey by playing your first game!"
-                  : `You've played ${userStats.gamesPlayed} games so far. ${
-                      userStats.winRate >= 50
-                        ? "Great job!"
-                        : "Keep practicing to improve your skills!"
-                    }`}
-              </p>
-              <motion.div
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-              >
-                <Button onClick={handleStartGame} className="w-full gap-2">
-                  <FiPlay className="w-4 h-4" />
-                  {userStats?.gamesPlayed === 0
-                    ? "Play Your First Game"
-                    : "Play Another Game"}
-                </Button>
-              </motion.div>
-            </CardContent>
-          </Card>
-        </motion.div>
-        </div>
+    <div className="flex h-full flex-col">
+      <div className="border-b border-border/70 pb-5">
+        <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Dashboard</p>
+        <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">
+          {greeting}, {username}
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Pick an action from the sidebar to start your next match.
+        </p>
       </div>
-    </BackgroundGrid>
-  );
-};
 
-export default Dashboard;
+      <div className="mt-5 grid gap-3 sm:grid-cols-3">
+        {quickStats.map((stat) => (
+          <div key={stat.label} className="rounded-md border border-border/70 bg-card/30 p-3">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">{stat.label}</p>
+            <p className="mt-1 text-2xl font-semibold tabular-nums">{stat.value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-5 flex min-h-[40svh] flex-1 items-center justify-center rounded-lg border border-dashed border-border/70 px-4">
+        <p className="max-w-md text-center text-sm text-muted-foreground">
+          Main dashboard content area.
+        </p>
+      </div>
+    </div>
+  );
+}

@@ -1,19 +1,17 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ThemeToggleButton } from "@/components/theme-toggle-button";
-import BackgroundGrid from "@/components/landing/BackgroundGrid";
-import { FiArrowLeft, FiUser, FiClock } from "react-icons/fi";
+import { FiUser, FiClock } from "react-icons/fi";
 
 const Game = () => {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
   const [gameState, setGameState] = useState("connecting");
+  const [connectionError, setConnectionError] = useState(null);
   const [opponent, setOpponent] = useState(null);
   const [countdown, setCountdown] = useState(null);
   const [words, setWords] = useState([]);
@@ -34,11 +32,15 @@ const Game = () => {
   const resultPersistedRef = useRef(false);
 
   const cleanup = () => {
+    connectAttemptRef.current += 1;
+
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
     }
+
     isConnectingRef.current = false;
+
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
@@ -50,7 +52,7 @@ const Game = () => {
 
     try {
       const idToken = await currentUser.getIdToken();
-      const serverUrl = import.meta.env.VITE_SERVER_URL || "localhost:8787";
+      const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
       const fullUrl = serverUrl.startsWith("http")
         ? serverUrl
         : `http://${serverUrl}`;
@@ -67,15 +69,31 @@ const Game = () => {
       if (response.ok) {
         const data = await response.json();
         setUserStats(data);
+      } else {
+        setUserStats({
+          username: currentUser.displayName || currentUser.email?.split("@")[0] || "Player",
+          rating: 800,
+          gamesPlayed: 0,
+          gamesWon: 0,
+        });
       }
     } catch (error) {
       console.error("Failed to fetch user stats:", error);
+      setUserStats({
+        username: currentUser.displayName || currentUser.email?.split("@")[0] || "Player",
+        rating: 800,
+        gamesPlayed: 0,
+        gamesWon: 0,
+      });
     }
   }, [currentUser]);
 
   const connectWebSocket = useCallback(async () => {
     if (!userStats || !currentUser) return;
     if (isConnectingRef.current) return;
+    
+    // In React 18 strict mode, this might be called twice quickly.
+    // We only want to proceed if we don't have an active or connecting socket.
     if (
       wsRef.current &&
       (wsRef.current.readyState === WebSocket.OPEN ||
@@ -88,26 +106,22 @@ const Game = () => {
     const attemptId = ++connectAttemptRef.current;
 
     try {
-      // Only tear down an existing socket if we're about to replace it.
-      if (wsRef.current) {
-        wsRef.current.close();
-        wsRef.current = null;
-      }
-
+      setConnectionError(null);
       const idToken = await currentUser.getIdToken();
 
-      // Ignore stale async connect attempts that lost the race.
       if (attemptId !== connectAttemptRef.current) {
         isConnectingRef.current = false;
         return;
       }
 
-      const serverUrl = import.meta.env.VITE_SERVER_URL || "localhost:8787";
-      const wsUrl = serverUrl.startsWith("http")
-        ? serverUrl.replace("http", "ws")
-        : `ws://${serverUrl}`;
+      const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
+      const httpUrl = serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
+      const wsBaseUrl = httpUrl
+        .replace(/^http:/i, "ws:")
+        .replace(/^https:/i, "wss:")
+        .replace(/\/$/, "");
 
-      const websocket = new WebSocket(`${wsUrl}/ws`);
+      const websocket = new WebSocket(new URL("/ws", wsBaseUrl));
       wsRef.current = websocket;
 
       websocket.onopen = () => {
@@ -133,48 +147,67 @@ const Game = () => {
       };
 
       websocket.onmessage = (event) => {
+        if (wsRef.current !== websocket) return;
         const message = JSON.parse(event.data);
         handleWebSocketMessage(message);
       };
 
-      websocket.onclose = () => {
-        if (wsRef.current === websocket) {
-          wsRef.current = null;
+      websocket.onclose = (event) => {
+        if (wsRef.current !== websocket) {
+          return; // Was intentionally closed or replaced
         }
+        wsRef.current = null;
         isConnectingRef.current = false;
+
+        console.warn("WebSocket closed:", {
+          url: websocket.url,
+          code: event?.code,
+          reason: event?.reason,
+          wasClean: event?.wasClean,
+        });
 
         if (gameEndedRef.current) {
           return;
         }
 
-        navigate("/dashboard", {
-          replace: true,
-          state: { gameNotice: "connection_lost" },
+        const reason = String(event?.reason || "");
+        if (event?.code === 1000 && /replaced by newer session/i.test(reason)) {
+          setConnectionError({
+            title: "Session Replaced",
+            message:
+              "This session was replaced by a newer one (another tab/device). Close other sessions and try again.",
+          });
+          setGameState("error");
+          return;
+        }
+
+        setConnectionError({
+          title: "Connection Lost",
+          message: "Could not connect to the game server.",
         });
+        setGameState("error");
       };
 
       websocket.onerror = (error) => {
-        console.error("WebSocket error:", error);
+        if (wsRef.current !== websocket) return;
         isConnectingRef.current = false;
+        console.error("WebSocket error:", error);
       };
     } catch (error) {
-      console.error("Failed to connect WebSocket:", error);
       isConnectingRef.current = false;
+      console.error("Failed to connect WebSocket:", error);
     }
-  }, [currentUser, navigate, userStats]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser, navigate, userStats]); // note: handleWebSocketMessage is omitted as it's structurally bound to the latest render by design or handled
 
   useEffect(() => {
-    if (!location.state?.fromDashboard) {
-      navigate("/dashboard", { replace: true });
-      return;
-    }
-
     fetchUserStats();
 
     return () => {
       cleanup();
     };
-  }, [fetchUserStats, location.state, navigate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount! fetchUserStats uses latest refs or is stable enough.
 
   useEffect(() => {
     if (userStats && gameState === "connecting" && !wsRef.current) {
@@ -344,7 +377,7 @@ const Game = () => {
         return;
       }
 
-      const serverUrl = import.meta.env.VITE_SERVER_URL || "localhost:8787";
+      const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
       const fullUrl = serverUrl.startsWith("http")
         ? serverUrl
         : `http://${serverUrl}`;
@@ -476,50 +509,66 @@ const Game = () => {
 
   if (!userStats) {
     return (
-      <BackgroundGrid>
-        <div className="min-h-svh flex items-center justify-center text-foreground">
-          <motion.div
-            animate={{ rotate: 360 }}
-            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-            className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full"
-          />
-        </div>
-      </BackgroundGrid>
+      <div className="flex h-full min-h-[60svh] items-center justify-center text-foreground">
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+          className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent"
+        />
+      </div>
     );
   }
 
   return (
-    <BackgroundGrid>
-      <div className="min-h-svh text-foreground font-mono">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
-        {/* Header */}
+    <div className="h-full text-foreground font-mono">
+      <div className="w-full">
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex items-center justify-between mb-6"
+          className="mb-6 flex items-center justify-between"
         >
-          <Button
-            variant="outline"
-            onClick={handleBackToDashboard}
-            className="gap-2"
-          >
-            <FiArrowLeft className="w-4 h-4" />
-            Back to Dashboard
-          </Button>
+          <h2 className="text-xl font-semibold">Start Game</h2>
 
-          <div className="flex items-center gap-3">
-            {gameState === "playing" && (
-              <div className="flex items-center gap-2 text-lg font-bold tabular-nums">
-                <FiClock className="w-5 h-5" />
-                {formatTime(timeLeft)}
-              </div>
-            )}
-            <ThemeToggleButton variant="secondary" />
-          </div>
+          {gameState === "playing" && (
+            <div className="flex items-center gap-2 text-lg font-bold tabular-nums">
+              <FiClock className="h-5 w-5" />
+              {formatTime(timeLeft)}
+            </div>
+          )}
         </motion.div>
 
         {/* Game States */}
         <AnimatePresence mode="wait">
+          {gameState === "error" && (
+            <motion.div
+              key="error"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="text-center py-20"
+            >
+              <Card className="max-w-md mx-auto border-destructive/50">
+                <CardHeader>
+                  <CardTitle className="text-destructive">
+                    {connectionError?.title || "Connection Lost"}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-muted-foreground mb-4">
+                    {connectionError?.message ||
+                      "Could not connect to the game server."}
+                  </p>
+                  <button
+                    onClick={() => navigate("/dashboard")}
+                    className="flex h-10 w-full items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
+                  >
+                    Back to Dashboard
+                  </button>
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
+
           {gameState === "connecting" && (
             <motion.div
               key="connecting"
@@ -786,9 +835,8 @@ const Game = () => {
             </motion.div>
           )}
         </AnimatePresence>
-        </div>
       </div>
-    </BackgroundGrid>
+    </div>
   );
 };
 

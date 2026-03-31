@@ -28,7 +28,7 @@ export function LoginForm({ className, ...props }) {
       const idToken = await user.getIdToken();
       const response = await fetch(
         `${
-          import.meta.env.VITE_SERVER_URL || "http://localhost:8787"
+          import.meta.env.VITE_SERVER_URL || "http://127.0.0.1:8787"
         }/api/users`,
         {
           method: "POST",

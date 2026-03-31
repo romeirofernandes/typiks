@@ -1,50 +1,36 @@
-import React, { useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import React from "react";
 import { motion } from "framer-motion";
 
-import BackgroundGrid from "@/components/landing/BackgroundGrid";
-import { ThemeToggleButton } from "@/components/theme-toggle-button";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft01Icon } from "hugeicons-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useNavigate } from "react-router-dom";
 
 const WaitingRoom = () => {
   const navigate = useNavigate();
 
-  useEffect(() => {
-    // Redirect to game page immediately
-    navigate("/game", { replace: true, state: { fromDashboard: true } });
-  }, [navigate]);
-
   return (
-    <BackgroundGrid>
-      <div className="relative text-foreground min-h-svh font-mono">
-        <div className="absolute top-0 left-0 right-0 p-6 flex justify-between items-center z-10 w-full max-w-7xl mx-auto">
+    <div className="flex h-full items-center justify-center">
+      <Card className="w-full max-w-md border-border/70 bg-card/40">
+        <CardHeader>
+          <CardTitle>Preparing your match...</CardTitle>
+        </CardHeader>
+        <CardContent className="text-center">
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+            className="mx-auto mb-4 h-8 w-8 rounded-full border-2 border-primary border-t-transparent"
+          />
+          <p className="text-sm text-muted-foreground">Entering the room</p>
+
           <Button
-            onClick={() => navigate("/dashboard")}
-            variant="secondary"
-            aria-label="Back to dashboard"
+            className="mt-5 w-full"
+            onClick={() => navigate("/game", { state: { fromDashboard: true } })}
           >
-            <ArrowLeft01Icon size={18} />
+            Open Game
           </Button>
-
-          <ThemeToggleButton variant="secondary" />
-        </div>
-
-        <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10 pt-20">
-          <div className="w-full max-w-sm text-center">
-            <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-              className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full mx-auto mb-4"
-            />
-            <div className="text-base font-semibold">Preparing your match…</div>
-            <div className="mt-1 text-sm text-muted-foreground">
-              Entering the room
-            </div>
-          </div>
-        </div>
-      </div>
-    </BackgroundGrid>
+        </CardContent>
+      </Card>
+    </div>
   );
 };
 

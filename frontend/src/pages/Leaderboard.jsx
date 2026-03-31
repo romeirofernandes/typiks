@@ -1,25 +1,19 @@
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { useNavigate } from "react-router-dom";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ThemeToggleButton } from "@/components/theme-toggle-button";
-import BackgroundGrid from "@/components/landing/BackgroundGrid";
 import {
-  ArrowLeftIcon,
   StarIcon,
 } from "@radix-ui/react-icons";
 import { TbAward } from "react-icons/tb";
 
 const Leaderboard = () => {
-  const navigate = useNavigate();
   const [leaderboard, setLeaderboard] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchLeaderboard = async () => {
       try {
-        const serverUrl = import.meta.env.VITE_SERVER_URL || "localhost:8787";
+        const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
         const fullUrl = serverUrl.startsWith("http")
           ? serverUrl
           : `http://${serverUrl}`;
@@ -90,41 +84,26 @@ const Leaderboard = () => {
 
   if (loading) {
     return (
-      <BackgroundGrid>
-        <div className="min-h-svh flex items-center justify-center text-foreground">
-          <motion.div
-            animate={{ rotate: 360 }}
-            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-            className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full"
-          />
-        </div>
-      </BackgroundGrid>
+      <div className="flex h-full min-h-[60svh] items-center justify-center text-foreground">
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+          className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent"
+        />
+      </div>
     );
   }
 
   return (
-    <BackgroundGrid>
-      <div className="min-h-svh text-foreground font-mono">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
-        {/* Header */}
+    <div className="h-full min-h-[78svh] text-foreground font-mono">
+      <div className="w-full">
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
-          className="flex items-center justify-between gap-4 mb-8"
+          className="mb-6"
         >
-          <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.96 }}>
-            <Button
-              variant="outline"
-              onClick={() => navigate("/dashboard")}
-              className="gap-2 size-10"
-              aria-label="Back to dashboard"
-            >
-              <ArrowLeftIcon className="w-4 h-4" />
-            </Button>
-          </motion.div>
-
-          <ThemeToggleButton variant="secondary" />
+          <h2 className="text-xl font-semibold">Leaderboard</h2>
         </motion.div>
 
         {/* Leaderboard Table */}
@@ -389,9 +368,8 @@ const Leaderboard = () => {
             </CardContent>
           </Card>
         </motion.div>
-        </div>
       </div>
-    </BackgroundGrid>
+    </div>
   );
 };
 
