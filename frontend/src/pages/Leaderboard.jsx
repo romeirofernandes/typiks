@@ -3,6 +3,8 @@ import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ThemeToggleButton } from "@/components/theme-toggle-button";
+import BackgroundGrid from "@/components/landing/BackgroundGrid";
 import {
   ArrowLeftIcon,
   StarIcon,
@@ -41,86 +43,88 @@ const Leaderboard = () => {
   const getRankIcon = (rank) => {
     switch (rank) {
       case 1:
-        return <TbAward className="w-5 h-5 text-yellow-500" />;
+        return <TbAward className="w-5 h-5 text-chart-1" />;
       case 2:
-        return <TbAward className="w-5 h-5 text-gray-400" />;
+        return <TbAward className="w-5 h-5 text-chart-2" />;
       case 3:
-        return <TbAward className="w-5 h-5 text-amber-600" />;
+        return <TbAward className="w-5 h-5 text-chart-3" />;
       default:
         return <span className="text-muted-foreground" />;
     }
   };
 
   const getRatingColor = (rating) => {
-    if (rating >= 1600) return "text-purple-500";
-    if (rating >= 1400) return "text-blue-500";
-    if (rating >= 1200) return "text-green-500";
-    if (rating >= 1000) return "text-yellow-500";
-    return "text-gray-500";
+    if (rating >= 1600) return "text-chart-5";
+    if (rating >= 1400) return "text-chart-4";
+    if (rating >= 1200) return "text-chart-3";
+    if (rating >= 1000) return "text-chart-2";
+    return "text-muted-foreground";
   };
 
   const getRatingBadge = (rating) => {
     if (rating >= 1600)
       return {
         label: "Expert",
-        color:
-          "bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-300",
+        color: "bg-chart-5/15 text-chart-5",
       };
     if (rating >= 1400)
       return {
         label: "Advanced",
-        color:
-          "bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-300",
+        color: "bg-chart-4/15 text-chart-4",
       };
     if (rating >= 1200)
       return {
         label: "Intermediate",
-        color:
-          "bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-300",
+        color: "bg-chart-3/15 text-chart-3",
       };
     if (rating >= 1000)
       return {
         label: "Beginner",
-        color:
-          "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300",
+        color: "bg-chart-2/15 text-chart-2",
       };
     return {
       label: "Novice",
-      color: "bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-300",
+      color: "bg-muted text-muted-foreground",
     };
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-          className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full"
-        />
-      </div>
+      <BackgroundGrid>
+        <div className="min-h-svh flex items-center justify-center text-foreground">
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+            className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full"
+          />
+        </div>
+      </BackgroundGrid>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+    <BackgroundGrid>
+      <div className="min-h-svh text-foreground font-mono">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
-          className="flex items-center gap-4 mb-8"
+          className="flex items-center justify-between gap-4 mb-8"
         >
-          <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+          <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.96 }}>
             <Button
               variant="outline"
               onClick={() => navigate("/dashboard")}
-              className="gap-2"
+              className="gap-2 size-10"
+              aria-label="Back to dashboard"
             >
               <ArrowLeftIcon className="w-4 h-4" />
             </Button>
           </motion.div>
+
+          <ThemeToggleButton variant="secondary" />
         </motion.div>
 
         {/* Leaderboard Table */}
@@ -252,32 +256,27 @@ const Leaderboard = () => {
                   {
                     label: "Expert",
                     range: "1600+",
-                    color:
-                      "bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-300",
+                    color: "bg-chart-5/15 text-chart-5",
                   },
                   {
                     label: "Advanced",
                     range: "1400+",
-                    color:
-                      "bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-300",
+                    color: "bg-chart-4/15 text-chart-4",
                   },
                   {
                     label: "Intermediate",
                     range: "1200+",
-                    color:
-                      "bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-300",
+                    color: "bg-chart-3/15 text-chart-3",
                   },
                   {
                     label: "Beginner",
                     range: "1000+",
-                    color:
-                      "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300",
+                    color: "bg-chart-2/15 text-chart-2",
                   },
                   {
                     label: "Novice",
                     range: "800+",
-                    color:
-                      "bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-300",
+                    color: "bg-muted text-muted-foreground",
                   },
                 ].map((tier) => (
                   <div
@@ -304,32 +303,27 @@ const Leaderboard = () => {
                   {
                     label: "Expert",
                     range: "1600+",
-                    color:
-                      "bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-300",
+                    color: "bg-chart-5/15 text-chart-5",
                   },
                   {
                     label: "Advanced",
                     range: "1400+",
-                    color:
-                      "bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-300",
+                    color: "bg-chart-4/15 text-chart-4",
                   },
                   {
                     label: "Intermediate",
                     range: "1200+",
-                    color:
-                      "bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-300",
+                    color: "bg-chart-3/15 text-chart-3",
                   },
                   {
                     label: "Beginner",
                     range: "1000+",
-                    color:
-                      "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300",
+                    color: "bg-chart-2/15 text-chart-2",
                   },
                   {
                     label: "Novice",
                     range: "800+",
-                    color:
-                      "bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-300",
+                    color: "bg-muted text-muted-foreground",
                   },
                 ].map((tier) => (
                   <div
@@ -354,32 +348,27 @@ const Leaderboard = () => {
                   {
                     label: "Expert",
                     range: "1600+",
-                    color:
-                      "bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-300",
+                    color: "bg-chart-5/15 text-chart-5",
                   },
                   {
                     label: "Advanced",
                     range: "1400+",
-                    color:
-                      "bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-300",
+                    color: "bg-chart-4/15 text-chart-4",
                   },
                   {
                     label: "Intermediate",
                     range: "1200+",
-                    color:
-                      "bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-300",
+                    color: "bg-chart-3/15 text-chart-3",
                   },
                   {
                     label: "Beginner",
                     range: "1000+",
-                    color:
-                      "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300",
+                    color: "bg-chart-2/15 text-chart-2",
                   },
                   {
                     label: "Novice",
                     range: "800+",
-                    color:
-                      "bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-300",
+                    color: "bg-muted text-muted-foreground",
                   },
                 ].map((tier) => (
                   <div
@@ -400,8 +389,9 @@ const Leaderboard = () => {
             </CardContent>
           </Card>
         </motion.div>
+        </div>
       </div>
-    </div>
+    </BackgroundGrid>
   );
 };
 

@@ -90,9 +90,9 @@ export default function Navbar() {
             {/* Sign Up Button */}
             <Link
               to="/signup"
-              className="bg-primary text-primary-foreground hover:bg-primary/90 flex items-center justify-center px-5 py-2 text-sm font-semibold lowercase transition-colors"
+              className="bg-primary text-primary-foreground hover:bg-primary/90 flex items-center justify-center px-5 py-2 text-sm transition-colors"
             >
-              sign up
+              Sign Up
             </Link>
           </div>
         </nav>

@@ -5,6 +5,8 @@ import { useAuth } from "@/context/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ThemeToggleButton } from "@/components/theme-toggle-button";
+import BackgroundGrid from "@/components/landing/BackgroundGrid";
 import { FiArrowLeft, FiUser, FiClock } from "react-icons/fi";
 
 const Game = () => {
@@ -324,28 +326,31 @@ const Game = () => {
   };
 
   const getRatingColor = (rating) => {
-    if (rating >= 1600) return "text-purple-500";
-    if (rating >= 1400) return "text-blue-500";
-    if (rating >= 1200) return "text-green-500";
-    if (rating >= 1000) return "text-yellow-500";
-    return "text-gray-500";
+    if (rating >= 1600) return "text-chart-5";
+    if (rating >= 1400) return "text-chart-4";
+    if (rating >= 1200) return "text-chart-3";
+    if (rating >= 1000) return "text-chart-2";
+    return "text-muted-foreground";
   };
 
   if (!userStats) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-          className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full"
-        />
-      </div>
+      <BackgroundGrid>
+        <div className="min-h-svh flex items-center justify-center text-foreground">
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+            className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full"
+          />
+        </div>
+      </BackgroundGrid>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+    <BackgroundGrid>
+      <div className="min-h-svh text-foreground font-mono">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
@@ -361,12 +366,15 @@ const Game = () => {
             Back to Dashboard
           </Button>
 
-          {gameState === "playing" && (
-            <div className="flex items-center gap-2 text-lg font-bold">
-              <FiClock className="w-5 h-5" />
-              {formatTime(timeLeft)}
-            </div>
-          )}
+          <div className="flex items-center gap-3">
+            {gameState === "playing" && (
+              <div className="flex items-center gap-2 text-lg font-bold tabular-nums">
+                <FiClock className="w-5 h-5" />
+                {formatTime(timeLeft)}
+              </div>
+            )}
+            <ThemeToggleButton variant="secondary" />
+          </div>
         </motion.div>
 
         {/* Game States */}
@@ -563,7 +571,7 @@ const Game = () => {
                   </div>
                   <div className="w-full bg-secondary rounded-full h-2">
                     <div
-                      className="bg-red-500 h-2 rounded-full transition-all duration-300"
+                      className="bg-destructive h-2 rounded-full transition-all duration-300"
                       style={{
                         width: `${(opponentWordIndex / words.length) * 100}%`,
                       }}
@@ -638,8 +646,9 @@ const Game = () => {
             </motion.div>
           )}
         </AnimatePresence>
+        </div>
       </div>
-    </div>
+    </BackgroundGrid>
   );
 };
 

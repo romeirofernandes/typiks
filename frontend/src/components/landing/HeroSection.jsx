@@ -13,7 +13,7 @@ export default function HeroSection() {
   return (
     <section className="h-[100vh] flex items-center justify-center pt-32 sm:pt-20 pb-10 px-4 [font-family:var(--font-sans)] normal-case overflow-x-hidden">
       <div className="w-full max-w-5xl mx-auto text-center flex flex-col items-center gap-7 sm:gap-8">
-        <div className="space-y-4 sm:space-y-6">
+        <div className="space-y-4 sm:space-y-8">
           <h1 className="text-4xl sm:text-5xl md:text-8xl font-bold tracking-tighter text-foreground leading-[1.05]">
             Type Fast. Win Loud.
           </h1>
@@ -36,7 +36,7 @@ export default function HeroSection() {
           </Button>
         </div>
 
-        <div className="w-full overflow-visible pt-2">
+        <div className="w-full overflow-visible pt-2 sm:pt-5">
             <Keyboard size="lg" theme="typiks" enableSound={true} enableHaptics={true} disableNativeBehavior={false} />
         </div>
       </div>

@@ -3,6 +3,8 @@ import { motion } from "framer-motion";
 import { useAuth } from "@/context/AuthContext";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { ThemeToggleButton } from "@/components/theme-toggle-button";
+import BackgroundGrid from "@/components/landing/BackgroundGrid";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   DropdownMenu,
@@ -73,12 +75,12 @@ const Dashboard = () => {
         {
           name: "Wins",
           value: userStats.gamesWon,
-          fill: "#22c55e",
+          fill: "var(--chart-1)",
         },
         {
           name: "Losses",
           value: userStats.gamesLost,
-          fill: "#ef4444",
+          fill: "var(--destructive)",
         },
       ]
     : [];
@@ -131,11 +133,11 @@ const Dashboard = () => {
   };
 
   const getRatingColor = (rating) => {
-    if (rating >= 1600) return "text-purple-500";
-    if (rating >= 1400) return "text-blue-500";
-    if (rating >= 1200) return "text-green-500";
-    if (rating >= 1000) return "text-yellow-500";
-    return "text-gray-500";
+    if (rating >= 1600) return "text-chart-5";
+    if (rating >= 1400) return "text-chart-4";
+    if (rating >= 1200) return "text-chart-3";
+    if (rating >= 1000) return "text-chart-2";
+    return "text-muted-foreground";
   };
 
   // Custom tooltip for rating progression
@@ -169,19 +171,22 @@ const Dashboard = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-          className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full"
-        />
-      </div>
+      <BackgroundGrid>
+        <div className="min-h-svh flex items-center justify-center text-foreground">
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+            className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full"
+          />
+        </div>
+      </BackgroundGrid>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+    <BackgroundGrid>
+      <div className="min-h-svh text-foreground font-mono">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
@@ -197,75 +202,76 @@ const Dashboard = () => {
             </div>
           </div>
 
-          {/* Desktop Buttons */}
-          <div className="hidden sm:flex items-center gap-3">
-            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-              <Button onClick={handleStartGame} className="gap-2">
-                <FiPlay className="w-4 h-4" />
-                Start Playing
-              </Button>
-            </motion.div>
+          <div className="flex items-center gap-2">
+            <ThemeToggleButton variant="secondary" />
 
-            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-              <Button
-                variant="outline"
-                onClick={() => navigate("/leaderboard")}
-                className="gap-2"
-              >
-                <FiAward className="w-4 h-4" />
-                Leaderboard
-              </Button>
-            </motion.div>
-
-            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-              <Button
-                variant="outline"
-                onClick={handleSignOut}
-                className="gap-2"
-              >
-                <FiLogOut className="w-4 h-4" />
-                Sign Out
-              </Button>
-            </motion.div>
-          </div>
-
-          {/* Mobile Menu - Fixed */}
-          <div className="sm:hidden">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <motion.div
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  <Button variant="outline" size="icon">
-                    <FiMenu className="w-4 h-4" />
-                  </Button>
-                </motion.div>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem
-                  onClick={handleStartGame}
-                  className="gap-2 cursor-pointer"
-                >
+            {/* Desktop Buttons */}
+            <div className="hidden sm:flex items-center gap-3">
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.96 }}>
+                <Button onClick={handleStartGame} className="gap-2">
                   <FiPlay className="w-4 h-4" />
                   Start Playing
-                </DropdownMenuItem>
-                <DropdownMenuItem
+                </Button>
+              </motion.div>
+
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.96 }}>
+                <Button
+                  variant="outline"
                   onClick={() => navigate("/leaderboard")}
-                  className="gap-2 cursor-pointer"
+                  className="gap-2"
                 >
                   <FiAward className="w-4 h-4" />
                   Leaderboard
-                </DropdownMenuItem>
-                <DropdownMenuItem
+                </Button>
+              </motion.div>
+
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.96 }}>
+                <Button
+                  variant="outline"
                   onClick={handleSignOut}
-                  className="gap-2 cursor-pointer"
+                  className="gap-2"
                 >
                   <FiLogOut className="w-4 h-4" />
                   Sign Out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                </Button>
+              </motion.div>
+            </div>
+
+            {/* Mobile Menu */}
+            <div className="sm:hidden">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.96 }}>
+                    <Button variant="outline" size="icon" className="size-10">
+                      <FiMenu className="w-4 h-4" />
+                    </Button>
+                  </motion.div>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem
+                    onClick={handleStartGame}
+                    className="gap-2 cursor-pointer"
+                  >
+                    <FiPlay className="w-4 h-4" />
+                    Start Playing
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => navigate("/leaderboard")}
+                    className="gap-2 cursor-pointer"
+                  >
+                    <FiAward className="w-4 h-4" />
+                    Leaderboard
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={handleSignOut}
+                    className="gap-2 cursor-pointer"
+                  >
+                    <FiLogOut className="w-4 h-4" />
+                    Sign Out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
         </motion.div>
 
@@ -299,7 +305,7 @@ const Dashboard = () => {
               <FiAward className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-lg sm:text-2xl font-bold text-green-600">
+              <div className="text-lg sm:text-2xl font-bold text-primary">
                 {userStats?.gamesWon || 0}
               </div>
               <p className="text-xs text-muted-foreground">
@@ -372,13 +378,13 @@ const Dashboard = () => {
                       tickMargin={10}
                       axisLine={false}
                       fontSize={12}
-                      stroke="hsl(var(--muted-foreground))"
+                      stroke="var(--muted-foreground)"
                     />
                     <YAxis hide domain={["dataMin - 50", "dataMax + 50"]} />
                     <Tooltip
                       content={<CustomRatingTooltip />}
                       cursor={{
-                      stroke: "hsl(var(--secondary))",
+                      stroke: "var(--secondary)",
                       strokeWidth: 2,
                       strokeDasharray: "5 5",
                       }}
@@ -386,18 +392,18 @@ const Dashboard = () => {
                     <Line
                       type="monotone"
                       dataKey="rating"
-                      stroke="#22c55e"
+                      stroke="var(--chart-1)"
                       strokeWidth={3}
                       dot={{
-                      fill: "#22c55e",
+                      fill: "var(--chart-1)",
                       strokeWidth: 2,
-                      stroke: "hsl(var(--background))",
+                      stroke: "var(--background)",
                       r: 4,
                       }}
                       activeDot={{
                       r: 6,
-                      fill: "#22c55e",
-                      stroke: "hsl(var(--background))",
+                      fill: "var(--chart-1)",
+                      stroke: "var(--background)",
                       strokeWidth: 2,
                       }}
                       connectNulls={true}
@@ -434,7 +440,7 @@ const Dashboard = () => {
                         innerRadius={30}
                         outerRadius={70}
                         strokeWidth={2}
-                        stroke="hsl(var(--background))"
+                        stroke="var(--background)"
                       >
                         {chartData.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={entry.fill} />
@@ -445,11 +451,11 @@ const Dashboard = () => {
                 </div>
                 <div className="flex justify-center gap-4 pb-4">
                   <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                    <div className="w-3 h-3 rounded-full bg-chart-1"></div>
                     <span className="text-sm text-muted-foreground">Wins</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                    <div className="w-3 h-3 rounded-full bg-destructive"></div>
                     <span className="text-sm text-muted-foreground">
                       Losses
                     </span>
@@ -497,8 +503,9 @@ const Dashboard = () => {
             </CardContent>
           </Card>
         </motion.div>
+        </div>
       </div>
-    </div>
+    </BackgroundGrid>
   );
 };
 
