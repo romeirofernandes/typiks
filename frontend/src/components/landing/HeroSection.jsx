@@ -37,15 +37,7 @@ export default function HeroSection() {
         </div>
 
         <div className="w-full overflow-visible pt-2">
-          <div
-            className="mx-auto w-fit origin-top [transform:scale(var(--kb-scale))]"
-            style={{
-              // Scale up more on large screens, but still shrink enough on small screens
-              // so the full keyboard stays visible.
-              "--kb-scale": "clamp(0.45, calc((100vw - 2rem) / 828), 1.75)",
-            }}>
-            <Keyboard theme="typiks" enableSound={true} enableHaptics={true} disableNativeBehavior={false} />
-          </div>
+            <Keyboard size="lg" theme="typiks" enableSound={true} enableHaptics={true} disableNativeBehavior={false} />
         </div>
       </div>
     </section>

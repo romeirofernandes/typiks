@@ -4,6 +4,7 @@ import HeroSection from "@/components/landing/HeroSection";
 import DemoVideoSection from "@/components/landing/DemoVideoSection";
 import FeaturesSection from "@/components/landing/FeaturesSection";
 import TestimonialsMarqueeSection from "@/components/landing/TestimonialsMarqueeSection";
+import Footer from "@/components/landing/Footer";
 
 export default function NewLanding() {
   return (
@@ -16,6 +17,7 @@ export default function NewLanding() {
           <FeaturesSection />
           <TestimonialsMarqueeSection />
         </main>
+        <Footer />
       </div>
     </BackgroundGrid>
   );

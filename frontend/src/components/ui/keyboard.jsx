@@ -25,9 +25,47 @@ import {
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useWebHaptics } from "web-haptics/react";
 
+// Size configuration scale factors
+const SIZE_SCALES = {
+  xs: 0.6,    // Extra small - 60% of default
+  sm: 0.75,   // Small - 75% of default
+  md: 0.875,  // Medium - 87.5% of default
+  default: 1, // Default - 100%
+  lg: 1.25,   // Large - 125% of default
+  xl: 1.5,    // Extra large - 150% of default
+};
+
+// Base dimensions (at scale 1.0)
+const BASE_DIMENSIONS = {
+  keyWidth: 50,
+  keyHeight: 50,
+  keyInnerHeight: 37,
+  containerHeight: 278,
+  borderRadius: {
+    outer: 16,
+    inner: 5,
+    topAccent: 8,
+    key: 4,
+    keyTop: 12,
+    keyInner: 6,
+  },
+  padding: {
+    outer: 12, // p-3 = 12px
+    inner: 0,
+  },
+  gap: -4, // -space-y-1 = -4px
+  translateY: -4, // -translate-y-1 = -4px
+  iconSize: {
+    small: 10,
+    medium: 12,
+  },
+  fontSize: 9,
+};
+
 export function Keyboard({
   className,
   theme = "typiks",
+  size = "default",
   enableSound = true,
   enableHaptics = true,
   disableNativeBehavior = true,
@@ -40,6 +78,7 @@ export function Keyboard({
     <KeyboardProvider
       containerRef={containerRef}
       theme={theme}
+      size={size}
       enableSound={enableSound}
       enableHaptics={enableHaptics}
       disableNativeBehavior={disableNativeBehavior}
@@ -47,7 +86,7 @@ export function Keyboard({
       onKeyEvent={onKeyEvent}
     >
       <div ref={containerRef} className={cn("inline-block", className)}>
-        <KeyboardLayout />
+        <KeyboardLayout size={size} />
       </div>
     </KeyboardProvider>
   );
@@ -69,6 +108,7 @@ function KeyboardProvider({
   children,
   containerRef,
   theme,
+  size,
   enableSound,
   enableHaptics,
   disableNativeBehavior,
@@ -270,232 +310,291 @@ function KeyboardProvider({
 // UI rendering
 // -----------------------------------------------------------------------------
 
-function KeyboardLayout() {
+function useSizeScale(size) {
+  const scale = SIZE_SCALES[size] ?? SIZE_SCALES.default;
+  
+  return {
+    scale,
+    dims: {
+      scale,
+      keyWidth: Math.round(BASE_DIMENSIONS.keyWidth * scale),
+      keyHeight: Math.round(BASE_DIMENSIONS.keyHeight * scale),
+      keyInnerHeight: Math.round(BASE_DIMENSIONS.keyInnerHeight * scale),
+      containerHeight: Math.round(BASE_DIMENSIONS.containerHeight * scale),
+      borderRadius: {
+        outer: Math.round(BASE_DIMENSIONS.borderRadius.outer * scale),
+        inner: Math.max(2, Math.round(BASE_DIMENSIONS.borderRadius.inner * scale)),
+        topAccent: Math.max(2, Math.round(BASE_DIMENSIONS.borderRadius.topAccent * scale)),
+        key: Math.max(2, Math.round(BASE_DIMENSIONS.borderRadius.key * scale)),
+        keyTop: Math.max(4, Math.round(BASE_DIMENSIONS.borderRadius.keyTop * scale)),
+        keyInner: Math.max(2, Math.round(BASE_DIMENSIONS.borderRadius.keyInner * scale)),
+      },
+      padding: {
+        outer: Math.round(BASE_DIMENSIONS.padding.outer * scale),
+      },
+      gap: Math.round(BASE_DIMENSIONS.gap * scale),
+      translateY: Math.round(BASE_DIMENSIONS.translateY * scale),
+      iconSize: {
+        small: Math.max(6, Math.round(BASE_DIMENSIONS.iconSize.small * scale)),
+        medium: Math.max(8, Math.round(BASE_DIMENSIONS.iconSize.medium * scale)),
+      },
+      fontSize: Math.max(5, Math.round(BASE_DIMENSIONS.fontSize * scale)),
+    },
+  };
+}
+
+function KeyboardLayout({ size }) {
+  const { dims, scale } = useSizeScale(size);
+
+  // Scale width values proportionally
+  const w = (baseWidth) => Math.round(baseWidth * scale);
+
   return (
     <div>
-      <div className="bg-card/80 border-2 border-border p-3 rounded-[16px] w-fit h-fit">
-        <div className="bg-muted/50 border border-border rounded-[5px] rounded-t-[8px] h-[278px]">
-          <div className="-space-y-1 -translate-y-1 rounded-[5px] overflow-hidden">
-            <Row>
-              <Key keyCode={KEYCODE.Escape}>{"esc"}</Key>
+      <div 
+        className="bg-card/80 border-2 border-border w-fit h-fit"
+        style={{ 
+          padding: dims.padding.outer,
+          borderRadius: dims.borderRadius.outer,
+        }}
+      >
+        <div 
+          className="bg-muted/50 border border-border"
+          style={{ 
+            borderRadius: `${dims.borderRadius.inner}px ${dims.borderRadius.inner}px ${dims.borderRadius.inner}px ${dims.borderRadius.inner}px`,
+            borderTopLeftRadius: dims.borderRadius.topAccent,
+            borderTopRightRadius: dims.borderRadius.topAccent,
+            height: dims.containerHeight,
+          }}
+        >
+          <div
+            className="overflow-hidden flex flex-col [&>*+*]:mt-[var(--kb-row-gap)]"
+            style={{
+              borderRadius: dims.borderRadius.inner,
+              transform: `translateY(${dims.translateY}px)`,
+              "--kb-row-gap": `${dims.gap}px`,
+            }}
+          >
+            <Row gap={dims.gap}>
+              <Key keyCode={KEYCODE.Escape} width={w(50)} dims={dims}>{"esc"}</Key>
 
-              <Key keyCode={KEYCODE.F1}>
-                <IconBrightnessDown className="size-[10px]" />
+              <Key keyCode={KEYCODE.F1} width={w(50)} dims={dims}>
+                <IconBrightnessDown className="size-[10px]" style={{ width: dims.iconSize.small, height: dims.iconSize.small }} />
                 <span>{"F1"}</span>
               </Key>
-              <Key keyCode={KEYCODE.F2}>
-                <IconBrightnessUp className="size-[10px]" />
+              <Key keyCode={KEYCODE.F2} width={w(50)} dims={dims}>
+                <IconBrightnessUp className="size-[10px]" style={{ width: dims.iconSize.small, height: dims.iconSize.small }} />
                 <span>{"F2"}</span>
               </Key>
-              <Key keyCode={KEYCODE.F3}>
-                <IconLayoutDashboard className="size-[10px]" />
+              <Key keyCode={KEYCODE.F3} width={w(50)} dims={dims}>
+                <IconLayoutDashboard className="size-[10px]" style={{ width: dims.iconSize.small, height: dims.iconSize.small }} />
                 <span>{"F3"}</span>
               </Key>
-              <Key keyCode={KEYCODE.F4}>
-                <IconSearch className="size-[10px]" />
+              <Key keyCode={KEYCODE.F4} width={w(50)} dims={dims}>
+                <IconSearch className="size-[10px]" style={{ width: dims.iconSize.small, height: dims.iconSize.small }} />
                 <span>{"F4"}</span>
               </Key>
 
-              <Key keyCode={KEYCODE.F5}>
-                <IconMicrophone className="size-[10px]" />
+              <Key keyCode={KEYCODE.F5} width={w(50)} dims={dims}>
+                <IconMicrophone className="size-[10px]" style={{ width: dims.iconSize.small, height: dims.iconSize.small }} />
                 <span>{"F5"}</span>
               </Key>
-              <Key keyCode={KEYCODE.F6}>
-                <IconMoon className="size-[10px]" />
+              <Key keyCode={KEYCODE.F6} width={w(50)} dims={dims}>
+                <IconMoon className="size-[10px]" style={{ width: dims.iconSize.small, height: dims.iconSize.small }} />
                 <span>{"F6"}</span>
               </Key>
-              <Key keyCode={KEYCODE.F7}>
-                <IconPlayerTrackPrev className="size-[10px]" />
+              <Key keyCode={KEYCODE.F7} width={w(50)} dims={dims}>
+                <IconPlayerTrackPrev className="size-[10px]" style={{ width: dims.iconSize.small, height: dims.iconSize.small }} />
                 <span>{"F7"}</span>
               </Key>
-              <Key keyCode={KEYCODE.F8}>
-                <IconPlayerSkipForward className="size-[10px]" />
+              <Key keyCode={KEYCODE.F8} width={w(50)} dims={dims}>
+                <IconPlayerSkipForward className="size-[10px]" style={{ width: dims.iconSize.small, height: dims.iconSize.small }} />
                 <span>{"F8"}</span>
               </Key>
-              <Key keyCode={KEYCODE.F9}>
-                <IconPlayerTrackNext className="size-[10px]" />
+              <Key keyCode={KEYCODE.F9} width={w(50)} dims={dims}>
+                <IconPlayerTrackNext className="size-[10px]" style={{ width: dims.iconSize.small, height: dims.iconSize.small }} />
                 <span>{"F9"}</span>
               </Key>
 
-              <Key keyCode={KEYCODE.F10}>
-                <IconVolume3 className="size-[10px]" />
+              <Key keyCode={KEYCODE.F10} width={w(50)} dims={dims}>
+                <IconVolume3 className="size-[10px]" style={{ width: dims.iconSize.small, height: dims.iconSize.small }} />
                 <span>{"F10"}</span>
               </Key>
-              <Key keyCode={KEYCODE.F11}>
-                <IconVolume2 className="size-[10px]" />
+              <Key keyCode={KEYCODE.F11} width={w(50)} dims={dims}>
+                <IconVolume2 className="size-[10px]" style={{ width: dims.iconSize.small, height: dims.iconSize.small }} />
                 <span>{"F11"}</span>
               </Key>
-              <Key keyCode={KEYCODE.F12}>
-                <IconVolume className="size-[10px]" />
+              <Key keyCode={KEYCODE.F12} width={w(50)} dims={dims}>
+                <IconVolume className="size-[10px]" style={{ width: dims.iconSize.small, height: dims.iconSize.small }} />
                 <span>{"F12"}</span>
               </Key>
 
-              <Key keyCode={KEYCODE.F13}>
-                <IconFrame className="size-[10px]" />
+              <Key keyCode={KEYCODE.F13} width={w(50)} dims={dims}>
+                <IconFrame className="size-[10px]" style={{ width: dims.iconSize.small, height: dims.iconSize.small }} />
               </Key>
-              <Key keyCode={KEYCODE.Delete}>{"del"}</Key>
-              <Key keyCode={KEYCODE.F14}>
-                <IconBulb className="size-[12px]" />
+              <Key keyCode={KEYCODE.Delete} width={w(50)} dims={dims}>{"del"}</Key>
+              <Key keyCode={KEYCODE.F14} width={w(50)} dims={dims}>
+                <IconBulb className="size-[12px]" style={{ width: dims.iconSize.medium, height: dims.iconSize.medium }} />
               </Key>
             </Row>
 
-            <Row>
-              <Key keyCode={KEYCODE.Backquote}>
+            <Row gap={dims.gap}>
+              <Key keyCode={KEYCODE.Backquote} width={w(50)} dims={dims}>
                 <span>{"~"}</span>
                 <span>{"`"}</span>
               </Key>
-              <Key keyCode={KEYCODE.Digit1}>
+              <Key keyCode={KEYCODE.Digit1} width={w(50)} dims={dims}>
                 <span>{"!"}</span>
                 <span>{"1"}</span>
               </Key>
-              <Key keyCode={KEYCODE.Digit2}>
+              <Key keyCode={KEYCODE.Digit2} width={w(50)} dims={dims}>
                 <span>{"@"}</span>
                 <span>{"2"}</span>
               </Key>
-              <Key keyCode={KEYCODE.Digit3}>
+              <Key keyCode={KEYCODE.Digit3} width={w(50)} dims={dims}>
                 <span>{"#"}</span>
                 <span>{"3"}</span>
               </Key>
-              <Key keyCode={KEYCODE.Digit4}>
+              <Key keyCode={KEYCODE.Digit4} width={w(50)} dims={dims}>
                 <span>{"$"}</span>
                 <span>{"4"}</span>
               </Key>
-              <Key keyCode={KEYCODE.Digit5}>
+              <Key keyCode={KEYCODE.Digit5} width={w(50)} dims={dims}>
                 <span>{"%"}</span>
                 <span>{"5"}</span>
               </Key>
-              <Key keyCode={KEYCODE.Digit6}>
+              <Key keyCode={KEYCODE.Digit6} width={w(50)} dims={dims}>
                 <span>{"^"}</span>
                 <span>{"6"}</span>
               </Key>
-              <Key keyCode={KEYCODE.Digit7}>
+              <Key keyCode={KEYCODE.Digit7} width={w(50)} dims={dims}>
                 <span>{"&"}</span>
                 <span>{"7"}</span>
               </Key>
-              <Key keyCode={KEYCODE.Digit8}>
+              <Key keyCode={KEYCODE.Digit8} width={w(50)} dims={dims}>
                 <span>{"*"}</span>
                 <span>{"8"}</span>
               </Key>
-              <Key keyCode={KEYCODE.Digit9}>
+              <Key keyCode={KEYCODE.Digit9} width={w(50)} dims={dims}>
                 <span>{"("}</span>
                 <span>{"9"}</span>
               </Key>
-              <Key keyCode={KEYCODE.Digit0}>
+              <Key keyCode={KEYCODE.Digit0} width={w(50)} dims={dims}>
                 <span>{")"}</span>
                 <span>{"0"}</span>
               </Key>
-              <Key keyCode={KEYCODE.Minus}>
+              <Key keyCode={KEYCODE.Minus} width={w(50)} dims={dims}>
                 <span>{"_"}</span>
                 <span>{"-"}</span>
               </Key>
-              <Key keyCode={KEYCODE.Equal}>
+              <Key keyCode={KEYCODE.Equal} width={w(50)} dims={dims}>
                 <span>{"+"}</span>
                 <span>{"="}</span>
               </Key>
-              <Key keyCode={KEYCODE.Backspace} width={100}>
-                <IconArrowNarrowLeft className="size-[12px]" />
+              <Key keyCode={KEYCODE.Backspace} width={w(100)} dims={dims}>
+                <IconArrowNarrowLeft className="size-[12px]" style={{ width: dims.iconSize.medium, height: dims.iconSize.medium }} />
               </Key>
-              <Key keyCode={KEYCODE.PageUp}>{"pgup"}</Key>
+              <Key keyCode={KEYCODE.PageUp} width={w(50)} dims={dims}>{"pgup"}</Key>
             </Row>
 
-            <Row>
-              <Key keyCode={KEYCODE.Tab} width={75}>{"tab"}</Key>
-              <Key keyCode={KEYCODE.KeyQ}>{"Q"}</Key>
-              <Key keyCode={KEYCODE.KeyW}>{"W"}</Key>
-              <Key keyCode={KEYCODE.KeyE}>{"E"}</Key>
-              <Key keyCode={KEYCODE.KeyR}>{"R"}</Key>
-              <Key keyCode={KEYCODE.KeyT}>{"T"}</Key>
-              <Key keyCode={KEYCODE.KeyY}>{"Y"}</Key>
-              <Key keyCode={KEYCODE.KeyU}>{"U"}</Key>
-              <Key keyCode={KEYCODE.KeyI}>{"I"}</Key>
-              <Key keyCode={KEYCODE.KeyO}>{"O"}</Key>
-              <Key keyCode={KEYCODE.KeyP}>{"P"}</Key>
-              <Key keyCode={KEYCODE.BracketLeft}>
+            <Row gap={dims.gap}>
+              <Key keyCode={KEYCODE.Tab} width={w(75)} dims={dims}>{"tab"}</Key>
+              <Key keyCode={KEYCODE.KeyQ} width={w(50)} dims={dims}>{"Q"}</Key>
+              <Key keyCode={KEYCODE.KeyW} width={w(50)} dims={dims}>{"W"}</Key>
+              <Key keyCode={KEYCODE.KeyE} width={w(50)} dims={dims}>{"E"}</Key>
+              <Key keyCode={KEYCODE.KeyR} width={w(50)} dims={dims}>{"R"}</Key>
+              <Key keyCode={KEYCODE.KeyT} width={w(50)} dims={dims}>{"T"}</Key>
+              <Key keyCode={KEYCODE.KeyY} width={w(50)} dims={dims}>{"Y"}</Key>
+              <Key keyCode={KEYCODE.KeyU} width={w(50)} dims={dims}>{"U"}</Key>
+              <Key keyCode={KEYCODE.KeyI} width={w(50)} dims={dims}>{"I"}</Key>
+              <Key keyCode={KEYCODE.KeyO} width={w(50)} dims={dims}>{"O"}</Key>
+              <Key keyCode={KEYCODE.KeyP} width={w(50)} dims={dims}>{"P"}</Key>
+              <Key keyCode={KEYCODE.BracketLeft} width={w(50)} dims={dims}>
                 <span>{"{"}</span>
                 <span>{"["}</span>
               </Key>
-              <Key keyCode={KEYCODE.BracketRight}>
+              <Key keyCode={KEYCODE.BracketRight} width={w(50)} dims={dims}>
                 <span>{"}"}</span>
                 <span>{"]"}</span>
               </Key>
-              <Key keyCode={KEYCODE.Backslash} width={75}>
+              <Key keyCode={KEYCODE.Backslash} width={w(75)} dims={dims}>
                 <span>{"|"}</span>
                 <span>{"\\"}</span>
               </Key>
-              <Key keyCode={KEYCODE.PageDown}>{"pgdn"}</Key>
+              <Key keyCode={KEYCODE.PageDown} width={w(50)} dims={dims}>{"pgdn"}</Key>
             </Row>
 
-            <Row>
-              <Key keyCode={KEYCODE.CapsLock} width={100}>{"caps lock"}</Key>
-              <Key keyCode={KEYCODE.KeyA}>{"A"}</Key>
-              <Key keyCode={KEYCODE.KeyS}>{"S"}</Key>
-              <Key keyCode={KEYCODE.KeyD}>{"D"}</Key>
-              <Key keyCode={KEYCODE.KeyF}>{"F"}</Key>
-              <Key keyCode={KEYCODE.KeyG}>{"G"}</Key>
-              <Key keyCode={KEYCODE.KeyH}>{"H"}</Key>
-              <Key keyCode={KEYCODE.KeyJ}>{"J"}</Key>
-              <Key keyCode={KEYCODE.KeyK}>{"K"}</Key>
-              <Key keyCode={KEYCODE.KeyL}>{"L"}</Key>
-              <Key keyCode={KEYCODE.Semicolon}>
+            <Row gap={dims.gap}>
+              <Key keyCode={KEYCODE.CapsLock} width={w(100)} dims={dims}>{"caps lock"}</Key>
+              <Key keyCode={KEYCODE.KeyA} width={w(50)} dims={dims}>{"A"}</Key>
+              <Key keyCode={KEYCODE.KeyS} width={w(50)} dims={dims}>{"S"}</Key>
+              <Key keyCode={KEYCODE.KeyD} width={w(50)} dims={dims}>{"D"}</Key>
+              <Key keyCode={KEYCODE.KeyF} width={w(50)} dims={dims}>{"F"}</Key>
+              <Key keyCode={KEYCODE.KeyG} width={w(50)} dims={dims}>{"G"}</Key>
+              <Key keyCode={KEYCODE.KeyH} width={w(50)} dims={dims}>{"H"}</Key>
+              <Key keyCode={KEYCODE.KeyJ} width={w(50)} dims={dims}>{"J"}</Key>
+              <Key keyCode={KEYCODE.KeyK} width={w(50)} dims={dims}>{"K"}</Key>
+              <Key keyCode={KEYCODE.KeyL} width={w(50)} dims={dims}>{"L"}</Key>
+              <Key keyCode={KEYCODE.Semicolon} width={w(50)} dims={dims}>
                 <span>{":"}</span>
                 <span>{";"}</span>
               </Key>
-              <Key keyCode={KEYCODE.Quote}>
+              <Key keyCode={KEYCODE.Quote} width={w(50)} dims={dims}>
                 <span>{"\""}</span>
                 <span>{"'"}</span>
               </Key>
-              <Key keyCode={KEYCODE.Enter} width={100}>{"return"}</Key>
-              <Key keyCode={KEYCODE.Home}>{"home"}</Key>
+              <Key keyCode={KEYCODE.Enter} width={w(100)} dims={dims}>{"return"}</Key>
+              <Key keyCode={KEYCODE.Home} width={w(50)} dims={dims}>{"home"}</Key>
             </Row>
 
-            <Row>
-              <Key keyCode={KEYCODE.ShiftLeft} width={123}>{"shift"}</Key>
-              <Key keyCode={KEYCODE.KeyZ}>{"Z"}</Key>
-              <Key keyCode={KEYCODE.KeyX}>{"X"}</Key>
-              <Key keyCode={KEYCODE.KeyC}>{"C"}</Key>
-              <Key keyCode={KEYCODE.KeyV}>{"V"}</Key>
-              <Key keyCode={KEYCODE.KeyB}>{"B"}</Key>
-              <Key keyCode={KEYCODE.KeyN}>{"N"}</Key>
-              <Key keyCode={KEYCODE.KeyM}>{"M"}</Key>
-              <Key keyCode={KEYCODE.Comma}>
+            <Row gap={dims.gap}>
+              <Key keyCode={KEYCODE.ShiftLeft} width={w(123)} dims={dims}>{"shift"}</Key>
+              <Key keyCode={KEYCODE.KeyZ} width={w(50)} dims={dims}>{"Z"}</Key>
+              <Key keyCode={KEYCODE.KeyX} width={w(50)} dims={dims}>{"X"}</Key>
+              <Key keyCode={KEYCODE.KeyC} width={w(50)} dims={dims}>{"C"}</Key>
+              <Key keyCode={KEYCODE.KeyV} width={w(50)} dims={dims}>{"V"}</Key>
+              <Key keyCode={KEYCODE.KeyB} width={w(50)} dims={dims}>{"B"}</Key>
+              <Key keyCode={KEYCODE.KeyN} width={w(50)} dims={dims}>{"N"}</Key>
+              <Key keyCode={KEYCODE.KeyM} width={w(50)} dims={dims}>{"M"}</Key>
+              <Key keyCode={KEYCODE.Comma} width={w(50)} dims={dims}>
                 <span>{"<"}</span>
                 <span>{","}</span>
               </Key>
-              <Key keyCode={KEYCODE.Period}>
+              <Key keyCode={KEYCODE.Period} width={w(50)} dims={dims}>
                 <span>{">"}</span>
                 <span>{"."}</span>
               </Key>
-              <Key keyCode={KEYCODE.Slash}>
+              <Key keyCode={KEYCODE.Slash} width={w(50)} dims={dims}>
                 <span>{"?"}</span>
                 <span>{"/"}</span>
               </Key>
-              <Key keyCode={KEYCODE.ShiftRight} width={77}>{"shift"}</Key>
-              <Key keyCode={KEYCODE.ArrowUp}>
-                <IconChevronUp className="size-[12px]" />
+              <Key keyCode={KEYCODE.ShiftRight} width={w(77)} dims={dims}>{"shift"}</Key>
+              <Key keyCode={KEYCODE.ArrowUp} width={w(50)} dims={dims}>
+                <IconChevronUp className="size-[12px]" style={{ width: dims.iconSize.medium, height: dims.iconSize.medium }} />
               </Key>
-              <Key keyCode={KEYCODE.End}>{"end"}</Key>
+              <Key keyCode={KEYCODE.End} width={w(50)} dims={dims}>{"end"}</Key>
             </Row>
 
-            <Row>
-              <Key keyCode={KEYCODE.ControlLeft} width={62}>{"ctrl"}</Key>
-              <Key keyCode={KEYCODE.AltLeft} width={62}>{"option"}</Key>
-              <Key keyCode={KEYCODE.MetaLeft} width={62}>
-                <IconCommand className="size-[12px]" />
+            <Row gap={dims.gap}>
+              <Key keyCode={KEYCODE.ControlLeft} width={w(62)} dims={dims}>{"ctrl"}</Key>
+              <Key keyCode={KEYCODE.AltLeft} width={w(62)} dims={dims}>{"option"}</Key>
+              <Key keyCode={KEYCODE.MetaLeft} width={w(62)} dims={dims}>
+                <IconCommand className="size-[12px]" style={{ width: dims.iconSize.medium, height: dims.iconSize.medium }} />
               </Key>
-              <Key keyCode={KEYCODE.Space} width={314} />
-              <Key keyCode={KEYCODE.MetaRight}>
-                <IconCommand className="size-[12px]" />
+              <Key keyCode={KEYCODE.Space} width={w(314)} dims={dims} />
+              <Key keyCode={KEYCODE.MetaRight} width={w(50)} dims={dims}>
+                <IconCommand className="size-[12px]" style={{ width: dims.iconSize.medium, height: dims.iconSize.medium }} />
               </Key>
-              <Key keyCode={KEYCODE.Fn}>{"fn"}</Key>
-              <Key keyCode={KEYCODE.ControlRight}>{"ctrl"}</Key>
-              <Key keyCode={KEYCODE.ArrowLeft}>
-                <IconChevronLeft className="size-[12px]" />
+              <Key keyCode={KEYCODE.Fn} width={w(50)} dims={dims}>{"fn"}</Key>
+              <Key keyCode={KEYCODE.ControlRight} width={w(50)} dims={dims}>{"ctrl"}</Key>
+              <Key keyCode={KEYCODE.ArrowLeft} width={w(50)} dims={dims}>
+                <IconChevronLeft className="size-[12px]" style={{ width: dims.iconSize.medium, height: dims.iconSize.medium }} />
               </Key>
-              <Key keyCode={KEYCODE.ArrowDown}>
-                <IconChevronDown className="size-[12px]" />
+              <Key keyCode={KEYCODE.ArrowDown} width={w(50)} dims={dims}>
+                <IconChevronDown className="size-[12px]" style={{ width: dims.iconSize.medium, height: dims.iconSize.medium }} />
               </Key>
-              <Key keyCode={KEYCODE.ArrowRight}>
-                <IconChevronRight className="size-[12px]" />
+              <Key keyCode={KEYCODE.ArrowRight} width={w(50)} dims={dims}>
+                <IconChevronRight className="size-[12px]" style={{ width: dims.iconSize.medium, height: dims.iconSize.medium }} />
               </Key>
             </Row>
           </div>
@@ -505,11 +604,11 @@ function KeyboardLayout() {
   );
 }
 
-function Row({ children }) {
+function Row({ children, gap }) {
   return <div className="flex">{children}</div>;
 }
 
-function Key({ width = 50, children, className, keyCode }) {
+function Key({ width = 50, children, className, keyCode, dims }) {
   const { themeName, pressedKeys, pressKey, releaseKey, triggerPointerHaptic } =
     useKeyboardContext();
   const isPressed = keyCode ? pressedKeys.has(keyCode) : false;
@@ -533,6 +632,10 @@ function Key({ width = 50, children, className, keyCode }) {
     releaseKey(keyCode, "pointer");
   };
 
+  // Calculate pressed state height reduction
+  const pressedHeightReduction = Math.round(dims.keyHeight * 0.1); // 10% reduction when pressed
+  const outerHeight = isPressed ? dims.keyHeight - pressedHeightReduction : dims.keyHeight;
+
   return (
     <button
       type="button"
@@ -545,34 +648,37 @@ function Key({ width = 50, children, className, keyCode }) {
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerRelease}
       onPointerCancel={handlePointerRelease}
-      // NOTE: onPointerLeave intentionally removed — it was causing key jamming.
-      // setPointerCapture keeps the pointer locked to this element during a press,
-      // so onLostPointerCapture reliably fires when the pointer is truly released,
-      // even if the cursor moves off the key mid-press.
       onLostPointerCapture={handlePointerRelease}
-      style={{ height: 50, width }}
+      style={{ height: dims.keyHeight, width }}
       className="flex items-end cursor-pointer touch-none appearance-none border-0 bg-transparent p-0 text-left focus:outline-none"
     >
       <div
         className={cn(
-          "relative overflow-hidden h-[50px] rounded-[4px] rounded-t-[12px] border border-border/70 flex items-start justify-center transition-all duration-100",
-          isPressed && "h-[45px]"
+          "relative overflow-hidden rounded-[4px] rounded-t-[12px] border border-border/70 flex items-start justify-center transition-all duration-100",
+          isPressed && "rounded-t-[10px]"
         )}
         style={{
           width: `${width}px`,
+          height: `${outerHeight}px`,
+          borderRadius: `${dims.borderRadius.key}px ${dims.borderRadius.key}px ${dims.borderRadius.key}px ${dims.borderRadius.key}px`,
+          borderTopLeftRadius: dims.borderRadius.keyTop,
+          borderTopRightRadius: dims.borderRadius.keyTop,
           backgroundColor: toRgba(keyVariant.bg, 0.8),
         }}
       >
         <div
           className={cn(
-            "relative z-10 h-[37px] rounded-[6px] border border-t-0 border-border/70 transition-all duration-100",
-            "text-[9px] font-medium flex flex-col items-center justify-between p-1 gap-0.5 select-none",
+            "relative z-10 border border-t-0 border-border/70 transition-all duration-100",
+            "font-medium flex flex-col items-center justify-between p-1 gap-0.5 select-none",
             className
           )}
           style={{
-            width: `${width - 13}px`,
+            width: `${width - Math.round(13 * (dims.scale || 1))}px`,
+            height: `${dims.keyInnerHeight}px`,
+            borderRadius: `${dims.borderRadius.keyInner}px`,
             backgroundColor: keyVariant.bg,
             color: keyVariant.text,
+            fontSize: `${dims.fontSize}px`,
           }}
         >
           {children}
@@ -583,12 +689,14 @@ function Key({ width = 50, children, className, keyCode }) {
             "absolute z-0 bottom-0 right-0 h-px w-8 rotate-70 translate-x-3.5 bg-foreground/15 transition-all duration-100",
             isPressed && "rotate-60"
           )}
+          style={{ width: Math.round(32 * (dims.scale || 1)) }}
         />
         <div
           className={cn(
             "absolute z-0 bottom-0 left-0 h-px w-8 -rotate-70 -translate-x-3.5 bg-foreground/15 transition-all duration-100",
             isPressed && "-rotate-60"
           )}
+          style={{ width: Math.round(32 * (dims.scale || 1)) }}
         />
       </div>
     </button>
@@ -692,14 +800,6 @@ const HANDLED_KEYCODES = new Set(Object.values(KEYCODE));
 
 /**
  * Decides whether to swallow a native key event when disableNativeBehavior=true.
- *
- * Rules (all must pass to block):
- * 1. The key is one we render on the keyboard.
- * 2. No modifier combo is held (Cmd/Ctrl/Alt) — we never block shortcuts like
- *    Cmd+R, Cmd+Shift+R, Cmd+T, Ctrl+C, Alt+Tab, etc.
- * 3. The focused element is not an input/textarea/select or contenteditable.
- * 4. Space/Enter are not blocked when focus is on a button/link/role=button —
- *    this fixes spacebar triggering theme toggles and other nav buttons.
  */
 function shouldBlockNativeKeyBehavior(event) {
   // Never block modifier combos — lets Cmd+R, Cmd+Shift+R, Ctrl+C, Alt+Tab, etc. through
@@ -722,8 +822,6 @@ function shouldBlockNativeKeyBehavior(event) {
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return false;
 
   // Space and Enter activate focused buttons/links natively — don't block those.
-  // Without this, pressing Space scrolls the keyboard visual but also fires
-  // the focused theme toggle / nav button click simultaneously.
   if (event.code === "Space" || event.code === "Enter") {
     const role = target.getAttribute("role");
     if (tag === "BUTTON" || tag === "A" || role === "button" || role === "link") {
