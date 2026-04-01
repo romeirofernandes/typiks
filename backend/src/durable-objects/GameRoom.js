@@ -8,10 +8,12 @@ export class GameRoom {
 		this.controller = controller;
 		this.env = env;
 		this.sessions = new Map(); // sessionId -> WebSocket
+		this.sessionOrder = new Map(); // sessionId -> monotonic connection order
 		this.waitingPlayers = new Map(); // playerId -> {sessionId, userInfo}
 		this.activeGames = new Map(); // gameId -> game data
 		this.playerToGame = new Map(); // playerId -> gameId
 		this.playerToSession = new Map(); // playerId -> sessionId
+		this.nextSessionOrder = 0;
 	}
 
 	async authenticateAndGetPlayerId(message) {
@@ -83,6 +85,7 @@ export class GameRoom {
 
 	handleSessionTermination(sessionId, playerId) {
 		this.sessions.delete(sessionId);
+		this.sessionOrder.delete(sessionId);
 
 		if (!playerId) {
 			return;
@@ -110,6 +113,11 @@ export class GameRoom {
 		}
 
 		this.sessions.delete(sessionId);
+		this.sessionOrder.delete(sessionId);
+	}
+
+	getSessionOrder(sessionId) {
+		return this.sessionOrder.get(sessionId) ?? -1;
 	}
 
 	buildProgressPayload(game) {
@@ -164,6 +172,7 @@ export class GameRoom {
 
 		const sessionId = this.generateSessionId();
 		this.sessions.set(sessionId, webSocket);
+		this.sessionOrder.set(sessionId, this.nextSessionOrder++);
 
 		let playerId = null;
 
@@ -174,33 +183,42 @@ export class GameRoom {
 					return;
 				}
 
-				switch (message.type) {
-					case 'JOIN_QUEUE':
-						try {
-							playerId = await this.authenticateAndGetPlayerId(message);
-
-							const previousSessionId = this.playerToSession.get(playerId);
-							if (previousSessionId && previousSessionId !== sessionId) {
-								this.closeSession(previousSessionId, 1000, 'Replaced by newer session');
-							}
-
-							this.playerToSession.set(playerId, sessionId);
-
-							if (this.rebindPlayerToCurrentGame(playerId, sessionId)) {
-								break;
-							}
-
-							this.addWaitingPlayer(playerId, sessionId, this.sanitizeUserInfo(message.userInfo));
-						} catch (error) {
-							console.error('JOIN_QUEUE auth failed:', error);
+					switch (message.type) {
+						case 'JOIN_QUEUE':
 							try {
-								webSocket.send(JSON.stringify({ type: 'ERROR', error: 'UNAUTHORIZED' }));
-							} catch {
-								// ignore
+								playerId = await this.authenticateAndGetPlayerId(message);
+
+								const previousSessionId = this.playerToSession.get(playerId);
+								if (
+									previousSessionId &&
+									previousSessionId !== sessionId &&
+									this.getSessionOrder(previousSessionId) > this.getSessionOrder(sessionId)
+								) {
+									this.closeSession(sessionId, 1000, 'Superseded by newer session');
+									break;
+								}
+
+								if (previousSessionId && previousSessionId !== sessionId) {
+									this.closeSession(previousSessionId, 1000, 'Replaced by newer session');
+								}
+
+								this.playerToSession.set(playerId, sessionId);
+
+								if (this.rebindPlayerToCurrentGame(playerId, sessionId)) {
+									break;
+								}
+
+								this.addWaitingPlayer(playerId, sessionId, this.sanitizeUserInfo(message.userInfo));
+							} catch (error) {
+								console.error('JOIN_QUEUE auth failed:', error);
+								try {
+									webSocket.send(JSON.stringify({ type: 'ERROR', error: 'UNAUTHORIZED' }));
+								} catch {
+									// ignore
+								}
+								webSocket.close(1008, 'Unauthorized');
 							}
-							webSocket.close(1008, 'Unauthorized');
-						}
-						break;
+							break;
 
 					case 'LEAVE_QUEUE':
 						if (playerId) {

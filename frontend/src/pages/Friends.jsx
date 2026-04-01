@@ -1,0 +1,444 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useAuth } from "@/context/AuthContext";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+
+function getServerBaseUrl() {
+  const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
+  return serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
+}
+
+const ACTION_DEBOUNCE_MS = 300;
+
+export default function Friends() {
+  const { currentUser } = useAuth();
+
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [friends, setFriends] = useState([]);
+  const [incomingRequests, setIncomingRequests] = useState([]);
+  const [outgoingRequests, setOutgoingRequests] = useState([]);
+  const [username, setUsername] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchingUsers, setSearchingUsers] = useState(false);
+  const [feedback, setFeedback] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const sendRequestDebounceRef = useRef(null);
+  const refreshDebounceRef = useRef(null);
+  const searchDebounceRef = useRef(null);
+
+  const fetchFriendsData = useCallback(async () => {
+    if (!currentUser) return;
+
+    try {
+      setRefreshing(true);
+      setFeedback("");
+
+      const idToken = await currentUser.getIdToken();
+      const baseUrl = getServerBaseUrl();
+      const headers = {
+        Authorization: `Bearer ${idToken}`,
+      };
+
+      const [friendsRes, requestsRes] = await Promise.all([
+        fetch(`${baseUrl}/api/users/me/friends`, { headers }),
+        fetch(`${baseUrl}/api/users/me/friend-requests`, { headers }),
+      ]);
+
+      if (!friendsRes.ok || !requestsRes.ok) {
+        throw new Error("Failed to fetch friends data");
+      }
+
+      const friendsData = await friendsRes.json();
+      const requestsData = await requestsRes.json();
+
+      setFriends(Array.isArray(friendsData.friends) ? friendsData.friends : []);
+      setIncomingRequests(Array.isArray(requestsData.incoming) ? requestsData.incoming : []);
+      setOutgoingRequests(Array.isArray(requestsData.outgoing) ? requestsData.outgoing : []);
+    } catch (error) {
+      console.error("Failed to load friends:", error);
+      setFeedback("Failed to load friends. Please try again.");
+    } finally {
+      setRefreshing(false);
+      setLoading(false);
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    fetchFriendsData();
+  }, [fetchFriendsData]);
+
+  const sendFriendRequest = useCallback(async (targetUsername = username) => {
+    const normalizedUsername = targetUsername.trim();
+    if (!currentUser || !normalizedUsername) return;
+
+    try {
+      setSubmitting(true);
+      setFeedback("");
+
+      const idToken = await currentUser.getIdToken();
+      const baseUrl = getServerBaseUrl();
+
+      const response = await fetch(`${baseUrl}/api/users/me/friend-requests`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ username: normalizedUsername }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not send friend request");
+      }
+
+      setUsername("");
+      setFeedback(payload.message || "Friend request sent.");
+      await fetchFriendsData();
+    } catch (error) {
+      setFeedback(error.message || "Failed to send friend request.");
+    } finally {
+      setSubmitting(false);
+    }
+  }, [currentUser, fetchFriendsData, username]);
+
+  const searchUsers = useCallback(
+    async (query) => {
+      const normalizedQuery = query.trim().toLowerCase();
+      if (!currentUser || normalizedQuery.length < 2) {
+        setSearchResults([]);
+        setSearchingUsers(false);
+        return;
+      }
+
+      try {
+        setSearchingUsers(true);
+
+        const idToken = await currentUser.getIdToken();
+        const baseUrl = getServerBaseUrl();
+        const response = await fetch(
+          `${baseUrl}/api/users/me/search?query=${encodeURIComponent(normalizedQuery)}`,
+          {
+            headers: {
+              Authorization: `Bearer ${idToken}`,
+            },
+          }
+        );
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload.error || "Failed to search users");
+        }
+
+        setSearchResults(Array.isArray(payload.users) ? payload.users : []);
+      } catch (error) {
+        console.error("Failed to search users:", error);
+        setSearchResults([]);
+      } finally {
+        setSearchingUsers(false);
+      }
+    },
+    [currentUser]
+  );
+
+  const debouncedSendFriendRequest = useCallback(() => {
+    if (submitting) return;
+
+    if (sendRequestDebounceRef.current) {
+      clearTimeout(sendRequestDebounceRef.current);
+    }
+
+    sendRequestDebounceRef.current = setTimeout(() => {
+      sendFriendRequest();
+    }, ACTION_DEBOUNCE_MS);
+  }, [sendFriendRequest, submitting]);
+
+  const debouncedRefreshFriendsData = useCallback(() => {
+    if (refreshing) return;
+
+    if (refreshDebounceRef.current) {
+      clearTimeout(refreshDebounceRef.current);
+    }
+
+    refreshDebounceRef.current = setTimeout(() => {
+      fetchFriendsData();
+    }, ACTION_DEBOUNCE_MS);
+  }, [fetchFriendsData, refreshing]);
+
+  useEffect(() => {
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+    }
+
+    if (!username.trim()) {
+      setSearchResults([]);
+      setSearchingUsers(false);
+      return;
+    }
+
+    searchDebounceRef.current = setTimeout(() => {
+      searchUsers(username);
+    }, ACTION_DEBOUNCE_MS);
+  }, [searchUsers, username]);
+
+  useEffect(() => {
+    return () => {
+      if (sendRequestDebounceRef.current) {
+        clearTimeout(sendRequestDebounceRef.current);
+      }
+      if (refreshDebounceRef.current) {
+        clearTimeout(refreshDebounceRef.current);
+      }
+      if (searchDebounceRef.current) {
+        clearTimeout(searchDebounceRef.current);
+      }
+    };
+  }, []);
+
+  const respondToRequest = async (requestId, action) => {
+    if (!currentUser || !requestId) return;
+
+    try {
+      setFeedback("");
+      const idToken = await currentUser.getIdToken();
+      const baseUrl = getServerBaseUrl();
+
+      const response = await fetch(`${baseUrl}/api/users/me/friend-requests/${requestId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ action }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || "Failed to update request");
+      }
+
+      setFeedback(payload.message || "Request updated.");
+      await fetchFriendsData();
+    } catch (error) {
+      setFeedback(error.message || "Failed to update request.");
+    }
+  };
+
+  const removeFriend = async (friendId) => {
+    if (!currentUser || !friendId) return;
+
+    try {
+      setFeedback("");
+      const idToken = await currentUser.getIdToken();
+      const baseUrl = getServerBaseUrl();
+
+      const response = await fetch(`${baseUrl}/api/users/me/friends/${friendId}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+        },
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || "Failed to remove friend");
+      }
+
+      setFeedback(payload.message || "Friend removed.");
+      await fetchFriendsData();
+    } catch (error) {
+      setFeedback(error.message || "Failed to remove friend.");
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex h-full min-h-[60svh] items-center justify-center text-foreground">
+        <div className="size-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full flex-col gap-5">
+      <div className="border-b border-border/70 pb-5">
+        <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Friends</p>
+        <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">Friends & Requests</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Add friends by username and manage incoming requests.
+        </p>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Add Friend</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <Input
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  debouncedSendFriendRequest();
+                }
+              }}
+              placeholder="Search username"
+              maxLength={24}
+            />
+            <Button onClick={debouncedSendFriendRequest} disabled={submitting || !username.trim()}>
+              {submitting ? "Sending..." : "Send Request"}
+            </Button>
+          </div>
+
+          {username.trim().length >= 2 ? (
+            <div className="space-y-2 rounded-md border border-border/70 bg-card/30 p-3">
+              {searchingUsers ? (
+                <p className="text-sm text-muted-foreground">Searching users...</p>
+              ) : searchResults.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No matching users found.</p>
+              ) : (
+                searchResults.map((user) => {
+                  const actionLabel = user.isFriend
+                    ? "Friends"
+                    : user.hasOutgoingRequest
+                      ? "Pending"
+                      : user.hasIncomingRequest
+                        ? "Respond"
+                        : "Add";
+
+                  const actionDisabled =
+                    submitting || user.isFriend || user.hasOutgoingRequest || user.hasIncomingRequest;
+
+                  return (
+                    <div
+                      key={user.id}
+                      className="flex items-center justify-between gap-3 rounded-md border border-border/70 bg-card/40 px-3 py-2"
+                    >
+                      <div>
+                        <p className="font-semibold">{user.username}</p>
+                        <p className="text-xs text-muted-foreground">Rating: {user.rating}</p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant={actionDisabled ? "outline" : "default"}
+                        disabled={actionDisabled}
+                        onClick={() => sendFriendRequest(user.username)}
+                      >
+                        {actionLabel}
+                      </Button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      {feedback ? (
+        <p className="rounded-md border border-border/70 bg-card/40 px-3 py-2 text-sm text-muted-foreground">
+          {feedback}
+        </p>
+      ) : null}
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Incoming Requests ({incomingRequests.length})</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {incomingRequests.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No incoming requests.</p>
+            ) : (
+              incomingRequests.map((request) => (
+                <div
+                  key={request.id}
+                  className="flex flex-col gap-2 rounded-md border border-border/70 bg-card/30 p-3"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-semibold">{request.senderUsername}</p>
+                    <p className="text-xs text-muted-foreground">Rating: {request.senderRating}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={() => respondToRequest(request.id, "accept")}>
+                      Accept
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => respondToRequest(request.id, "decline")}
+                    >
+                      Decline
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Outgoing Requests ({outgoingRequests.length})</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {outgoingRequests.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No pending outgoing requests.</p>
+            ) : (
+              outgoingRequests.map((request) => (
+                <div
+                  key={request.id}
+                  className="flex items-center justify-between rounded-md border border-border/70 bg-card/30 p-3"
+                >
+                  <div>
+                    <p className="font-semibold">{request.receiverUsername}</p>
+                    <p className="text-xs text-muted-foreground">Waiting for response</p>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Rating: {request.receiverRating}</p>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className="flex-1">
+        <CardHeader>
+          <CardTitle>Friends ({friends.length})</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {friends.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No friends yet.</p>
+          ) : (
+            friends.map((friend) => (
+              <div
+                key={friend.id}
+                className="flex items-center justify-between rounded-md border border-border/70 bg-card/30 p-3"
+              >
+                <div>
+                  <p className="font-semibold">{friend.username}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Rating: {friend.rating} • Games: {friend.gamesPlayed}
+                  </p>
+                </div>
+                <Button size="sm" variant="outline" onClick={() => removeFriend(friend.id)}>
+                  Remove
+                </Button>
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
+
+      <div className="flex justify-end">
+        <Button variant="outline" onClick={debouncedRefreshFriendsData} disabled={refreshing}>
+          {refreshing ? "Refreshing..." : "Refresh"}
+        </Button>
+      </div>
+    </div>
+  );
+}

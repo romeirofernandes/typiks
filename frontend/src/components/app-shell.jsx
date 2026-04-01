@@ -22,6 +22,7 @@ import {
   RankingIcon,
   UserIcon,
 } from "hugeicons-react";
+import { DoorOpen, Users } from "lucide-react";
 
 function SidebarNavButton({ icon, label, active, expanded, onClick }) {
   const Icon = icon;
@@ -81,6 +82,20 @@ export default function AppShell() {
           location.pathname === "/game" ||
           location.pathname === "/game/waiting",
         onClick: () => navigate("/start-game"),
+      },
+      {
+        key: "create-room",
+        label: "Create Room",
+        icon: DoorOpen,
+        active: location.pathname === "/create-room",
+        onClick: () => navigate("/create-room"),
+      },
+      {
+        key: "friends",
+        label: "Friends",
+        icon: Users,
+        active: location.pathname === "/friends",
+        onClick: () => navigate("/friends"),
       },
       {
         key: "leaderboard",

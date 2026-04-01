@@ -4,6 +4,7 @@ import { drizzle } from 'drizzle-orm/d1';
 import { sql } from 'drizzle-orm';
 import { users } from './db/schema.js';
 import userRouter from './routes/users.js';
+import roomsRouter from './routes/rooms.js';
 
 const app = new Hono();
 
@@ -13,7 +14,7 @@ app.use(
 		origin: ['https://typiks.vercel.app', 'http://localhost:5173', 'http://127.0.0.1:5173'],
 		credentials: true,
 		allowHeaders: ['Content-Type', 'Authorization'],
-		allowMethods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
+		allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
 	})
 );
 
@@ -47,6 +48,7 @@ app.get('/api/stats', async (c) => {
 
 // API routes
 app.route('/api/users', userRouter);
+app.route('/api/rooms', roomsRouter);
 
 app.get('/ws', async (c) => {
 	const upgradeHeader = c.req.header('upgrade');
@@ -60,6 +62,25 @@ app.get('/ws', async (c) => {
 	return gameRoom.fetch(c.req.raw);
 });
 
+app.get('/ws/room/:roomCode', async (c) => {
+	const upgradeHeader = c.req.header('upgrade');
+	if (upgradeHeader !== 'websocket') {
+		return c.text('Expected websocket', 400);
+	}
+
+	const rawRoomCode = c.req.param('roomCode') || '';
+	const roomCode = rawRoomCode.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+	if (roomCode.length !== 6) {
+		return c.json({ error: 'Invalid room code' }, 400);
+	}
+
+	const id = c.env.PRIVATE_ROOM.idFromName(`room-${roomCode}`);
+	const privateRoom = c.env.PRIVATE_ROOM.get(id);
+
+	return privateRoom.fetch(c.req.raw);
+});
+
 export default app;
 
 export { GameRoom } from './durable-objects/GameRoom.js';
+export { PrivateRoom } from './durable-objects/PrivateRoom.js';

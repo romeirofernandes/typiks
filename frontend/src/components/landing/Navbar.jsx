@@ -52,23 +52,29 @@ export default function Navbar() {
         {/* Inner background wrapper */}
         <nav className="w-full flex items-center justify-between px-6 py-3">
           {/* Left: Brand */}
-          <div className="font-bold text-xl tracking-tight text-foreground lowercase uppercase-none font-sans">
+          <div className="text-xl tracking-tight text-foreground font-sans">
             <Link to="/">typiks</Link>
           </div>
 
           {/* Middle: Links */}
-          <div className="hidden md:flex items-center gap-8 text-sm font-medium text-muted-foreground lowercase">
+          <div className="hidden md:flex items-center gap-8 text-sm font-medium text-muted-foreground">
             <button
               type="button"
               onClick={() => scrollToSection("demo")}
               className="hover:text-foreground transition-colors">
-              demo
+              Demo
             </button>
             <button
               type="button"
               onClick={() => scrollToSection("features")}
               className="hover:text-foreground transition-colors">
-              features
+              Features
+            </button>
+            <button
+              type="button"
+              onClick={() => scrollToSection("testimonials")}
+              className="hover:text-foreground transition-colors">
+              Testimonials
             </button>
           </div>
 
@@ -77,7 +83,7 @@ export default function Navbar() {
             {/* Theme Toggle Button */}
             <button
               onClick={toggleTheme}
-              aria-label="toggle theme"
+              aria-label="Toggle theme"
               className="bg-card hover:bg-muted text-foreground border border-border flex items-center justify-center p-2 transition-colors"
             >
               {theme === "light" ? (
@@ -90,7 +96,7 @@ export default function Navbar() {
             {/* Sign Up Button */}
             <Link
               to="/signup"
-              className="bg-primary text-primary-foreground hover:bg-primary/90 flex items-center justify-center px-5 py-2 text-sm transition-colors"
+              className="bg-primary text-primary-foreground hover:bg-primary/90 normal-case flex items-center justify-center px-5 py-2 text-sm transition-colors"
             >
               Sign Up
             </Link>
