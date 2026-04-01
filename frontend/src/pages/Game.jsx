@@ -5,7 +5,9 @@ import { useAuth } from "@/context/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { FiUser, FiClock } from "react-icons/fi";
+import { Skeleton } from "@/components/ui/skeleton";
+import { DotLoader } from "@/components/ui/dot-loader";
+import { FiUser, FiClock, FiArrowLeft, FiZap, FiTrendingUp } from "react-icons/fi";
 
 const Game = () => {
   const { currentUser } = useAuth();
@@ -507,63 +509,80 @@ const Game = () => {
     return "text-muted-foreground";
   };
 
+  // Skeleton loading state
   if (!userStats) {
     return (
-      <div className="flex h-full min-h-[60svh] items-center justify-center text-foreground">
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-          className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent"
-        />
+      <div className="flex h-full min-h-[60svh] flex-col gap-6 p-4">
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-8 w-32" />
+          <Skeleton className="h-8 w-20" />
+        </div>
+        <div className="flex flex-1 items-center justify-center">
+          <Card className="w-full max-w-md">
+            <CardContent className="flex flex-col items-center gap-4 py-12">
+              <DotLoader duration={100} className="scale-150" />
+              <Skeleton className="h-4 w-40" />
+            </CardContent>
+          </Card>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="h-full text-foreground font-mono">
-      <div className="w-full">
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-6 flex items-center justify-between"
-        >
-          <h2 className="text-xl font-semibold">Start Game</h2>
+    <div className="flex h-full flex-col gap-6">
+      {/* Header */}
+      <motion.div
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex items-center justify-between border-b border-border/50 pb-4"
+      >
+        <div>
+          <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
+            Ranked Match
+          </p>
+          <h2 className="font-sans text-xl font-semibold tracking-tight">Live Game</h2>
+        </div>
 
-          {gameState === "playing" && (
-            <div className="flex items-center gap-2 text-lg font-bold tabular-nums">
-              <FiClock className="h-5 w-5" />
-              {formatTime(timeLeft)}
-            </div>
-          )}
-        </motion.div>
+        {gameState === "playing" && (
+          <div className="flex items-center gap-2 rounded-full bg-primary/10 px-4 py-2 font-mono text-lg font-bold tabular-nums text-primary">
+            <FiClock className="h-4 w-4" />
+            {formatTime(timeLeft)}
+          </div>
+        )}
+      </motion.div>
 
-        {/* Game States */}
-        <AnimatePresence mode="wait">
-          {gameState === "error" && (
-            <motion.div
-              key="error"
-              initial={{ opacity: 0 }}
+      {/* Game States */}
+      <AnimatePresence mode="wait">
+        {gameState === "error" && (
+          <motion.div
+            key="error"
+            initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="text-center py-20"
+              className="flex flex-1 items-center justify-center py-12"
             >
-              <Card className="max-w-md mx-auto border-destructive/50">
-                <CardHeader>
-                  <CardTitle className="text-destructive">
+              <Card className="w-full max-w-md border-destructive/50">
+                <CardHeader className="text-center">
+                  <motion.div
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-destructive/20"
+                  >
+                    <FiZap className="h-8 w-8 text-destructive" />
+                  </motion.div>
+                  <CardTitle className="font-sans text-destructive">
                     {connectionError?.title || "Connection Lost"}
                   </CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <p className="text-muted-foreground mb-4">
-                    {connectionError?.message ||
-                      "Could not connect to the game server."}
+                <CardContent className="space-y-4 text-center">
+                  <p className="text-sm text-muted-foreground">
+                    {connectionError?.message || "Could not connect to the game server."}
                   </p>
-                  <button
-                    onClick={() => navigate("/dashboard")}
-                    className="flex h-10 w-full items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
-                  >
+                  <Button onClick={() => navigate("/dashboard")} className="w-full gap-2">
+                    <FiArrowLeft className="h-4 w-4" />
                     Back to Dashboard
-                  </button>
+                  </Button>
                 </CardContent>
               </Card>
             </motion.div>
@@ -575,20 +594,14 @@ const Game = () => {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="text-center py-20"
+              className="flex flex-1 items-center justify-center py-12"
             >
-              <Card className="max-w-md mx-auto">
-                <CardContent className="py-8">
-                  <motion.div
-                    animate={{ rotate: 360 }}
-                    transition={{
-                      duration: 1,
-                      repeat: Infinity,
-                      ease: "linear",
-                    }}
-                    className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full mx-auto mb-4"
-                  />
-                  <p>Connecting to game server...</p>
+              <Card className="w-full max-w-md">
+                <CardContent className="flex flex-col items-center gap-4 py-12">
+                  <DotLoader duration={100} className="scale-150" />
+                  <p className="font-mono text-sm text-muted-foreground">
+                    Connecting to game server...
+                  </p>
                 </CardContent>
               </Card>
             </motion.div>
@@ -600,39 +613,44 @@ const Game = () => {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="text-center py-20"
+              className="flex flex-1 items-center justify-center py-12"
             >
-              <Card className="max-w-md mx-auto">
-                <CardHeader>
-                  <CardTitle>Finding Opponent</CardTitle>
+              <Card className="w-full max-w-md overflow-hidden">
+                <CardHeader className="bg-gradient-to-r from-primary/10 to-transparent text-center">
+                  <motion.div
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    transition={{ type: "spring", stiffness: 200 }}
+                    className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/20"
+                  >
+                    <FiZap className="h-8 w-8 text-primary" />
+                  </motion.div>
+                  <CardTitle className="font-sans">Finding Opponent</CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <div className="flex justify-center space-x-2 mb-4">
-                    {[...Array(3)].map((_, i) => (
-                      <motion.div
-                        key={i}
-                        className="w-4 h-4 bg-primary rounded-full"
-                        animate={{
-                          scale: [1, 1.2, 1],
-                          opacity: [0.5, 1, 0.5],
-                        }}
-                        transition={{
-                          duration: 1.5,
-                          repeat: Infinity,
-                          delay: i * 0.2,
-                        }}
-                      />
-                    ))}
+                <CardContent className="space-y-6 py-8 text-center">
+                  <DotLoader duration={100} className="mx-auto scale-150" />
+                  <div className="space-y-2">
+                    <p className="font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                      Searching for players...
+                    </p>
+                    <div className="flex items-center justify-center gap-2">
+                      <FiTrendingUp className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">
+                        Your Rating:{" "}
+                        <span className={`font-semibold ${getRatingColor(userStats.rating)}`}>
+                          {userStats.rating}
+                        </span>
+                      </span>
+                    </div>
                   </div>
-                  <p className="text-muted-foreground mb-2">
-                    Looking for players...
-                  </p>
-                  <div className="text-sm text-muted-foreground">
-                    Your Rating:{" "}
-                    <span className={getRatingColor(userStats.rating)}>
-                      {userStats.rating}
-                    </span>
-                  </div>
+                  <Button
+                    variant="outline"
+                    onClick={handleBackToDashboard}
+                    className="w-full gap-2"
+                  >
+                    <FiArrowLeft className="h-4 w-4" />
+                    Cancel
+                  </Button>
                 </CardContent>
               </Card>
             </motion.div>
@@ -644,33 +662,38 @@ const Game = () => {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="text-center py-20"
+              className="flex flex-1 items-center justify-center py-12"
             >
-              <Card className="max-w-md mx-auto">
-                <CardHeader>
-                  <CardTitle>Match Found!</CardTitle>
+              <Card className="w-full max-w-md overflow-hidden border-primary/50">
+                <CardHeader className="bg-gradient-to-r from-primary/10 to-transparent text-center">
+                  <CardTitle className="font-sans">Match Found!</CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <div className="space-y-2 mb-4">
-                    <p>
-                      <strong>{userStats.username}</strong>{" "}
-                      <span className={getRatingColor(userStats.rating)}>
-                        ({userStats.rating})
-                      </span>
-                    </p>
-                    <p className="text-muted-foreground">vs</p>
-                    <p>
-                      <strong>{opponent?.username}</strong>{" "}
-                      <span className={getRatingColor(opponent?.rating)}>
-                        ({opponent?.rating})
-                      </span>
-                    </p>
+                <CardContent className="space-y-6 py-8 text-center">
+                  {/* VS Display */}
+                  <div className="flex items-center justify-center gap-4">
+                    <div className="text-right">
+                      <p className="font-semibold">{userStats.username}</p>
+                      <p className={`font-mono text-sm ${getRatingColor(userStats.rating)}`}>
+                        {userStats.rating}
+                      </p>
+                    </div>
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted font-sans text-lg font-bold text-muted-foreground">
+                      VS
+                    </div>
+                    <div className="text-left">
+                      <p className="font-semibold">{opponent?.username}</p>
+                      <p className={`font-mono text-sm ${getRatingColor(opponent?.rating)}`}>
+                        {opponent?.rating}
+                      </p>
+                    </div>
                   </div>
+                  
+                  {/* Countdown */}
                   <motion.div
                     key={countdown}
                     initial={{ scale: 0.5, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
-                    className="text-6xl font-bold text-primary"
+                    className="font-sans text-7xl font-bold text-primary"
                   >
                     {countdown === 0 ? "GO!" : countdown}
                   </motion.div>
@@ -689,31 +712,31 @@ const Game = () => {
             >
               {/* Score Display */}
               <div className="grid grid-cols-2 gap-4">
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="flex items-center gap-2 text-sm">
-                      <FiUser className="w-4 h-4" />
-                      {userStats.username}
+                <Card className="border-primary/30 bg-primary/5">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
+                      <FiUser className="h-3 w-3" />
+                      {userStats.username} (You)
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">{myScore}</div>
-                    <div className="text-sm text-muted-foreground">
+                    <div className="font-sans text-3xl font-bold text-primary">{myScore}</div>
+                    <div className="font-mono text-xs text-muted-foreground">
                       Word {currentWordIndex + 1} / {words.length}
                     </div>
                   </CardContent>
                 </Card>
 
                 <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="flex items-center gap-2 text-sm">
-                      <FiUser className="w-4 h-4" />
+                  <CardHeader className="pb-2">
+                    <CardTitle className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
+                      <FiUser className="h-3 w-3" />
                       {opponent?.username}
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">{opponentScore}</div>
-                    <div className="text-sm text-muted-foreground">
+                    <div className="font-sans text-3xl font-bold">{opponentScore}</div>
+                    <div className="font-mono text-xs text-muted-foreground">
                       Word {opponentWordIndex + 1} / {words.length}
                     </div>
                   </CardContent>
@@ -722,49 +745,67 @@ const Game = () => {
 
               {/* Current Word Display */}
               <Card>
-                <CardContent className="py-8">
+                <CardContent className="space-y-6 py-8">
                   <div className="text-center">
-                    <div className="text-4xl font-bold mb-6">
+                    <p className="mb-2 font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                      Type This Word
+                    </p>
+                    <motion.div
+                      key={words[currentWordIndex]}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="font-sans text-4xl font-bold sm:text-5xl"
+                    >
                       {words[currentWordIndex] || "Loading..."}
-                    </div>
-                    <Input
-                      ref={inputRef}
-                      value={input}
-                      onChange={handleInputChange}
-                      onKeyDown={handleInputSubmit}
-                      placeholder="Type the word and press Enter or Space"
-                      className="text-center text-xl max-w-md mx-auto"
-                      autoFocus
-                    />
+                    </motion.div>
                   </div>
+                  <Input
+                    ref={inputRef}
+                    value={input}
+                    onChange={handleInputChange}
+                    onKeyDown={handleInputSubmit}
+                    placeholder="Type and press Enter or Space"
+                    className="mx-auto max-w-md text-center font-mono text-xl"
+                    autoFocus
+                  />
                 </CardContent>
               </Card>
 
               {/* Progress Indicators */}
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <div className="text-sm text-muted-foreground mb-2">
-                    Your Progress
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
+                      Your Progress
+                    </span>
+                    <span className="font-mono text-xs text-primary">
+                      {Math.round((currentWordIndex / words.length) * 100)}%
+                    </span>
                   </div>
-                  <div className="w-full bg-secondary rounded-full h-2">
-                    <div
-                      className="bg-primary h-2 rounded-full transition-all duration-300"
-                      style={{
-                        width: `${(currentWordIndex / words.length) * 100}%`,
-                      }}
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+                    <motion.div
+                      className="h-full rounded-full bg-primary"
+                      initial={{ width: 0 }}
+                      animate={{ width: `${(currentWordIndex / words.length) * 100}%` }}
+                      transition={{ duration: 0.3 }}
                     />
                   </div>
                 </div>
-                <div>
-                  <div className="text-sm text-muted-foreground mb-2">
-                    Opponent Progress
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
+                      Opponent Progress
+                    </span>
+                    <span className="font-mono text-xs text-destructive">
+                      {Math.round((opponentWordIndex / words.length) * 100)}%
+                    </span>
                   </div>
-                  <div className="w-full bg-secondary rounded-full h-2">
-                    <div
-                      className="bg-destructive h-2 rounded-full transition-all duration-300"
-                      style={{
-                        width: `${(opponentWordIndex / words.length) * 100}%`,
-                      }}
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+                    <motion.div
+                      className="h-full rounded-full bg-destructive"
+                      initial={{ width: 0 }}
+                      animate={{ width: `${(opponentWordIndex / words.length) * 100}%` }}
+                      transition={{ duration: 0.3 }}
                     />
                   </div>
                 </div>
@@ -778,56 +819,74 @@ const Game = () => {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="text-center py-20"
+              className="flex flex-1 items-center justify-center py-12"
             >
-              <Card className="max-w-md mx-auto">
-                <CardHeader>
-                  <CardTitle>
+              <Card className="w-full max-w-md overflow-hidden">
+                <CardHeader className={`text-center ${
+                  gameResults.reason === "opponent_disconnected" ||
+                  (gameResults.player1.id === currentUser.uid && gameResults.player1.won) ||
+                  (gameResults.player2.id === currentUser.uid && gameResults.player2.won)
+                    ? "bg-gradient-to-r from-primary/20 to-primary/5"
+                    : gameResults.isDraw
+                    ? "bg-gradient-to-r from-muted to-muted/50"
+                    : "bg-gradient-to-r from-destructive/10 to-transparent"
+                }`}>
+                  <CardTitle className="font-sans text-2xl">
                     {gameResults.reason === "opponent_disconnected"
-                      ? "Opponent Disconnected - You Win!"
+                      ? "🎉 Opponent Disconnected!"
                       : gameResults.isDraw
-                      ? "Draw!"
+                      ? "It's a Draw!"
                       : gameResults.player1.id === currentUser.uid &&
                         gameResults.player1.won
-                      ? "You Won!"
+                      ? "🎉 You Won!"
                       : gameResults.player2.id === currentUser.uid &&
                         gameResults.player2.won
-                      ? "You Won!"
-                      : "You Lost!"}
+                      ? "🎉 You Won!"
+                      : "Better Luck Next Time!"}
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
+                <CardContent className="space-y-6 py-6">
+                  {/* Score Display */}
                   <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <div className="font-semibold">
-                        {gameResults.player1.username}
-                      </div>
-                      <div className="text-2xl">
+                    <div className={`rounded-md p-4 text-center ${
+                      gameResults.player1.won ? "bg-primary/10" : "bg-muted/50"
+                    }`}>
+                      <p className="font-semibold">{gameResults.player1.username}</p>
+                      <p className="font-sans text-3xl font-bold">
                         {gameResults.player1.score}
-                      </div>
+                      </p>
+                      {gameResults.player1.won && (
+                        <span className="font-mono text-xs text-primary">WINNER</span>
+                      )}
                     </div>
-                    <div>
-                      <div className="font-semibold">
-                        {gameResults.player2.username}
-                      </div>
-                      <div className="text-2xl">
+                    <div className={`rounded-md p-4 text-center ${
+                      gameResults.player2.won ? "bg-primary/10" : "bg-muted/50"
+                    }`}>
+                      <p className="font-semibold">{gameResults.player2.username}</p>
+                      <p className="font-sans text-3xl font-bold">
                         {gameResults.player2.score}
-                      </div>
+                      </p>
+                      {gameResults.player2.won && (
+                        <span className="font-mono text-xs text-primary">WINNER</span>
+                      )}
                     </div>
                   </div>
 
+                  {/* Rating Update */}
                   {userStats && (
-                    <div className="text-sm text-muted-foreground">
-                      <p>
-                        Your new rating:{" "}
-                        <span className={getRatingColor(userStats.rating)}>
+                    <div className="flex items-center justify-center gap-2 rounded-md bg-muted/50 p-3">
+                      <FiTrendingUp className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">
+                        New Rating:{" "}
+                        <span className={`font-semibold ${getRatingColor(userStats.rating)}`}>
                           {userStats.rating}
                         </span>
-                      </p>
+                      </span>
                     </div>
                   )}
 
-                  <Button onClick={handleBackToDashboard} className="w-full">
+                  <Button onClick={handleBackToDashboard} className="w-full gap-2">
+                    <FiArrowLeft className="h-4 w-4" />
                     Back to Dashboard
                   </Button>
                 </CardContent>
@@ -835,7 +894,6 @@ const Game = () => {
             </motion.div>
           )}
         </AnimatePresence>
-      </div>
     </div>
   );
 };
