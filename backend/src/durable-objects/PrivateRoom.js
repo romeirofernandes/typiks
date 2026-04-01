@@ -19,6 +19,24 @@ const DEFAULT_ROOM_SETTINGS = {
 	gameMode: 'ffa', // 'ffa' or 'coop'
 };
 
+const DEFAULT_COOP_TEAMS = [
+	{ id: 'team1', defaultName: 'Team Alpha' },
+	{ id: 'team2', defaultName: 'Team Beta' },
+];
+
+function sanitizeTeamName(rawName, fallbackName) {
+	if (typeof rawName !== 'string') {
+		return fallbackName;
+	}
+
+	const compact = rawName.replace(/\s+/g, ' ').trim();
+	if (!compact) {
+		return fallbackName;
+	}
+
+	return compact.slice(0, 24);
+}
+
 function toInteger(value, fallback) {
 	const parsed = Number.parseInt(String(value), 10);
 	if (!Number.isFinite(parsed)) {
@@ -94,9 +112,64 @@ export class PrivateRoom {
 		this.ownerId = null;
 		this.createdAt = Date.now();
 		this.settings = { ...DEFAULT_ROOM_SETTINGS };
+		this.coopTeams = this.getDefaultCoopTeams();
 
 		this.gameState = 'lobby';
 		this.game = null;
+	}
+
+	getDefaultCoopTeams() {
+		return DEFAULT_COOP_TEAMS.map((team) => ({
+			id: team.id,
+			name: team.defaultName,
+		}));
+	}
+
+	resetCoopTeams() {
+		this.coopTeams = this.getDefaultCoopTeams();
+		for (const member of this.members.values()) {
+			member.teamId = null;
+		}
+	}
+
+	buildTeamState() {
+		const teamNames = new Map(this.coopTeams.map((team) => [team.id, team.name]));
+		return this.coopTeams.map((team) => ({
+			id: team.id,
+			name: team.name,
+			memberIds: this.getSortedMembers()
+				.filter((member) => member.teamId === team.id)
+				.map((member) => member.id),
+			defaultName: DEFAULT_COOP_TEAMS.find((base) => base.id === team.id)?.defaultName || team.name,
+			canRename: true,
+			label: teamNames.get(team.id) || team.name,
+		}));
+	}
+
+	validateCoopTeamRequirements() {
+		if (this.settings.gameMode !== 'coop') {
+			return { ok: true };
+		}
+
+		const memberList = this.getSortedMembers();
+		if (memberList.length < 2) {
+			return { ok: false, error: 'At least two players are required to start' };
+		}
+
+		const teamCounts = new Map(this.coopTeams.map((team) => [team.id, 0]));
+		for (const member of memberList) {
+			if (!member.teamId || !teamCounts.has(member.teamId)) {
+				return { ok: false, error: 'All players must join a team before readying up' };
+			}
+			teamCounts.set(member.teamId, (teamCounts.get(member.teamId) || 0) + 1);
+		}
+
+		const activeTeamCount = Array.from(teamCounts.values()).filter((count) => count > 0).length;
+		if (activeTeamCount < 2) {
+			return { ok: false, error: 'At least two teams are required for coop matches' };
+		}
+
+		return { ok: true };
 	}
 
 	async authenticateAndGetPlayerId(message) {
@@ -193,6 +266,7 @@ export class PrivateRoom {
 		if (!playerId) return false;
 		if (this.gameState !== 'lobby') return false;
 		if (playerId !== this.ownerId) return false;
+		if (this.settings.gameMode === 'coop' && !this.validateCoopTeamRequirements().ok) return false;
 		return this.allPlayersReady();
 	}
 
@@ -208,6 +282,7 @@ export class PrivateRoom {
 		return this.getSortedMembers().map((member) => {
 			const progress = this.game.progress.get(member.id) || {
 				score: 0,
+				correctChars: 0,
 				currentWordIndex: 0,
 			};
 
@@ -215,6 +290,7 @@ export class PrivateRoom {
 				playerId: member.id,
 				username: member.userInfo.username,
 				score: progress.score,
+				correctChars: progress.correctChars,
 				currentWordIndex: progress.currentWordIndex,
 			};
 		});
@@ -227,6 +303,7 @@ export class PrivateRoom {
 			rating: member.userInfo.rating,
 			ready: member.ready,
 			isLeader: member.id === this.ownerId,
+			teamId: member.teamId || null,
 			connected: Boolean(member.sessionId),
 		}));
 
@@ -245,6 +322,7 @@ export class PrivateRoom {
 			allReady,
 			canStart: this.canPlayerStartGame(forPlayerId),
 			createdAt: this.createdAt,
+			teams: this.settings.gameMode === 'coop' ? this.buildTeamState() : [],
 		};
 
 		if (this.gameState === 'countdown' && this.game) {
@@ -282,6 +360,9 @@ export class PrivateRoom {
 		this.abortTimers();
 		this.game = null;
 		this.gameState = 'lobby';
+		if (this.settings.gameMode === 'coop') {
+			this.resetCoopTeams();
+		}
 
 		for (const member of this.members.values()) {
 			member.ready = false;
@@ -435,6 +516,16 @@ export class PrivateRoom {
 		}
 
 		this.settings = normalized.settings;
+		if (this.settings.gameMode === 'coop') {
+			this.resetCoopTeams();
+		} else {
+			for (const member of this.members.values()) {
+				member.teamId = null;
+			}
+		}
+		for (const member of this.members.values()) {
+			member.ready = false;
+		}
 		this.broadcastRoomState();
 	}
 
@@ -506,6 +597,7 @@ export class PrivateRoom {
 		for (const member of this.members.values()) {
 			progress.set(member.id, {
 				score: 0,
+				correctChars: 0,
 				currentWordIndex: 0,
 			});
 			member.ready = false;
@@ -548,6 +640,7 @@ export class PrivateRoom {
 			.map((member) => {
 				const progress = this.game.progress?.get(member.id) || {
 					score: 0,
+					correctChars: 0,
 					currentWordIndex: 0,
 				};
 
@@ -555,6 +648,8 @@ export class PrivateRoom {
 					playerId: member.id,
 					username: member.userInfo.username,
 					score: progress.score,
+					correctChars: progress.correctChars,
+					teamId: member.teamId || null,
 					progress: progress.currentWordIndex,
 				};
 			})
@@ -565,21 +660,74 @@ export class PrivateRoom {
 			});
 
 		let winnerId = options.winnerId || null;
-		if (!winnerId && rankings.length > 0) {
-			const [first, second] = rankings;
-			if (!second || first.score !== second.score || first.progress !== second.progress) {
-				winnerId = first.playerId;
-			}
-		}
+		let winningTeamId = null;
+		let teamResults = [];
+		let isDraw = false;
 
-		const isDraw = !winnerId;
+		if (this.settings.gameMode === 'coop') {
+			winnerId = null;
+			const byTeam = new Map(this.coopTeams.map((team) => [team.id, {
+				teamId: team.id,
+				name: team.name,
+				score: 0,
+				correctChars: 0,
+				members: [],
+			}]));
+
+			for (const row of rankings) {
+				if (!row.teamId || !byTeam.has(row.teamId)) continue;
+				const teamBucket = byTeam.get(row.teamId);
+				teamBucket.score += row.score;
+				teamBucket.correctChars += row.correctChars;
+				teamBucket.members.push({
+					playerId: row.playerId,
+					username: row.username,
+					score: row.score,
+					correctChars: row.correctChars,
+					progress: row.progress,
+				});
+			}
+
+			teamResults = Array.from(byTeam.values())
+				.filter((team) => team.members.length > 0)
+				.sort((a, b) => {
+					if (b.correctChars !== a.correctChars) return b.correctChars - a.correctChars;
+					if (b.score !== a.score) return b.score - a.score;
+					return a.name.localeCompare(b.name);
+				});
+
+			const [firstTeam, secondTeam] = teamResults;
+			if (!firstTeam || !secondTeam) {
+				isDraw = true;
+			} else if (
+				firstTeam.correctChars === secondTeam.correctChars &&
+				firstTeam.score === secondTeam.score
+			) {
+				isDraw = true;
+			} else {
+				winningTeamId = firstTeam.teamId;
+				winnerId = rankings.find((entry) => entry.teamId === winningTeamId)?.playerId || null;
+			}
+		} else {
+			if (!winnerId && rankings.length > 0) {
+				const [first, second] = rankings;
+				if (!second || first.score !== second.score || first.progress !== second.progress) {
+					winnerId = first.playerId;
+				}
+			}
+
+			isDraw = !winnerId;
+		}
 
 		this.sendToMembers({
 			type: 'ROOM_GAME_END',
 			reason,
 			results: {
+				mode: this.settings.gameMode,
 				rankings,
 				winnerId,
+				winningTeamId,
+				teamResults,
 				isDraw,
 				leftPlayerId: options.leftPlayerId || null,
 			},
@@ -617,6 +765,7 @@ export class PrivateRoom {
 		}
 
 		progress.score += 1;
+		progress.correctChars += currentWord.length;
 		progress.currentWordIndex += 1;
 		this.sendProgress();
 		this.broadcastRoomState();
@@ -671,6 +820,7 @@ export class PrivateRoom {
 				sessionId,
 				userInfo,
 				ready: false,
+				teamId: null,
 				joinedAt: Date.now(),
 			};
 			this.members.set(playerId, member);
@@ -704,7 +854,70 @@ export class PrivateRoom {
 			return;
 		}
 
+		if (this.settings.gameMode === 'coop' && ready) {
+			if (!member.teamId || !this.coopTeams.some((team) => team.id === member.teamId)) {
+				const sessionId = this.playerToSession.get(playerId);
+				this.sendRoomError(sessionId, 'Join a valid team before setting ready');
+				return;
+			}
+		}
+
 		member.ready = Boolean(ready);
+		this.broadcastRoomState();
+	}
+
+	handleAssignTeam(playerId, teamId) {
+		if (this.gameState !== 'lobby') {
+			const sessionId = this.playerToSession.get(playerId);
+			this.sendRoomError(sessionId, 'Team assignment can only be changed in the lobby');
+			return;
+		}
+
+		if (this.settings.gameMode !== 'coop') {
+			const sessionId = this.playerToSession.get(playerId);
+			this.sendRoomError(sessionId, 'Team assignment is only available in coop mode');
+			return;
+		}
+
+		const member = this.members.get(playerId);
+		if (!member) return;
+
+		if (!this.coopTeams.some((team) => team.id === teamId)) {
+			const sessionId = this.playerToSession.get(playerId);
+			this.sendRoomError(sessionId, 'Invalid team selected');
+			return;
+		}
+
+		member.teamId = teamId;
+		member.ready = false;
+		this.broadcastRoomState();
+	}
+
+	handleSetTeamName(playerId, teamId, name) {
+		if (this.gameState !== 'lobby') {
+			const sessionId = this.playerToSession.get(playerId);
+			this.sendRoomError(sessionId, 'Team names can only be changed in the lobby');
+			return;
+		}
+
+		if (this.settings.gameMode !== 'coop') {
+			const sessionId = this.playerToSession.get(playerId);
+			this.sendRoomError(sessionId, 'Team names are only available in coop mode');
+			return;
+		}
+
+		const teamIndex = this.coopTeams.findIndex((team) => team.id === teamId);
+		if (teamIndex === -1) {
+			const sessionId = this.playerToSession.get(playerId);
+			this.sendRoomError(sessionId, 'Invalid team');
+			return;
+		}
+
+		const fallback = DEFAULT_COOP_TEAMS.find((team) => team.id === teamId)?.defaultName || 'Team';
+		this.coopTeams[teamIndex] = {
+			...this.coopTeams[teamIndex],
+			name: sanitizeTeamName(name, fallback),
+		};
 		this.broadcastRoomState();
 	}
 
@@ -731,6 +944,15 @@ export class PrivateRoom {
 			const sessionId = this.playerToSession.get(playerId);
 			this.sendRoomError(sessionId, 'All players must be ready before starting');
 			return;
+		}
+
+		if (this.settings.gameMode === 'coop') {
+			const validation = this.validateCoopTeamRequirements();
+			if (!validation.ok) {
+				const sessionId = this.playerToSession.get(playerId);
+				this.sendRoomError(sessionId, validation.error || 'Invalid coop team setup');
+				return;
+			}
 		}
 
 		this.startCountdown();
@@ -772,6 +994,7 @@ export class PrivateRoom {
 
 		this.roomCode = roomCode;
 		this.settings = normalized.settings;
+		this.coopTeams = this.getDefaultCoopTeams();
 		this.ownerId = typeof body.ownerId === 'string' && body.ownerId.length > 0 ? body.ownerId : null;
 		this.createdAt = Date.now();
 
@@ -856,6 +1079,22 @@ export class PrivateRoom {
 							return;
 						}
 						this.updateSettings(playerId, message.settings);
+						break;
+
+					case 'ROOM_ASSIGN_TEAM':
+						if (!playerId) {
+							this.sendRoomError(sessionId, 'Join the room first');
+							return;
+						}
+						this.handleAssignTeam(playerId, message.teamId);
+						break;
+
+					case 'ROOM_SET_TEAM_NAME':
+						if (!playerId) {
+							this.sendRoomError(sessionId, 'Join the room first');
+							return;
+						}
+						this.handleSetTeamName(playerId, message.teamId, message.name);
 						break;
 
 					case 'ROOM_START_GAME':

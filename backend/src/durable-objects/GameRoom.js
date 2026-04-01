@@ -2,6 +2,8 @@ import { verifyFirebaseIdToken } from '../middleware/firebaseAuth.js';
 import { generateSeed, generateWords, WORD_DIFFICULTIES } from '../utils/wordGenerator.js';
 
 const MAX_PLAYER_INPUT_LENGTH = 32;
+const DEFAULT_MODE_SECONDS = 60;
+const ALLOWED_MODE_SECONDS = new Set([15, 30, 60, 120]);
 
 export class GameRoom {
 	constructor(controller, env) {
@@ -9,11 +11,28 @@ export class GameRoom {
 		this.env = env;
 		this.sessions = new Map(); // sessionId -> WebSocket
 		this.sessionOrder = new Map(); // sessionId -> monotonic connection order
-		this.waitingPlayers = new Map(); // playerId -> {sessionId, userInfo}
+		this.waitingPlayersByMode = new Map(); // modeSeconds -> Map(playerId -> waiting payload)
 		this.activeGames = new Map(); // gameId -> game data
 		this.playerToGame = new Map(); // playerId -> gameId
 		this.playerToSession = new Map(); // playerId -> sessionId
 		this.nextSessionOrder = 0;
+	}
+
+	normalizeModeSeconds(rawModeSeconds) {
+		const parsed = Number.parseInt(String(rawModeSeconds), 10);
+		if (!Number.isFinite(parsed) || !ALLOWED_MODE_SECONDS.has(parsed)) {
+			return DEFAULT_MODE_SECONDS;
+		}
+
+		return parsed;
+	}
+
+	getQueueForMode(modeSeconds) {
+		if (!this.waitingPlayersByMode.has(modeSeconds)) {
+			this.waitingPlayersByMode.set(modeSeconds, new Map());
+		}
+
+		return this.waitingPlayersByMode.get(modeSeconds);
 	}
 
 	async authenticateAndGetPlayerId(message) {
@@ -153,6 +172,7 @@ export class GameRoom {
 		this.sendToPlayer(sessionId, {
 			type: 'GAME_RESUMED',
 			gameId,
+			modeSeconds: game.modeSeconds || DEFAULT_MODE_SECONDS,
 			status: game.status,
 			opponent: {
 				id: opponent.id,
@@ -208,7 +228,13 @@ export class GameRoom {
 									break;
 								}
 
-								this.addWaitingPlayer(playerId, sessionId, this.sanitizeUserInfo(message.userInfo));
+								const modeSeconds = this.normalizeModeSeconds(message.modeSeconds);
+								this.addWaitingPlayer(
+									playerId,
+									sessionId,
+									this.sanitizeUserInfo(message.userInfo),
+									modeSeconds
+								);
 							} catch (error) {
 								console.error('JOIN_QUEUE auth failed:', error);
 								try {
@@ -255,40 +281,62 @@ export class GameRoom {
 		return this.generateEntityId('session');
 	}
 
-	addWaitingPlayer(playerId, sessionId, userInfo) {
-		this.waitingPlayers.set(playerId, { sessionId, userInfo });
-		console.log(`Player ${playerId} added to waiting queue. Queue size: ${this.waitingPlayers.size}`);
+	addWaitingPlayer(playerId, sessionId, userInfo, modeSeconds = DEFAULT_MODE_SECONDS) {
+		this.removeWaitingPlayer(playerId);
 
-		this.tryToMatch();
+		const queue = this.getQueueForMode(modeSeconds);
+		queue.set(playerId, { sessionId, userInfo, modeSeconds });
+		console.log(
+			`Player ${playerId} added to waiting queue (${modeSeconds}s). Queue size: ${queue.size}`
+		);
+
+		this.tryToMatch(modeSeconds);
 	}
 
 	removeWaitingPlayer(playerId) {
-		this.waitingPlayers.delete(playerId);
-		console.log(`Player ${playerId} removed from waiting queue`);
-	}
-
-	tryToMatch() {
-		if (this.waitingPlayers.size >= 2) {
-			const players = Array.from(this.waitingPlayers.entries()).slice(0, 2);
-			const [player1Id, player1Data] = players[0];
-			const [player2Id, player2Data] = players[1];
-
-			this.waitingPlayers.delete(player1Id);
-			this.waitingPlayers.delete(player2Id);
-
-			this.createGame(player1Id, player1Data, player2Id, player2Data);
+		for (const [modeSeconds, queue] of this.waitingPlayersByMode.entries()) {
+			if (queue.delete(playerId)) {
+				if (queue.size === 0) {
+					this.waitingPlayersByMode.delete(modeSeconds);
+				}
+				console.log(`Player ${playerId} removed from waiting queue (${modeSeconds}s)`);
+				return;
+			}
 		}
 	}
 
-	createGame(player1Id, player1Data, player2Id, player2Data) {
+	tryToMatch(modeSeconds = DEFAULT_MODE_SECONDS) {
+		const queue = this.getQueueForMode(modeSeconds);
+		if (queue.size >= 2) {
+			const players = Array.from(queue.entries()).slice(0, 2);
+			const [player1Id, player1Data] = players[0];
+			const [player2Id, player2Data] = players[1];
+
+			queue.delete(player1Id);
+			queue.delete(player2Id);
+			if (queue.size === 0) {
+				this.waitingPlayersByMode.delete(modeSeconds);
+			}
+
+			this.createGame(player1Id, player1Data, player2Id, player2Data, modeSeconds);
+		}
+	}
+
+	createGame(player1Id, player1Data, player2Id, player2Data, modeSeconds = DEFAULT_MODE_SECONDS) {
 		const gameId = this.generateEntityId('game');
 		const wordSeed = generateSeed();
 		const difficulty = WORD_DIFFICULTIES.medium;
-		const words = generateWords(wordSeed, difficulty, 30);
+		const normalizedModeSeconds = this.normalizeModeSeconds(modeSeconds);
+		const words = generateWords(
+			wordSeed,
+			difficulty,
+			Math.max(18, Math.round(normalizedModeSeconds * 0.75))
+		);
 
 		const game = {
 			id: gameId,
 			difficulty,
+			modeSeconds: normalizedModeSeconds,
 			player1: {
 				id: player1Id,
 				sessionId: player1Data.sessionId,
@@ -317,6 +365,7 @@ export class GameRoom {
 		this.sendToPlayer(player1Data.sessionId, {
 			type: 'MATCH_FOUND',
 			gameId,
+			modeSeconds: normalizedModeSeconds,
 			opponent: {
 				id: player2Id,
 				username: player2Data.userInfo.username,
@@ -327,6 +376,7 @@ export class GameRoom {
 		this.sendToPlayer(player2Data.sessionId, {
 			type: 'MATCH_FOUND',
 			gameId,
+			modeSeconds: normalizedModeSeconds,
 			opponent: {
 				id: player1Id,
 				username: player1Data.userInfo.username,
@@ -375,22 +425,24 @@ export class GameRoom {
 	startGame(gameId) {
 		const game = this.activeGames.get(gameId);
 		if (!game) return;
+		const durationMs = (game.modeSeconds || DEFAULT_MODE_SECONDS) * 1000;
 
 		game.status = 'playing';
 		game.startTime = Date.now();
-		game.endTime = game.startTime + 60 * 1000;
+		game.endTime = game.startTime + durationMs;
 
 		this.sendToPlayers(game, {
 			type: 'GAME_START',
 			words: game.words,
 			difficulty: game.difficulty,
-			duration: 60000,
+			modeSeconds: game.modeSeconds,
+			duration: durationMs,
 			startTime: game.startTime,
 		});
 
 		game.gameTimer = setTimeout(() => {
 			this.endGame(gameId, 'timeout');
-		}, 60000);
+		}, durationMs);
 	}
 
 	handlePlayerInput(playerId, input) {
@@ -475,6 +527,8 @@ export class GameRoom {
 		this.sendToPlayers(game, {
 			type: 'GAME_END',
 			results: {
+				gameId,
+				modeSeconds: game.modeSeconds || DEFAULT_MODE_SECONDS,
 				player1: {
 					id: game.player1.id,
 					username: game.player1.userInfo.username,

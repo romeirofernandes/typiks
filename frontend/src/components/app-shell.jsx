@@ -75,7 +75,7 @@ export default function AppShell() {
       },
       {
         key: "start-game",
-        label: "Start Game",
+        label: "Ranked Match",
         icon: PlayIcon,
         active:
           location.pathname === "/start-game" ||
@@ -85,7 +85,7 @@ export default function AppShell() {
       },
       {
         key: "create-room",
-        label: "Create Room",
+        label: "Friendlies",
         icon: DoorOpen,
         active: location.pathname === "/create-room",
         onClick: () => navigate("/create-room"),

@@ -38,6 +38,7 @@ function normalizeRoomSettings(rawSettings = {}) {
 	const maxPlayers = coerceInteger(rawSettings.maxPlayers, ROOM_LIMITS.maxPlayers);
 	const roundTimeSeconds = coerceInteger(rawSettings.roundTimeSeconds, 60);
 	const wordCount = coerceInteger(rawSettings.wordCount, 30);
+	const gameMode = rawSettings.gameMode === 'coop' ? 'coop' : 'ffa';
 
 	if (maxPlayers < ROOM_LIMITS.minPlayers || maxPlayers > ROOM_LIMITS.maxPlayers) {
 		return {
@@ -65,6 +66,7 @@ function normalizeRoomSettings(rawSettings = {}) {
 			maxPlayers,
 			roundTimeSeconds,
 			wordCount,
+			gameMode,
 		},
 	};
 }

@@ -2,7 +2,13 @@ import { Hono } from 'hono';
 import { drizzle } from 'drizzle-orm/d1';
 import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
-import { friendships, friendRequests, users } from '../db/schema.js';
+import {
+	friendships,
+	friendRequests,
+	rankedGameLogs,
+	userModeStats,
+	users,
+} from '../db/schema.js';
 import { calculateNewRatings } from '../utils/rating.js';
 import { requireFirebaseAuth } from '../middleware/firebaseAuth.js';
 
@@ -13,6 +19,8 @@ const requireAuth = requireFirebaseAuth();
 const FRIEND_REQUEST_PENDING = 'pending';
 const FRIEND_REQUEST_ACCEPTED = 'accepted';
 const FRIEND_REQUEST_DECLINED = 'declined';
+const RANKED_MODE_SECONDS = [15, 30, 60, 120];
+const DEFAULT_RATING = 800;
 
 function generateEntityId(prefix) {
 	if (typeof crypto?.randomUUID === 'function') {
@@ -28,6 +36,61 @@ function normalizeUsername(value) {
 	if (username.length < 3 || username.length > 24) return null;
 	if (!/^[a-z0-9._-]+$/.test(username)) return null;
 	return username;
+}
+
+function normalizeModeSeconds(rawValue) {
+	const parsed = Number.parseInt(String(rawValue), 10);
+	if (!Number.isFinite(parsed) || !RANKED_MODE_SECONDS.includes(parsed)) {
+		return 60;
+	}
+
+	return parsed;
+}
+
+function modeStatsRowToDto(row) {
+	return {
+		modeSeconds: row.modeSeconds,
+		gamesPlayed: row.gamesPlayed,
+		gamesWon: row.gamesWon,
+		gamesLost: row.gamesLost,
+		gamesDrawn: row.gamesDrawn,
+		totalScore: row.totalScore,
+		averageScore: Number(row.averageScore || 0),
+		rating: row.rating,
+	};
+}
+
+async function ensureUserModeRows(db, userId) {
+	const now = new Date();
+	const existingRows = await db
+		.select({ modeSeconds: userModeStats.modeSeconds })
+		.from(userModeStats)
+		.where(eq(userModeStats.userId, userId));
+
+	const existingModeSet = new Set(existingRows.map((row) => row.modeSeconds));
+	const missingModes = RANKED_MODE_SECONDS.filter((mode) => !existingModeSet.has(mode));
+
+	if (missingModes.length === 0) {
+		return;
+	}
+
+	await db
+		.insert(userModeStats)
+		.values(
+			missingModes.map((modeSeconds) => ({
+				userId,
+				modeSeconds,
+				gamesPlayed: 0,
+				gamesWon: 0,
+				gamesLost: 0,
+				gamesDrawn: 0,
+				totalScore: 0,
+				averageScore: 0,
+				rating: DEFAULT_RATING,
+				updatedAt: now,
+			}))
+		)
+		.onConflictDoNothing();
 }
 
 async function createFriendshipPair(db, userId, friendId) {
@@ -188,6 +251,8 @@ userRouter.post('/', requireAuth, async (c) => {
 			return c.json({ error: 'Failed to create user' }, 500);
 		}
 
+		await ensureUserModeRows(db, uid);
+
 		return c.json({ user: newUser[0], message: 'User created successfully' });
 	} catch (error) {
 		return c.json({ error: 'Failed to create user', details: error.message }, 500);
@@ -224,12 +289,59 @@ userRouter.patch('/:id/game-result', requireAuth, async (c) => {
 		if (auth?.uid !== uid) {
 			return c.json({ error: 'Forbidden' }, 403);
 		}
-		const { won, opponentId, score, opponentScore } = await c.req.json();
+		const {
+			won,
+			isDraw,
+			opponentId,
+			score,
+			opponentScore,
+			modeSeconds: rawModeSeconds,
+			gameId,
+		} = await c.req.json();
+
+		if (typeof gameId !== 'string' || gameId.trim().length === 0) {
+			return c.json({ error: 'gameId is required' }, 400);
+		}
 		if (typeof opponentId !== 'string' || opponentId.length === 0) {
 			return c.json({ error: 'opponentId is required' }, 400);
 		}
 		if (opponentId === uid) {
 			return c.json({ error: 'opponentId must be different from player id' }, 400);
+		}
+
+		const modeSeconds = normalizeModeSeconds(rawModeSeconds);
+		const isGameDraw = Boolean(isDraw);
+		const playerWon = isGameDraw ? false : Boolean(won);
+		const playerScore = Math.max(0, Number.parseInt(String(score), 10) || 0);
+		const rivalScore = Math.max(0, Number.parseInt(String(opponentScore), 10) || 0);
+
+		const existingLog = await db
+			.select({
+				ratingAfter: rankedGameLogs.ratingAfter,
+				ratingBefore: rankedGameLogs.ratingBefore,
+			})
+			.from(rankedGameLogs)
+			.where(and(eq(rankedGameLogs.gameId, gameId), eq(rankedGameLogs.userId, uid)))
+			.limit(1);
+
+		if (existingLog.length > 0) {
+			const [playerStatsRow] = await db
+				.select()
+				.from(userModeStats)
+				.where(and(eq(userModeStats.userId, uid), eq(userModeStats.modeSeconds, modeSeconds)))
+				.limit(1);
+
+			if (playerStatsRow) {
+				return c.json({
+					player: {
+						id: uid,
+						rating: playerStatsRow.rating,
+					},
+					modeStats: modeStatsRowToDto(playerStatsRow),
+					ratingChange: existingLog[0].ratingAfter - existingLog[0].ratingBefore,
+					idempotent: true,
+				});
+			}
 		}
 
 		// Get both players
@@ -245,18 +357,88 @@ userRouter.patch('/:id/game-result', requireAuth, async (c) => {
 		const playerData = player[0];
 		const opponentData = opponent[0];
 
+		await Promise.all([ensureUserModeRows(db, uid), ensureUserModeRows(db, opponentId)]);
+
+		const [playerModeStatsRows, opponentModeStatsRows] = await Promise.all([
+			db
+				.select()
+				.from(userModeStats)
+				.where(and(eq(userModeStats.userId, uid), eq(userModeStats.modeSeconds, modeSeconds)))
+				.limit(1),
+			db
+				.select()
+				.from(userModeStats)
+				.where(and(eq(userModeStats.userId, opponentId), eq(userModeStats.modeSeconds, modeSeconds)))
+				.limit(1),
+		]);
+
+		const playerModeStats = playerModeStatsRows[0];
+		const opponentModeStats = opponentModeStatsRows[0];
+
+		if (!playerModeStats || !opponentModeStats) {
+			return c.json({ error: 'Failed to initialize mode stats' }, 500);
+		}
+
 		// Calculate new ratings
-		const newPlayerRating = calculateNewRatings(playerData.rating, opponentData.rating, won);
-		const newOpponentRating = calculateNewRatings(opponentData.rating, playerData.rating, !won);
+		const playerResultScore = isGameDraw ? 0.5 : playerWon ? 1 : 0;
+		const opponentResultScore = isGameDraw ? 0.5 : playerWon ? 0 : 1;
+
+		const newPlayerRating = calculateNewRatings(
+			playerModeStats.rating,
+			opponentModeStats.rating,
+			playerResultScore,
+			{ gamesPlayed: playerModeStats.gamesPlayed }
+		);
+		const newOpponentRating = calculateNewRatings(
+			opponentModeStats.rating,
+			playerModeStats.rating,
+			opponentResultScore,
+			{ gamesPlayed: opponentModeStats.gamesPlayed }
+		);
+
+		const playerModeGamesPlayed = playerModeStats.gamesPlayed + 1;
+		const opponentModeGamesPlayed = opponentModeStats.gamesPlayed + 1;
+		const now = new Date();
+
+		const updatedPlayerModeStatsPromise = db
+			.update(userModeStats)
+			.set({
+				gamesPlayed: playerModeGamesPlayed,
+				gamesWon: playerWon ? playerModeStats.gamesWon + 1 : playerModeStats.gamesWon,
+				gamesLost: !isGameDraw && !playerWon ? playerModeStats.gamesLost + 1 : playerModeStats.gamesLost,
+				gamesDrawn: isGameDraw ? playerModeStats.gamesDrawn + 1 : playerModeStats.gamesDrawn,
+				totalScore: playerModeStats.totalScore + playerScore,
+				averageScore: (playerModeStats.totalScore + playerScore) / playerModeGamesPlayed,
+				rating: newPlayerRating,
+				updatedAt: now,
+			})
+			.where(and(eq(userModeStats.userId, uid), eq(userModeStats.modeSeconds, modeSeconds)))
+			.returning();
+
+		const updatedOpponentModeStatsPromise = db
+			.update(userModeStats)
+			.set({
+				gamesPlayed: opponentModeGamesPlayed,
+				gamesWon: !isGameDraw && !playerWon ? opponentModeStats.gamesWon + 1 : opponentModeStats.gamesWon,
+				gamesLost: playerWon ? opponentModeStats.gamesLost + 1 : opponentModeStats.gamesLost,
+				gamesDrawn: isGameDraw ? opponentModeStats.gamesDrawn + 1 : opponentModeStats.gamesDrawn,
+				totalScore: opponentModeStats.totalScore + rivalScore,
+				averageScore: (opponentModeStats.totalScore + rivalScore) / opponentModeGamesPlayed,
+				rating: newOpponentRating,
+				updatedAt: now,
+			})
+			.where(and(eq(userModeStats.userId, opponentId), eq(userModeStats.modeSeconds, modeSeconds)))
+			.returning();
 
 		// Update both players
-		const [updatedPlayer, updatedOpponent] = await Promise.all([
+		const [updatedPlayer, updatedOpponent, updatedPlayerModeStats, updatedOpponentModeStats] =
+			await Promise.all([
 			db
 				.update(users)
 				.set({
 					gamesPlayed: playerData.gamesPlayed + 1,
-					gamesWon: won ? playerData.gamesWon + 1 : playerData.gamesWon,
-					gamesLost: !won ? playerData.gamesLost + 1 : playerData.gamesLost,
+					gamesWon: playerWon ? playerData.gamesWon + 1 : playerData.gamesWon,
+					gamesLost: !isGameDraw && !playerWon ? playerData.gamesLost + 1 : playerData.gamesLost,
 					rating: newPlayerRating,
 				})
 				.where(eq(users.id, uid))
@@ -266,21 +448,57 @@ userRouter.patch('/:id/game-result', requireAuth, async (c) => {
 				.update(users)
 				.set({
 					gamesPlayed: opponentData.gamesPlayed + 1,
-					gamesWon: !won ? opponentData.gamesWon + 1 : opponentData.gamesWon,
-					gamesLost: won ? opponentData.gamesLost + 1 : opponentData.gamesLost,
+					gamesWon: !isGameDraw && !playerWon ? opponentData.gamesWon + 1 : opponentData.gamesWon,
+					gamesLost: playerWon ? opponentData.gamesLost + 1 : opponentData.gamesLost,
 					rating: newOpponentRating,
 				})
 				.where(eq(users.id, opponentId))
 				.returning(),
+			updatedPlayerModeStatsPromise,
+			updatedOpponentModeStatsPromise,
+		]);
+
+		await Promise.all([
+			db.insert(rankedGameLogs).values({
+				id: generateEntityId('match'),
+				gameId,
+				userId: uid,
+				opponentId,
+				modeSeconds,
+				score: playerScore,
+				opponentScore: rivalScore,
+				won: playerWon ? 1 : 0,
+				isDraw: isGameDraw ? 1 : 0,
+				ratingBefore: playerModeStats.rating,
+				ratingAfter: newPlayerRating,
+				createdAt: now,
+			}),
+			db.insert(rankedGameLogs).values({
+				id: generateEntityId('match'),
+				gameId,
+				userId: opponentId,
+				opponentId: uid,
+				modeSeconds,
+				score: rivalScore,
+				opponentScore: playerScore,
+				won: !isGameDraw && !playerWon ? 1 : 0,
+				isDraw: isGameDraw ? 1 : 0,
+				ratingBefore: opponentModeStats.rating,
+				ratingAfter: newOpponentRating,
+				createdAt: now,
+			}),
 		]);
 
 		return c.json({
 			player: updatedPlayer[0],
 			opponent: updatedOpponent[0],
-			ratingChange: newPlayerRating - playerData.rating,
-			opponentRatingChange: newOpponentRating - opponentData.rating,
+			modeStats: modeStatsRowToDto(updatedPlayerModeStats[0]),
+			opponentModeStats: modeStatsRowToDto(updatedOpponentModeStats[0]),
+			ratingChange: newPlayerRating - playerModeStats.rating,
+			opponentRatingChange: newOpponentRating - opponentModeStats.rating,
 		});
 	} catch (error) {
+		console.error('Failed to update game result:', error);
 		return c.json({ error: 'Failed to update game result' }, 500);
 	}
 });
@@ -310,15 +528,94 @@ userRouter.get('/:id/stats', requireAuth, async (c) => {
 			return c.json({ error: 'User not found' }, 404);
 		}
 
+		await ensureUserModeRows(db, uid);
+
+		const modeRows = await db
+			.select()
+			.from(userModeStats)
+			.where(eq(userModeStats.userId, uid))
+			.orderBy(userModeStats.modeSeconds);
+
 		const stats = user[0];
 		const winRate = stats.gamesPlayed > 0 ? ((stats.gamesWon / stats.gamesPlayed) * 100).toFixed(1) : 0;
+		const modeStats = RANKED_MODE_SECONDS.map((modeSeconds) => {
+			const row = modeRows.find((entry) => entry.modeSeconds === modeSeconds);
+			if (!row) {
+				return {
+					modeSeconds,
+					gamesPlayed: 0,
+					gamesWon: 0,
+					gamesLost: 0,
+					gamesDrawn: 0,
+					totalScore: 0,
+					averageScore: 0,
+					rating: DEFAULT_RATING,
+				};
+			}
+
+			return modeStatsRowToDto(row);
+		});
 
 		return c.json({
 			...stats,
 			winRate: parseFloat(winRate),
+			modeStats,
 		});
 	} catch (error) {
 		return c.json({ error: 'Failed to fetch user stats' }, 500);
+	}
+});
+
+userRouter.get('/:id/activity', requireAuth, async (c) => {
+	try {
+		const db = drizzle(c.env.DB);
+		const uid = c.req.param('id');
+		const auth = c.get('auth');
+		if (auth?.uid !== uid) {
+			return c.json({ error: 'Forbidden' }, 403);
+		}
+
+		const days = Math.min(365, Math.max(30, Number.parseInt(c.req.query('days') || '90', 10) || 90));
+		const startDate = new Date();
+		startDate.setHours(0, 0, 0, 0);
+		startDate.setDate(startDate.getDate() - days + 1);
+
+		const logs = await db
+			.select({
+				activityDate: sql`date(${rankedGameLogs.createdAt})`.as('activity_date'),
+				count: sql`count(*)`.as('count'),
+			})
+			.from(rankedGameLogs)
+			.where(and(eq(rankedGameLogs.userId, uid), sql`${rankedGameLogs.createdAt} >= ${startDate}`))
+			.groupBy(sql`date(${rankedGameLogs.createdAt})`)
+			.orderBy(sql`date(${rankedGameLogs.createdAt})`);
+
+		const countsByDay = {};
+		for (const row of logs) {
+			countsByDay[row.activityDate] = Number(row.count || 0);
+		}
+
+		const activity = [];
+		for (let index = 0; index < days; index++) {
+			const date = new Date(startDate);
+			date.setDate(startDate.getDate() + index);
+			const dateKey = date.toISOString().slice(0, 10);
+			activity.push({
+				date: dateKey,
+				count: countsByDay[dateKey] || 0,
+			});
+		}
+
+		const maxCount = activity.reduce((max, day) => Math.max(max, day.count), 0);
+
+		return c.json({
+			days,
+			maxCount,
+			activity,
+		});
+	} catch (error) {
+		console.error('Failed to fetch user activity:', error);
+		return c.json({ error: 'Failed to fetch user activity' }, 500);
 	}
 });
 

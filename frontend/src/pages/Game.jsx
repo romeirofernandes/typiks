@@ -1,16 +1,19 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { DotLoader } from "@/components/ui/dot-loader";
 import { FiUser, FiClock, FiArrowLeft, FiZap, FiTrendingUp } from "react-icons/fi";
 
 const Game = () => {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const initialModeSeconds = [15, 30, 60, 120].includes(Number(location.state?.modeSeconds))
+    ? Number(location.state.modeSeconds)
+    : 60;
   const [gameState, setGameState] = useState("waiting");
   const [connectionError, setConnectionError] = useState(null);
   const [opponent, setOpponent] = useState(null);
@@ -23,6 +26,8 @@ const Game = () => {
   const [timeLeft, setTimeLeft] = useState(60);
   const [input, setInput] = useState("");
   const [gameResults, setGameResults] = useState(null);
+  const [modeSeconds, setModeSeconds] = useState(initialModeSeconds);
+  const [activeGameId, setActiveGameId] = useState(null);
   const [userStats, setUserStats] = useState(() => ({
     username:
       currentUser?.displayName || currentUser?.email?.split("@")[0] || "Player",
@@ -37,6 +42,11 @@ const Game = () => {
   const connectAttemptRef = useRef(0);
   const gameEndedRef = useRef(false);
   const resultPersistedRef = useRef(false);
+  const selectedModeStats = Array.isArray(userStats?.modeStats)
+    ? userStats.modeStats.find((mode) => Number(mode.modeSeconds) === Number(modeSeconds))
+    : null;
+  const queueRating = selectedModeStats?.rating ?? userStats.rating;
+  
 
   const cleanup = () => {
     connectAttemptRef.current += 1;
@@ -157,9 +167,10 @@ const Game = () => {
           JSON.stringify({
             type: "JOIN_QUEUE",
             idToken,
+            modeSeconds,
             userInfo: {
               username: userStats.username,
-              rating: userStats.rating,
+              rating: queueRating,
             },
           })
         );
@@ -217,7 +228,7 @@ const Game = () => {
       console.error("Failed to connect WebSocket:", error);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser, navigate, userStats]); // note: handleWebSocketMessage is omitted as it's structurally bound to the latest render by design or handled
+  }, [currentUser, modeSeconds, navigate, queueRating, userStats]); // note: handleWebSocketMessage is omitted as it's structurally bound to the latest render by design or handled
 
   useEffect(() => {
     fetchUserStats();
@@ -237,6 +248,8 @@ const Game = () => {
   const handleWebSocketMessage = (message) => {
     switch (message.type) {
       case "MATCH_FOUND":
+        setActiveGameId(message.gameId || null);
+        setModeSeconds(Number(message.modeSeconds) || modeSeconds);
         setOpponent(message.opponent);
         setGameState("countdown");
         break;
@@ -248,6 +261,7 @@ const Game = () => {
       case "GAME_START": {
         gameEndedRef.current = false;
         resultPersistedRef.current = false;
+        setModeSeconds(Number(message.modeSeconds) || modeSeconds);
         setWords(Array.isArray(message.words) ? message.words : []);
         setTimeLeft(
           Number.isFinite(message.duration)
@@ -287,6 +301,7 @@ const Game = () => {
       }
 
       case "GAME_RESUMED": {
+        setModeSeconds(Number(message.modeSeconds) || modeSeconds);
         setOpponent(message.opponent || null);
         setWords(Array.isArray(message.words) ? message.words : []);
 
@@ -346,6 +361,8 @@ const Game = () => {
 
       case "GAME_END":
         gameEndedRef.current = true;
+        setActiveGameId(message.results?.gameId || activeGameId);
+        setModeSeconds(Number(message.results?.modeSeconds) || modeSeconds);
         setGameResults(message.results);
         setGameState("finished");
         if (timerRef.current) {
@@ -361,6 +378,8 @@ const Game = () => {
         setGameState("finished");
         {
           const fallbackResults = {
+          gameId: activeGameId,
+          modeSeconds,
           player1: {
             id: currentUser.uid,
             username: userStats.username,
@@ -418,6 +437,12 @@ const Game = () => {
         return;
       }
 
+      const persistedGameId = results.gameId || activeGameId;
+      if (!persistedGameId) {
+        console.warn("Skipping game result persistence due to missing game id");
+        return;
+      }
+
       const response = await fetch(
         `${fullUrl}/api/users/${currentUser.uid}/game-result`,
         {
@@ -428,9 +453,12 @@ const Game = () => {
           },
           body: JSON.stringify({
             won: currentUserResult.won,
+            isDraw: Boolean(results.isDraw),
             opponentId: opponentResult.id,
             score: currentUserResult.score,
             opponentScore: opponentResult.score,
+            modeSeconds,
+            gameId: persistedGameId,
           }),
         }
       );
@@ -539,6 +567,9 @@ const Game = () => {
             Ranked Match
           </p>
           <h2 className="font-sans text-xl font-semibold tracking-tight">Live Game</h2>
+          <p className="mt-1 font-mono text-xs uppercase tracking-[0.12em] text-muted-foreground">
+            {modeSeconds}s mode
+          </p>
         </div>
 
         {gameState === "playing" && (
@@ -615,8 +646,8 @@ const Game = () => {
                       <FiTrendingUp className="h-4 w-4 text-muted-foreground" />
                       <span className="text-sm text-muted-foreground">
                         Your Rating:{" "}
-                        <span className={`font-semibold ${getRatingColor(userStats.rating)}`}>
-                          {userStats.rating}
+                        <span className={`font-semibold ${getRatingColor(queueRating)}`}>
+                          {queueRating}
                         </span>
                       </span>
                     </div>
@@ -686,7 +717,7 @@ const Game = () => {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="space-y-6"
+              className="grid min-h-0 flex-1 grid-rows-[auto,1fr,auto] gap-6"
             >
               {/* Score Display */}
               <div className="grid grid-cols-2 gap-4">
@@ -722,8 +753,8 @@ const Game = () => {
               </div>
 
               {/* Current Word Display - Monkeytype Style */}
-              <Card>
-                <CardContent className="space-y-6 py-8">
+              <Card className="h-full">
+                <CardContent className="flex h-full flex-col gap-6 py-8">
                   <div className="text-center">
                     <p className="mb-4 font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">
                       Type This Word
@@ -732,7 +763,7 @@ const Game = () => {
                       key={words[currentWordIndex]}
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="relative inline-block font-mono text-4xl font-medium tracking-wider sm:text-5xl"
+                      className="relative inline-block font-mono text-4xl font-medium tracking-wider leading-none sm:text-5xl"
                     >
                       {(words[currentWordIndex] || "").split("").map((char, charIndex) => {
                         const typedChar = input[charIndex];
@@ -740,11 +771,13 @@ const Game = () => {
                         const isTyped = charIndex < input.length;
                         const isCorrect = isTyped && typedChar === char;
                         const isWrong = isTyped && typedChar !== char;
+                        const renderedChar = char === " " ? "\u00A0" : char;
+                        const renderedTypedChar = isWrong && typedChar === " " ? "\u00A0" : typedChar;
 
                         return (
                           <span
                             key={charIndex}
-                            className={`relative inline-block transition-colors duration-75 ${
+                            className={`relative inline-block min-w-[0.45em] align-baseline transition-colors duration-75 ${
                               isCorrect
                                 ? "text-primary"
                                 : isWrong
@@ -762,7 +795,7 @@ const Game = () => {
                                 }}
                               />
                             )}
-                            {isWrong ? typedChar : char}
+                            {isWrong ? renderedTypedChar : renderedChar}
                           </span>
                         );
                       })}
@@ -771,7 +804,7 @@ const Game = () => {
                         <motion.span
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
-                          className="inline-block h-[1.2em] w-[3px] bg-primary align-middle"
+                          className="absolute -right-[2px] top-0 h-full w-[3px] bg-primary"
                           style={{
                             animation: "blink 1s ease-in-out infinite",
                           }}
@@ -854,26 +887,18 @@ const Game = () => {
               className="flex flex-1 items-center justify-center py-12"
             >
               <Card className="w-full max-w-md overflow-hidden">
-                <CardHeader className={`text-center ${
-                  gameResults.reason === "opponent_disconnected" ||
-                  (gameResults.player1.id === currentUser.uid && gameResults.player1.won) ||
-                  (gameResults.player2.id === currentUser.uid && gameResults.player2.won)
-                    ? "bg-primary/10"
-                    : gameResults.isDraw
-                    ? "bg-muted/50"
-                    : "bg-destructive/10"
-                }`}>
+                <CardHeader className="text-center">
                   <CardTitle className="font-sans text-2xl">
                     {gameResults.reason === "opponent_disconnected"
-                      ? "🎉 Opponent Disconnected!"
+                      ? "Opponent Disconnected"
                       : gameResults.isDraw
                       ? "It's a Draw!"
                       : gameResults.player1.id === currentUser.uid &&
                         gameResults.player1.won
-                      ? "🎉 You Won!"
+                      ? "You Won"
                       : gameResults.player2.id === currentUser.uid &&
                         gameResults.player2.won
-                      ? "🎉 You Won!"
+                      ? "You Won"
                       : "Better Luck Next Time!"}
                   </CardTitle>
                 </CardHeader>

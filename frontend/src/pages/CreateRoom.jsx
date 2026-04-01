@@ -35,7 +35,7 @@ const ROOM_SETTING_LIMITS = {
 
 const GAME_MODES = [
   { id: "ffa", label: "Free For All", description: "Everyone competes individually" },
-  { id: "coop", label: "Coop", description: "Team vs Team - drag players or click to assign teams" },
+  { id: "coop", label: "Coop", description: "Team vs Team - join a team, set names, then ready up" },
 ];
 
 function clampSettingValue(rawValue, min, max, fallback) {
@@ -59,7 +59,6 @@ export default function CreateRoom() {
   const [settingsForm, setSettingsForm] = useState(defaultSettings());
   const [userInfo, setUserInfo] = useState({ username: "Player", rating: 800 });
   const [roomError, setRoomError] = useState("");
-  const [feedback, setFeedback] = useState("");
   const [busy, setBusy] = useState(false);
   const [entryMode, setEntryMode] = useState("create");
   const [countdown, setCountdown] = useState(null);
@@ -69,8 +68,6 @@ export default function CreateRoom() {
   const [gameResult, setGameResult] = useState(null);
   const [copied, setCopied] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  // Team assignments for coop mode: { playerId: 'team1' | 'team2' }
-  const [teamAssignments, setTeamAssignments] = useState({});
 
   const fetchUserInfo = useCallback(async () => {
     if (!currentUser) return;
@@ -228,7 +225,6 @@ export default function CreateRoom() {
       cleanupSocket();
       manualDisconnectRef.current = false;
       setRoomError("");
-      setFeedback("");
       setWsStatus("connecting");
 
       const ws = new WebSocket(new URL(`/ws/room/${cleanCode}`, wsBaseUrl));
@@ -328,6 +324,7 @@ export default function CreateRoom() {
           ROOM_SETTING_LIMITS.wordCount.max,
           defaultSettings().wordCount
         ),
+        gameMode: settingsForm.gameMode === "coop" ? "coop" : "ffa",
       };
       setSettingsForm(normalizedSettings);
 
@@ -350,7 +347,6 @@ export default function CreateRoom() {
 
       setGameResult(null);
       await connectToRoom(payload.roomCode, payload.settings);
-      setFeedback("Room created. Share the code with your friends and wait for ready checks.");
     } catch (error) {
       setRoomError(error.message || "Could not create room.");
     } finally {
@@ -402,7 +398,7 @@ export default function CreateRoom() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      setFeedback("Could not copy room code automatically.");
+      setRoomError("Could not copy room code automatically.");
     }
   };
 
@@ -417,45 +413,45 @@ export default function CreateRoom() {
   const isLobbyState = roomState?.state === "lobby";
   const settingsLocked = !isLeader || roomState?.state !== "lobby";
 
-  // Leader is always considered ready - check if all OTHER members are ready
-  // Helper to assign player to a team
-  const assignPlayerToTeam = useCallback((playerId, team) => {
-    setTeamAssignments((prev) => {
-      const next = { ...prev };
-      if (team === null) {
-        delete next[playerId];
-      } else {
-        next[playerId] = team;
-      }
-      return next;
-    });
-  }, []);
+  const coopTeams = useMemo(() => {
+    if (!Array.isArray(roomState?.teams)) return [];
+    return roomState.teams;
+  }, [roomState?.teams]);
 
-  // Get players for a specific team
-  const getTeamPlayers = useCallback((team) => {
+  const getTeamPlayers = useCallback((teamId) => {
     if (!roomState?.members) return [];
-    return roomState.members.filter((m) => teamAssignments[m.id] === team);
-  }, [roomState?.members, teamAssignments]);
+    return roomState.members.filter((member) => member.teamId === teamId);
+  }, [roomState?.members]);
 
-  // Get unassigned players
   const getUnassignedPlayers = useCallback(() => {
     if (!roomState?.members) return [];
-    return roomState.members.filter((m) => !teamAssignments[m.id]);
-  }, [roomState?.members, teamAssignments]);
+    return roomState.members.filter((member) => !member.teamId);
+  }, [roomState?.members]);
 
-  // Check if teams are valid for starting (at least 1 player per team, not all on one side)
+  const myTeamId = me?.teamId || null;
+
   const teamsValid = useMemo(() => {
     if (settingsForm.gameMode !== "coop") return true;
-    const team1 = getTeamPlayers("team1").length;
-    const team2 = getTeamPlayers("team2").length;
-    return team1 >= 1 && team2 >= 1 && team1 <= 3 && team2 <= 3;
-  }, [settingsForm.gameMode, getTeamPlayers]);
+    if (!roomState?.members?.length || coopTeams.length < 2) return false;
+    const activeTeams = coopTeams.filter((team) => getTeamPlayers(team.id).length > 0);
+    const everyoneAssigned = roomState.members.every((member) => Boolean(member.teamId));
+    return activeTeams.length >= 2 && everyoneAssigned;
+  }, [settingsForm.gameMode, roomState?.members, coopTeams, getTeamPlayers]);
+
+  const assignMeToTeam = (teamId) => {
+    if (!isInRoom || settingsForm.gameMode !== "coop") return;
+    sendSocketMessage({ type: "ROOM_ASSIGN_TEAM", teamId });
+  };
+
+  const updateTeamName = (teamId, value) => {
+    if (!isInRoom || settingsForm.gameMode !== "coop") return;
+    sendSocketMessage({ type: "ROOM_SET_TEAM_NAME", teamId, name: value });
+  };
 
   const canStartGame = useMemo(() => {
     if (!isLeader || !roomState?.members || roomState.members.length < 2) return false;
     const otherMembers = roomState.members.filter((m) => m.id !== currentUser?.uid);
     const allReady = otherMembers.length > 0 && otherMembers.every((m) => m.ready);
-    // For coop mode, also require valid team assignments
     if (settingsForm.gameMode === "coop") {
       return allReady && teamsValid;
     }
@@ -489,6 +485,30 @@ export default function CreateRoom() {
     isPlaying && Array.isArray(game?.words)
       ? game.words[myProgress.currentWordIndex] || ""
       : "";
+
+  const rivalProgress = useMemo(() => {
+    if (!game?.progress || !currentUser) {
+      return { username: "Opponent", score: 0, currentWordIndex: 0 };
+    }
+
+    const others = game.progress.filter((entry) => entry.playerId !== currentUser.uid);
+    if (others.length === 0) {
+      return { username: "Opponent", score: 0, currentWordIndex: 0 };
+    }
+
+    return [...others].sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return b.currentWordIndex - a.currentWordIndex;
+    })[0];
+  }, [game?.progress, currentUser]);
+
+  const isCoopResult = gameResult?.mode === "coop";
+  const winningTeam = useMemo(() => {
+    if (!isCoopResult || !Array.isArray(gameResult?.teamResults)) return null;
+    return (
+      gameResult.teamResults.find((team) => team.teamId === gameResult.winningTeamId) || null
+    );
+  }, [isCoopResult, gameResult?.teamResults, gameResult?.winningTeamId]);
 
   const submitWord = (event) => {
     if (event.key !== "Enter" && event.key !== " ") return;
@@ -541,7 +561,7 @@ export default function CreateRoom() {
         </p>
       </motion.div>
 
-      {/* Error/Feedback Messages */}
+      {/* Error Messages */}
       <AnimatePresence>
         {roomError && (
           <motion.div
@@ -551,16 +571,6 @@ export default function CreateRoom() {
             className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
           >
             {roomError}
-          </motion.div>
-        )}
-        {feedback && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            className="rounded-md border border-emerald-300/80 bg-emerald-100/80 px-4 py-3 text-sm text-emerald-950 dark:border-primary/40 dark:bg-primary/10 dark:text-primary"
-          >
-            {feedback}
           </motion.div>
         )}
       </AnimatePresence>
@@ -789,46 +799,50 @@ export default function CreateRoom() {
                     <h2 className="font-mono text-3xl font-bold tracking-[0.2em] text-primary">
                       {roomCode}
                     </h2>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={copyRoomCode}
-                      className="relative h-8 w-8 p-0"
-                    >
-                      <AnimatePresence mode="wait">
-                        {copied ? (
-                          <motion.div
-                            key="check"
-                            initial={{ scale: 0 }}
-                            animate={{ scale: 1 }}
-                            exit={{ scale: 0 }}
-                          >
-                            <FiCheck className="h-4 w-4 text-primary" />
-                          </motion.div>
-                        ) : (
-                          <motion.div
-                            key="copy"
-                            initial={{ scale: 0 }}
-                            animate={{ scale: 1 }}
-                            exit={{ scale: 0 }}
-                          >
-                            <FiCopy className="h-4 w-4" />
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </Button>
-                    <AnimatePresence>
-                      {copied && (
-                        <motion.span
-                          initial={{ opacity: 0, x: -10 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          exit={{ opacity: 0, x: 10 }}
-                          className="text-xs text-primary"
+                    {isLobbyState && (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={copyRoomCode}
+                          className="relative h-8 w-8 p-0"
                         >
-                          Copied!
-                        </motion.span>
-                      )}
-                    </AnimatePresence>
+                          <AnimatePresence mode="wait">
+                            {copied ? (
+                              <motion.div
+                                key="check"
+                                initial={{ scale: 0 }}
+                                animate={{ scale: 1 }}
+                                exit={{ scale: 0 }}
+                              >
+                                <FiCheck className="h-4 w-4 text-foreground" />
+                              </motion.div>
+                            ) : (
+                              <motion.div
+                                key="copy"
+                                initial={{ scale: 0 }}
+                                animate={{ scale: 1 }}
+                                exit={{ scale: 0 }}
+                              >
+                                <FiCopy className="h-4 w-4" />
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </Button>
+                        <AnimatePresence>
+                          {copied && (
+                            <motion.span
+                              initial={{ opacity: 0, x: -10 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              exit={{ opacity: 0, x: 10 }}
+                              className="text-xs text-foreground"
+                            >
+                              Copied!
+                            </motion.span>
+                          )}
+                        </AnimatePresence>
+                      </>
+                    )}
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -836,10 +850,11 @@ export default function CreateRoom() {
                     <Button
                       variant={me?.ready ? "default" : "outline"}
                       onClick={() => sendSocketMessage({ type: "ROOM_SET_READY", ready: !me?.ready })}
+                      disabled={settingsForm.gameMode === "coop" && !myTeamId}
                       className="gap-2"
                     >
                       {me?.ready ? <FiCheck className="h-4 w-4" /> : null}
-                      {me?.ready ? "Ready" : "Set Ready"}
+                      {me?.ready ? "Ready" : settingsForm.gameMode === "coop" && !myTeamId ? "Join Team First" : "Set Ready"}
                     </Button>
                   )}
                   {isLeader && isLobbyState && (
@@ -859,20 +874,6 @@ export default function CreateRoom() {
                 </div>
               </div>
             </CardHeader>
-            {isLeader && isLobbyState && !canStartGame && roomState?.members?.length > 1 && (
-              <CardContent className="border-t border-border/50 bg-muted/30 py-3">
-                <p className="text-center text-sm text-muted-foreground">
-                  Waiting for all players to ready up...
-                </p>
-              </CardContent>
-            )}
-            {isLeader && isLobbyState && roomState?.members?.length === 1 && (
-              <CardContent className="border-t border-border/50 bg-muted/30 py-3">
-                <p className="text-center text-sm text-foreground/80">
-                  Share the room code with friends to start playing!
-                </p>
-              </CardContent>
-            )}
           </Card>
 
           {/* Members & Settings Grid */}
@@ -934,7 +935,7 @@ export default function CreateRoom() {
                 </CardContent>
               </Card>
             ) : (
-              /* Coop Mode - Team assignment UI */
+              /* Coop Mode - Team selection UI */
               <Card>
                 <CardHeader className="pb-4">
                   <CardTitle className="flex items-center justify-between font-sans text-lg">
@@ -948,138 +949,72 @@ export default function CreateRoom() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {/* Unassigned Players */}
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {coopTeams.map((team) => {
+                      const players = getTeamPlayers(team.id);
+                      const isMyTeam = myTeamId === team.id;
+                      return (
+                        <div key={team.id} className="space-y-2 rounded-md border border-border/60 bg-card/60 p-3">
+                          <div className="space-y-2">
+                            <p className="font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
+                              {team.id}
+                            </p>
+                            {isLeader ? (
+                              <Input
+                                value={team.name}
+                                onChange={(event) => updateTeamName(team.id, event.target.value)}
+                                placeholder="Team name"
+                                maxLength={24}
+                                className="h-8 font-mono text-sm"
+                              />
+                            ) : (
+                              <p className="font-semibold">{team.name}</p>
+                            )}
+                          </div>
+                          <Button
+                            type="button"
+                            variant={isMyTeam ? "default" : "outline"}
+                            className="w-full"
+                            onClick={() => assignMeToTeam(team.id)}
+                          >
+                            {isMyTeam ? "Joined" : `Join ${team.name}`}
+                          </Button>
+                          <div className="min-h-[90px] space-y-1 rounded-md border border-border/40 p-2">
+                            {players.length === 0 ? (
+                              <p className="py-2 text-center text-xs text-muted-foreground">No players yet</p>
+                            ) : (
+                              players.map((member) => (
+                                <div key={member.id} className="flex items-center justify-between rounded bg-muted/40 px-2 py-1.5">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm font-medium">{member.username}</span>
+                                    {member.isLeader && (
+                                      <span className="font-mono text-xs text-primary">LEADER</span>
+                                    )}
+                                  </div>
+                                  {!member.isLeader && (
+                                    <span className={`font-mono text-xs ${member.ready ? "text-primary" : "text-muted-foreground"}`}>
+                                      {member.ready ? "Ready" : "Waiting"}
+                                    </span>
+                                  )}
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
                   {getUnassignedPlayers().length > 0 && (
-                    <div className="space-y-2">
-                      <p className="font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
-                        Unassigned
-                      </p>
-                      <div className="space-y-1">
-                        {getUnassignedPlayers().map((member) => (
-                          <div
-                            key={member.id}
-                            className="flex items-center justify-between rounded-md border border-dashed border-border/50 bg-muted/30 p-2"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium">{member.username}</span>
-                              {member.isLeader && (
-                                <span className="font-mono text-xs text-primary">LEADER</span>
-                              )}
-                            </div>
-                            <div className="flex gap-1">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-7 px-2 text-xs"
-                                onClick={() => assignPlayerToTeam(member.id, "team1")}
-                              >
-                                → Team 1
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-7 px-2 text-xs"
-                                onClick={() => assignPlayerToTeam(member.id, "team2")}
-                              >
-                                → Team 2
-                              </Button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+                    <p className="text-center text-xs text-muted-foreground">
+                      Unassigned: {getUnassignedPlayers().map((member) => member.username).join(", ")}
+                    </p>
                   )}
-
-                  {/* Team 1 */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <p className="font-mono text-xs uppercase tracking-[0.1em] text-primary">
-                        Team 1 ({getTeamPlayers("team1").length}/3)
-                      </p>
-                    </div>
-                    <div className="min-h-[60px] space-y-1 rounded-md border border-primary/30 bg-primary/5 p-2">
-                      {getTeamPlayers("team1").length === 0 ? (
-                        <p className="py-2 text-center text-xs text-muted-foreground">
-                          Assign players here
-                        </p>
-                      ) : (
-                        getTeamPlayers("team1").map((member) => (
-                          <div
-                            key={member.id}
-                            className="flex items-center justify-between rounded border border-border/30 bg-card/80 p-2"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium">{member.username}</span>
-                              {member.isLeader && (
-                                <span className="font-mono text-xs text-primary">LEADER</span>
-                              )}
-                              {!member.isLeader && (
-                                <span className={`font-mono text-xs ${member.ready ? "text-primary" : "text-muted-foreground"}`}>
-                                  {member.ready ? "Ready" : "Waiting"}
-                                </span>
-                              )}
-                            </div>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
-                              onClick={() => assignPlayerToTeam(member.id, null)}
-                            >
-                              ✕
-                            </Button>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Team 2 */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <p className="font-mono text-xs uppercase tracking-[0.1em] text-destructive">
-                        Team 2 ({getTeamPlayers("team2").length}/3)
-                      </p>
-                    </div>
-                    <div className="min-h-[60px] space-y-1 rounded-md border border-destructive/30 bg-destructive/5 p-2">
-                      {getTeamPlayers("team2").length === 0 ? (
-                        <p className="py-2 text-center text-xs text-muted-foreground">
-                          Assign players here
-                        </p>
-                      ) : (
-                        getTeamPlayers("team2").map((member) => (
-                          <div
-                            key={member.id}
-                            className="flex items-center justify-between rounded border border-border/30 bg-card/80 p-2"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium">{member.username}</span>
-                              {member.isLeader && (
-                                <span className="font-mono text-xs text-primary">LEADER</span>
-                              )}
-                              {!member.isLeader && (
-                                <span className={`font-mono text-xs ${member.ready ? "text-primary" : "text-muted-foreground"}`}>
-                                  {member.ready ? "Ready" : "Waiting"}
-                                </span>
-                              )}
-                            </div>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
-                              onClick={() => assignPlayerToTeam(member.id, null)}
-                            >
-                              ✕
-                            </Button>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
 
                   {/* Team validation message */}
                   {!teamsValid && (
                     <p className="text-center text-xs text-destructive">
-                      Each team needs 1-3 players to start
+                      Coop requires all players assigned and at least two active teams.
                     </p>
                   )}
                 </CardContent>
@@ -1162,6 +1097,9 @@ export default function CreateRoom() {
               >
                 <Card className="border-primary/50 bg-primary/5">
                   <CardContent className="py-12 text-center">
+                    <div className="mb-4 flex justify-center">
+                      <DotLoader duration={80} />
+                    </div>
                     <p className="mb-4 font-mono text-sm uppercase tracking-[0.2em] text-muted-foreground">
                       Game Starting In
                     </p>
@@ -1186,14 +1124,44 @@ export default function CreateRoom() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
+                className="space-y-6"
               >
+                <div className="grid grid-cols-2 gap-4">
+                  <Card className="border-primary/30 bg-primary/5">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
+                        <FiUser className="h-3 w-3" />
+                        {userInfo.username} (You)
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="font-sans text-3xl font-bold text-primary">{myProgress.score}</div>
+                      <div className="font-mono text-xs text-muted-foreground">
+                        Word {myProgress.currentWordIndex + 1} / {game?.words?.length || 0}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
+                        <FiUser className="h-3 w-3" />
+                        {rivalProgress.username}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="font-sans text-3xl font-bold">{rivalProgress.score}</div>
+                      <div className="font-mono text-xs text-muted-foreground">
+                        Word {rivalProgress.currentWordIndex + 1} / {game?.words?.length || 0}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
                 <Card>
                   <CardHeader className="pb-4">
                     <div className="flex items-center justify-between">
-                      <CardTitle className="flex items-center gap-3 font-sans">
-                        <DotLoader duration={80} />
-                        In Match
-                      </CardTitle>
+                      <CardTitle className="font-sans">In Match</CardTitle>
                       <div className="flex items-center gap-2 rounded-full bg-primary/10 px-4 py-2 font-mono text-lg font-bold tabular-nums text-primary">
                         <FiClock className="h-4 w-4" />
                         {timeLeft}s
@@ -1201,65 +1169,123 @@ export default function CreateRoom() {
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-6">
-                    {/* Current Word */}
                     <div className="text-center">
                       <p className="mb-2 font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">
                         Type This Word
                       </p>
-                      <motion.p
+                      <motion.div
                         key={currentWord}
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="font-sans text-4xl font-bold sm:text-5xl"
+                        className="relative inline-block font-mono text-4xl font-medium tracking-wider leading-none sm:text-5xl"
                       >
-                        {currentWord || "Waiting..."}
-                      </motion.p>
+                        {(currentWord || "").split("").map((char, charIndex) => {
+                          const typedChar = gameInput[charIndex];
+                          const isCurrentPosition = charIndex === gameInput.length;
+                          const isTyped = charIndex < gameInput.length;
+                          const isCorrect = isTyped && typedChar === char;
+                          const isWrong = isTyped && typedChar !== char;
+                          const renderedChar = char === " " ? "\u00A0" : char;
+                          const renderedTypedChar = isWrong && typedChar === " " ? "\u00A0" : typedChar;
+
+                          return (
+                            <span
+                              key={charIndex}
+                              className={`relative inline-block min-w-[0.45em] align-baseline transition-colors duration-75 ${
+                                isCorrect
+                                  ? "text-primary"
+                                  : isWrong
+                                  ? "text-destructive"
+                                  : "text-muted-foreground/50"
+                              }`}
+                            >
+                              {isCurrentPosition && (
+                                <motion.span
+                                  initial={{ opacity: 0 }}
+                                  animate={{ opacity: 1 }}
+                                  className="absolute -left-[2px] top-0 h-full w-[3px] bg-primary"
+                                  style={{ animation: "blink 1s ease-in-out infinite" }}
+                                />
+                              )}
+                              {isWrong ? renderedTypedChar : renderedChar}
+                            </span>
+                          );
+                        })}
+                        {gameInput.length === (currentWord || "").length && currentWord ? (
+                          <motion.span
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            className="absolute -right-[2px] top-0 h-full w-[3px] bg-primary"
+                            style={{ animation: "blink 1s ease-in-out infinite" }}
+                          />
+                        ) : null}
+                      </motion.div>
                     </div>
 
-                    {/* Input */}
-                    <Input
+                    <input
                       ref={inputRef}
                       value={gameInput}
                       onChange={(e) => setGameInput(e.target.value)}
                       onKeyDown={submitWord}
-                      placeholder="Type your word"
-                      className="text-center font-mono text-xl"
+                      className="absolute opacity-0"
                       autoFocus
                     />
 
-                    {/* Progress */}
-                    <div className="space-y-2">
-                      <p className="font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">
-                        Scoreboard
+                    <div
+                      onClick={() => inputRef.current?.focus()}
+                      className="cursor-text rounded-md border border-border/50 bg-muted/30 p-4 text-center"
+                    >
+                      <p className="font-mono text-sm text-muted-foreground">
+                        {gameInput.length > 0 ? (
+                          <span>
+                            Typing: <span className="text-foreground">{gameInput}</span>
+                          </span>
+                        ) : (
+                          "Click here or start typing..."
+                        )}
                       </p>
-                      {(game?.progress || [])
-                        .sort((a, b) => b.score - a.score)
-                        .map((entry, index) => (
-                          <div
-                            key={entry.playerId}
-                            className={`flex items-center justify-between rounded-md border p-3 ${
-                              entry.playerId === currentUser?.uid
-                                ? "border-primary/50 bg-primary/5"
-                                : "border-border/50"
-                            }`}
-                          >
-                            <div className="flex items-center gap-3">
-                              <span className="font-mono text-sm text-muted-foreground">
-                                #{index + 1}
-                              </span>
-                              <span className="font-semibold">{entry.username}</span>
-                            </div>
-                            <div className="flex items-center gap-4 font-mono text-sm">
-                              <span>{entry.score} pts</span>
-                              <span className="text-muted-foreground">
-                                Word {entry.currentWordIndex + 1}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
                     </div>
                   </CardContent>
                 </Card>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
+                        Your Progress
+                      </span>
+                      <span className="font-mono text-xs text-primary">
+                        {Math.round(((myProgress.currentWordIndex || 0) / (game?.words?.length || 1)) * 100)}%
+                      </span>
+                    </div>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+                      <motion.div
+                        className="h-full rounded-full bg-primary"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${((myProgress.currentWordIndex || 0) / (game?.words?.length || 1)) * 100}%` }}
+                        transition={{ duration: 0.3 }}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
+                        Opponent Progress
+                      </span>
+                      <span className="font-mono text-xs text-destructive">
+                        {Math.round(((rivalProgress.currentWordIndex || 0) / (game?.words?.length || 1)) * 100)}%
+                      </span>
+                    </div>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+                      <motion.div
+                        className="h-full rounded-full bg-destructive"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${((rivalProgress.currentWordIndex || 0) / (game?.words?.length || 1)) * 100}%` }}
+                        transition={{ duration: 0.3 }}
+                      />
+                    </div>
+                  </div>
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
@@ -1283,6 +1309,8 @@ export default function CreateRoom() {
                     <CardTitle className="font-sans text-2xl">
                       {gameResult.isDraw
                         ? "It's a Draw!"
+                        : isCoopResult && winningTeam
+                        ? `${winningTeam.name} Wins!`
                         : gameResult.winnerId === currentUser?.uid
                         ? "🎉 You Won!"
                         : "Match Complete"}
@@ -1292,6 +1320,27 @@ export default function CreateRoom() {
                     </p>
                   </CardHeader>
                   <CardContent className="space-y-3 py-6">
+                    {isCoopResult && Array.isArray(gameResult.teamResults) && gameResult.teamResults.length > 0 && (
+                      <div className="space-y-2">
+                        {gameResult.teamResults.map((team) => (
+                          <div
+                            key={team.teamId}
+                            className={`rounded-md border px-3 py-2 ${
+                              team.teamId === gameResult.winningTeamId
+                                ? "border-primary/50 bg-primary/5"
+                                : "border-border/50"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <p className="font-semibold">{team.name}</p>
+                              <p className="font-mono text-sm text-muted-foreground">
+                                {team.correctChars} chars matched
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     {(gameResult.rankings || []).map((entry, index) => (
                       <motion.div
                         key={entry.playerId}
@@ -1314,7 +1363,7 @@ export default function CreateRoom() {
                           <span className="text-lg font-bold">{entry.score}</span>
                           <span className="text-muted-foreground"> pts</span>
                           <p className="text-xs text-muted-foreground">
-                            {entry.progress} words
+                            {entry.correctChars ?? 0} chars | {entry.progress} words
                           </p>
                         </div>
                       </motion.div>
