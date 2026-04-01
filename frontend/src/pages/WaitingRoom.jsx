@@ -19,7 +19,7 @@ const WaitingRoom = () => {
         className="w-full max-w-md"
       >
         <Card className="overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm">
-          <CardHeader className="bg-gradient-to-r from-primary/10 to-transparent pb-6 text-center">
+          <CardHeader className="pb-6 text-center">
             <motion.div
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
