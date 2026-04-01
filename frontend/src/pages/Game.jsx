@@ -509,19 +509,21 @@ const Game = () => {
     return "text-muted-foreground";
   };
 
-  // Skeleton loading state
+  // Skeleton loading state - show a consistent card-based loader
   if (!userStats) {
     return (
-      <div className="flex h-full min-h-[60svh] flex-col gap-6 p-4">
-        <div className="flex items-center justify-between">
-          <Skeleton className="h-8 w-32" />
-          <Skeleton className="h-8 w-20" />
+      <div className="flex h-full flex-col gap-6">
+        <div className="flex items-center justify-between border-b border-border/50 pb-4">
+          <div>
+            <Skeleton className="mb-2 h-3 w-24" />
+            <Skeleton className="h-6 w-32" />
+          </div>
         </div>
-        <div className="flex flex-1 items-center justify-center">
+        <div className="flex flex-1 items-center justify-center py-12">
           <Card className="w-full max-w-md">
             <CardContent className="flex flex-col items-center gap-4 py-12">
               <DotLoader duration={100} className="scale-150" />
-              <Skeleton className="h-4 w-40" />
+              <p className="font-mono text-sm text-muted-foreground">Loading...</p>
             </CardContent>
           </Card>
         </div>
@@ -616,7 +618,7 @@ const Game = () => {
               className="flex flex-1 items-center justify-center py-12"
             >
               <Card className="w-full max-w-md overflow-hidden">
-                <CardHeader className="bg-gradient-to-r from-primary/10 to-transparent text-center">
+                <CardHeader className="text-center">
                   <motion.div
                     initial={{ scale: 0 }}
                     animate={{ scale: 1 }}
@@ -665,7 +667,7 @@ const Game = () => {
               className="flex flex-1 items-center justify-center py-12"
             >
               <Card className="w-full max-w-md overflow-hidden border-primary/50">
-                <CardHeader className="bg-gradient-to-r from-primary/10 to-transparent text-center">
+                <CardHeader className="text-center">
                   <CardTitle className="font-sans">Match Found!</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-6 py-8 text-center">
@@ -743,31 +745,91 @@ const Game = () => {
                 </Card>
               </div>
 
-              {/* Current Word Display */}
+              {/* Current Word Display - Monkeytype Style */}
               <Card>
                 <CardContent className="space-y-6 py-8">
                   <div className="text-center">
-                    <p className="mb-2 font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                    <p className="mb-4 font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">
                       Type This Word
                     </p>
                     <motion.div
                       key={words[currentWordIndex]}
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="font-sans text-4xl font-bold sm:text-5xl"
+                      className="relative inline-block font-mono text-4xl font-medium tracking-wider sm:text-5xl"
                     >
-                      {words[currentWordIndex] || "Loading..."}
+                      {(words[currentWordIndex] || "").split("").map((char, charIndex) => {
+                        const typedChar = input[charIndex];
+                        const isCurrentPosition = charIndex === input.length;
+                        const isTyped = charIndex < input.length;
+                        const isCorrect = isTyped && typedChar === char;
+                        const isWrong = isTyped && typedChar !== char;
+
+                        return (
+                          <span
+                            key={charIndex}
+                            className={`relative inline-block transition-colors duration-75 ${
+                              isCorrect
+                                ? "text-primary"
+                                : isWrong
+                                ? "text-destructive"
+                                : "text-muted-foreground/50"
+                            }`}
+                          >
+                            {isCurrentPosition && (
+                              <motion.span
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                className="absolute -left-[2px] top-0 h-full w-[3px] bg-primary"
+                                style={{
+                                  animation: "blink 1s ease-in-out infinite",
+                                }}
+                              />
+                            )}
+                            {isWrong ? typedChar : char}
+                          </span>
+                        );
+                      })}
+                      {/* Cursor at end if all typed */}
+                      {input.length === (words[currentWordIndex] || "").length && (
+                        <motion.span
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          className="inline-block h-[1.2em] w-[3px] bg-primary align-middle"
+                          style={{
+                            animation: "blink 1s ease-in-out infinite",
+                          }}
+                        />
+                      )}
                     </motion.div>
+                    {/* Show what was typed if wrong */}
+                    {input && input !== (words[currentWordIndex] || "").slice(0, input.length) && (
+                      <p className="mt-2 font-mono text-sm text-destructive">
+                        Press Space or Enter to submit
+                      </p>
+                    )}
                   </div>
-                  <Input
+                  <input
                     ref={inputRef}
                     value={input}
                     onChange={handleInputChange}
                     onKeyDown={handleInputSubmit}
-                    placeholder="Type and press Enter or Space"
-                    className="mx-auto max-w-md text-center font-mono text-xl"
+                    className="absolute opacity-0"
                     autoFocus
                   />
+                  {/* Click area to refocus */}
+                  <div
+                    onClick={() => inputRef.current?.focus()}
+                    className="cursor-text rounded-md border border-border/50 bg-muted/30 p-4 text-center"
+                  >
+                    <p className="font-mono text-sm text-muted-foreground">
+                      {input.length > 0 ? (
+                        <span>Typing: <span className="text-foreground">{input}</span> • Press Space or Enter</span>
+                      ) : (
+                        "Click here or start typing..."
+                      )}
+                    </p>
+                  </div>
                 </CardContent>
               </Card>
 
@@ -826,10 +888,10 @@ const Game = () => {
                   gameResults.reason === "opponent_disconnected" ||
                   (gameResults.player1.id === currentUser.uid && gameResults.player1.won) ||
                   (gameResults.player2.id === currentUser.uid && gameResults.player2.won)
-                    ? "bg-gradient-to-r from-primary/20 to-primary/5"
+                    ? "bg-primary/10"
                     : gameResults.isDraw
-                    ? "bg-gradient-to-r from-muted to-muted/50"
-                    : "bg-gradient-to-r from-destructive/10 to-transparent"
+                    ? "bg-muted/50"
+                    : "bg-destructive/10"
                 }`}>
                   <CardTitle className="font-sans text-2xl">
                     {gameResults.reason === "opponent_disconnected"

@@ -35,11 +35,7 @@ const ROOM_SETTING_LIMITS = {
 
 const GAME_MODES = [
   { id: "ffa", label: "Free For All", description: "Everyone competes individually" },
-  { id: "1v1", label: "1v1", description: "Two players head-to-head" },
-  { id: "2v2", label: "2v2", description: "Two teams of two" },
-  { id: "1v2", label: "1v2", description: "One versus two" },
-  { id: "2v3", label: "2v3", description: "Two versus three" },
-  { id: "3v3", label: "3v3", description: "Three versus three" },
+  { id: "coop", label: "Coop", description: "Team vs Team - drag players or click to assign teams" },
 ];
 
 function clampSettingValue(rawValue, min, max, fallback) {
@@ -73,6 +69,8 @@ export default function CreateRoom() {
   const [gameResult, setGameResult] = useState(null);
   const [copied, setCopied] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  // Team assignments for coop mode: { playerId: 'team1' | 'team2' }
+  const [teamAssignments, setTeamAssignments] = useState({});
 
   const fetchUserInfo = useCallback(async () => {
     if (!currentUser) return;
@@ -419,11 +417,49 @@ export default function CreateRoom() {
   const settingsLocked = !isLeader || roomState?.state !== "lobby";
 
   // Leader is always considered ready - check if all OTHER members are ready
+  // Helper to assign player to a team
+  const assignPlayerToTeam = useCallback((playerId, team) => {
+    setTeamAssignments((prev) => {
+      const next = { ...prev };
+      if (team === null) {
+        delete next[playerId];
+      } else {
+        next[playerId] = team;
+      }
+      return next;
+    });
+  }, []);
+
+  // Get players for a specific team
+  const getTeamPlayers = useCallback((team) => {
+    if (!roomState?.members) return [];
+    return roomState.members.filter((m) => teamAssignments[m.id] === team);
+  }, [roomState?.members, teamAssignments]);
+
+  // Get unassigned players
+  const getUnassignedPlayers = useCallback(() => {
+    if (!roomState?.members) return [];
+    return roomState.members.filter((m) => !teamAssignments[m.id]);
+  }, [roomState?.members, teamAssignments]);
+
+  // Check if teams are valid for starting (at least 1 player per team, not all on one side)
+  const teamsValid = useMemo(() => {
+    if (settingsForm.gameMode !== "coop") return true;
+    const team1 = getTeamPlayers("team1").length;
+    const team2 = getTeamPlayers("team2").length;
+    return team1 >= 1 && team2 >= 1 && team1 <= 3 && team2 <= 3;
+  }, [settingsForm.gameMode, getTeamPlayers]);
+
   const canStartGame = useMemo(() => {
     if (!isLeader || !roomState?.members || roomState.members.length < 2) return false;
     const otherMembers = roomState.members.filter((m) => m.id !== currentUser?.uid);
-    return otherMembers.length > 0 && otherMembers.every((m) => m.ready);
-  }, [isLeader, roomState?.members, currentUser?.uid]);
+    const allReady = otherMembers.length > 0 && otherMembers.every((m) => m.ready);
+    // For coop mode, also require valid team assignments
+    if (settingsForm.gameMode === "coop") {
+      return allReady && teamsValid;
+    }
+    return allReady;
+  }, [isLeader, roomState?.members, currentUser?.uid, settingsForm.gameMode, teamsValid]);
 
   const updateSettingsField = useCallback((field, rawValue) => {
     const limits = ROOM_SETTING_LIMITS[field];
@@ -746,7 +782,7 @@ export default function CreateRoom() {
         >
           {/* Room Header Card */}
           <Card className="overflow-hidden">
-            <CardHeader className="bg-gradient-to-r from-primary/10 to-transparent pb-4">
+            <CardHeader className="pb-4">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">
@@ -844,59 +880,213 @@ export default function CreateRoom() {
 
           {/* Members & Settings Grid */}
           <div className="grid gap-6 lg:grid-cols-2">
-            {/* Members Card */}
-            <Card>
-              <CardHeader className="pb-4">
-                <CardTitle className="flex items-center justify-between font-sans text-lg">
-                  <span className="flex items-center gap-2">
-                    <FiUsers className="h-4 w-4" />
-                    Players
-                  </span>
-                  <span className="font-mono text-sm text-muted-foreground">
-                    {roomState?.memberCount || 0}/{roomState?.settings?.maxPlayers || 0}
-                  </span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {(roomState?.members || []).map((member, index) => (
-                  <motion.div
-                    key={member.id}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: index * 0.05 }}
-                    className="flex items-center justify-between rounded-md border border-border/50 bg-card/50 p-3"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`flex h-8 w-8 items-center justify-center rounded-full ${
-                        member.isLeader ? "bg-primary/20 text-primary" : "bg-muted"
-                      }`}>
-                        <FiUser className="h-4 w-4" />
+            {/* Members Card - Different UI for FFA vs Coop */}
+            {settingsForm.gameMode === "ffa" ? (
+              /* FFA Mode - Simple player list */
+              <Card>
+                <CardHeader className="pb-4">
+                  <CardTitle className="flex items-center justify-between font-sans text-lg">
+                    <span className="flex items-center gap-2">
+                      <FiUsers className="h-4 w-4" />
+                      Players
+                    </span>
+                    <span className="font-mono text-sm text-muted-foreground">
+                      {roomState?.memberCount || 0}/{roomState?.settings?.maxPlayers || 0}
+                    </span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {(roomState?.members || []).map((member, index) => (
+                    <motion.div
+                      key={member.id}
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                      className="flex items-center justify-between rounded-md border border-border/50 bg-card/50 p-3"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`flex h-8 w-8 items-center justify-center rounded-full ${
+                          member.isLeader ? "bg-primary/20 text-primary" : "bg-muted"
+                        }`}>
+                          <FiUser className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <p className="font-semibold">
+                            {member.username}
+                            {member.isLeader && (
+                              <span className="ml-2 font-mono text-xs text-primary">LEADER</span>
+                            )}
+                          </p>
+                          <p className="font-mono text-xs text-muted-foreground">
+                            {member.rating} rating
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="font-semibold">
-                          {member.username}
-                          {member.isLeader && (
-                            <span className="ml-2 font-mono text-xs text-primary">LEADER</span>
-                          )}
-                        </p>
-                        <p className="font-mono text-xs text-muted-foreground">
-                          {member.rating} rating
-                        </p>
+                      <span
+                        className={`rounded-full px-3 py-1 font-mono text-xs ${
+                          member.ready || member.isLeader
+                            ? "bg-primary/20 text-primary"
+                            : "bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        {member.isLeader ? "Ready" : member.ready ? "Ready" : "Waiting"}
+                      </span>
+                    </motion.div>
+                  ))}
+                </CardContent>
+              </Card>
+            ) : (
+              /* Coop Mode - Team assignment UI */
+              <Card>
+                <CardHeader className="pb-4">
+                  <CardTitle className="flex items-center justify-between font-sans text-lg">
+                    <span className="flex items-center gap-2">
+                      <FiUsers className="h-4 w-4" />
+                      Teams
+                    </span>
+                    <span className="font-mono text-sm text-muted-foreground">
+                      {roomState?.memberCount || 0} players
+                    </span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Unassigned Players */}
+                  {getUnassignedPlayers().length > 0 && (
+                    <div className="space-y-2">
+                      <p className="font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
+                        Unassigned
+                      </p>
+                      <div className="space-y-1">
+                        {getUnassignedPlayers().map((member) => (
+                          <div
+                            key={member.id}
+                            className="flex items-center justify-between rounded-md border border-dashed border-border/50 bg-muted/30 p-2"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium">{member.username}</span>
+                              {member.isLeader && (
+                                <span className="font-mono text-xs text-primary">LEADER</span>
+                              )}
+                            </div>
+                            <div className="flex gap-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2 text-xs"
+                                onClick={() => assignPlayerToTeam(member.id, "team1")}
+                              >
+                                → Team 1
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2 text-xs"
+                                onClick={() => assignPlayerToTeam(member.id, "team2")}
+                              >
+                                → Team 2
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
-                    <span
-                      className={`rounded-full px-3 py-1 font-mono text-xs ${
-                        member.ready || member.isLeader
-                          ? "bg-primary/20 text-primary"
-                          : "bg-muted text-muted-foreground"
-                      }`}
-                    >
-                      {member.isLeader ? "Ready" : member.ready ? "Ready" : "Waiting"}
-                    </span>
-                  </motion.div>
-                ))}
-              </CardContent>
-            </Card>
+                  )}
+
+                  {/* Team 1 */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="font-mono text-xs uppercase tracking-[0.1em] text-primary">
+                        Team 1 ({getTeamPlayers("team1").length}/3)
+                      </p>
+                    </div>
+                    <div className="min-h-[60px] space-y-1 rounded-md border border-primary/30 bg-primary/5 p-2">
+                      {getTeamPlayers("team1").length === 0 ? (
+                        <p className="py-2 text-center text-xs text-muted-foreground">
+                          Assign players here
+                        </p>
+                      ) : (
+                        getTeamPlayers("team1").map((member) => (
+                          <div
+                            key={member.id}
+                            className="flex items-center justify-between rounded border border-border/30 bg-card/80 p-2"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium">{member.username}</span>
+                              {member.isLeader && (
+                                <span className="font-mono text-xs text-primary">LEADER</span>
+                              )}
+                              {!member.isLeader && (
+                                <span className={`font-mono text-xs ${member.ready ? "text-primary" : "text-muted-foreground"}`}>
+                                  {member.ready ? "Ready" : "Waiting"}
+                                </span>
+                              )}
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                              onClick={() => assignPlayerToTeam(member.id, null)}
+                            >
+                              ✕
+                            </Button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Team 2 */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="font-mono text-xs uppercase tracking-[0.1em] text-destructive">
+                        Team 2 ({getTeamPlayers("team2").length}/3)
+                      </p>
+                    </div>
+                    <div className="min-h-[60px] space-y-1 rounded-md border border-destructive/30 bg-destructive/5 p-2">
+                      {getTeamPlayers("team2").length === 0 ? (
+                        <p className="py-2 text-center text-xs text-muted-foreground">
+                          Assign players here
+                        </p>
+                      ) : (
+                        getTeamPlayers("team2").map((member) => (
+                          <div
+                            key={member.id}
+                            className="flex items-center justify-between rounded border border-border/30 bg-card/80 p-2"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium">{member.username}</span>
+                              {member.isLeader && (
+                                <span className="font-mono text-xs text-primary">LEADER</span>
+                              )}
+                              {!member.isLeader && (
+                                <span className={`font-mono text-xs ${member.ready ? "text-primary" : "text-muted-foreground"}`}>
+                                  {member.ready ? "Ready" : "Waiting"}
+                                </span>
+                              )}
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                              onClick={() => assignPlayerToTeam(member.id, null)}
+                            >
+                              ✕
+                            </Button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Team validation message */}
+                  {!teamsValid && (
+                    <p className="text-center text-xs text-destructive">
+                      Each team needs 1-3 players to start
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            )}
 
             {/* Settings Card */}
             <Card>
@@ -1086,10 +1276,10 @@ export default function CreateRoom() {
                 <Card className="overflow-hidden">
                   <CardHeader className={`text-center ${
                     gameResult.winnerId === currentUser?.uid
-                      ? "bg-gradient-to-r from-primary/20 to-primary/5"
+                      ? "bg-primary/10"
                       : gameResult.isDraw
-                      ? "bg-gradient-to-r from-muted to-muted/50"
-                      : "bg-gradient-to-r from-destructive/10 to-transparent"
+                      ? "bg-muted/50"
+                      : "bg-destructive/10"
                   }`}>
                     <CardTitle className="font-sans text-2xl">
                       {gameResult.isDraw

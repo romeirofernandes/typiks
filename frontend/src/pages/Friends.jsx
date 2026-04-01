@@ -3,6 +3,7 @@ import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Delete02Icon, UserIcon, StarIcon, GameController01Icon, RefreshIcon } from "hugeicons-react";
 
 function getServerBaseUrl() {
   const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
@@ -407,35 +408,63 @@ export default function Friends() {
       </div>
 
       <Card className="flex-1">
-        <CardHeader>
-          <CardTitle>Friends ({friends.length})</CardTitle>
+        <CardHeader className="pb-4">
+          <CardTitle className="flex items-center gap-2 font-sans text-lg">
+            <UserIcon className="h-5 w-5" />
+            Friends
+            <span className="ml-1 font-mono text-sm text-muted-foreground">({friends.length})</span>
+          </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent>
           {friends.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No friends yet.</p>
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              No friends yet. Add friends using their username above.
+            </p>
           ) : (
-            friends.map((friend) => (
-              <div
-                key={friend.id}
-                className="flex items-center justify-between rounded-md border border-border/70 bg-card/30 p-3"
-              >
-                <div>
-                  <p className="font-semibold">{friend.username}</p>
-                  <p className="text-xs text-muted-foreground">
-                    Rating: {friend.rating} • Games: {friend.gamesPlayed}
-                  </p>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {friends.map((friend) => (
+                <div
+                  key={friend.id}
+                  className="group flex flex-col gap-3 rounded-lg border border-border/50 bg-card p-4 transition-colors hover:border-border"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
+                        <UserIcon className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <p className="font-semibold">{friend.username}</p>
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <StarIcon className="h-3 w-3" />
+                            {friend.rating}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <GameController01Icon className="h-3 w-3" />
+                            {friend.gamesPlayed}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 w-8 p-0 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+                      onClick={() => removeFriend(friend.id)}
+                    >
+                      <Delete02Icon className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
-                <Button size="sm" variant="outline" onClick={() => removeFriend(friend.id)}>
-                  Remove
-                </Button>
-              </div>
-            ))
+              ))}
+            </div>
           )}
         </CardContent>
       </Card>
 
       <div className="flex justify-end">
-        <Button variant="outline" onClick={debouncedRefreshFriendsData} disabled={refreshing}>
+        <Button variant="outline" onClick={debouncedRefreshFriendsData} disabled={refreshing} className="gap-2">
+          <RefreshIcon className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
           {refreshing ? "Refreshing..." : "Refresh"}
         </Button>
       </div>

@@ -16,6 +16,7 @@ const DEFAULT_ROOM_SETTINGS = {
 	maxPlayers: 6,
 	roundTimeSeconds: 60,
 	wordCount: 30,
+	gameMode: 'ffa', // 'ffa' or 'coop'
 };
 
 function toInteger(value, fallback) {
@@ -33,6 +34,7 @@ export function normalizePrivateRoomSettings(rawSettings = {}, { currentMembers 
 		DEFAULT_ROOM_SETTINGS.roundTimeSeconds
 	);
 	const wordCount = toInteger(rawSettings.wordCount, DEFAULT_ROOM_SETTINGS.wordCount);
+	const gameMode = rawSettings.gameMode === 'coop' ? 'coop' : 'ffa';
 
 	if (maxPlayers < PRIVATE_ROOM_LIMITS.minPlayers || maxPlayers > PRIVATE_ROOM_LIMITS.maxPlayers) {
 		return {
@@ -66,6 +68,7 @@ export function normalizePrivateRoomSettings(rawSettings = {}, { currentMembers 
 			maxPlayers,
 			roundTimeSeconds,
 			wordCount,
+			gameMode,
 		},
 	};
 }
@@ -173,7 +176,11 @@ export class PrivateRoom {
 			return false;
 		}
 
+		// Leader is always considered ready - only check other members
 		for (const member of this.members.values()) {
+			if (member.id === this.ownerId) {
+				continue; // Skip leader
+			}
 			if (!member.ready) {
 				return false;
 			}
