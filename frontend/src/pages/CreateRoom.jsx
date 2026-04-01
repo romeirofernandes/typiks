@@ -350,7 +350,7 @@ export default function CreateRoom() {
 
       setGameResult(null);
       await connectToRoom(payload.roomCode, payload.settings);
-      setFeedback("Room created. Share the code and wait for everyone to ready up.");
+      setFeedback("Room created. Share the code with your friends and wait for ready checks.");
     } catch (error) {
       setRoomError(error.message || "Could not create room.");
     } finally {
@@ -414,6 +414,7 @@ export default function CreateRoom() {
   const isLeader = Boolean(currentUser?.uid && roomState?.ownerId === currentUser.uid);
   const isInRoom = Boolean(roomState && roomCode);
   const isPlaying = roomState?.state === "playing";
+  const isLobbyState = roomState?.state === "lobby";
   const settingsLocked = !isLeader || roomState?.state !== "lobby";
 
   // Leader is always considered ready - check if all OTHER members are ready
@@ -557,7 +558,7 @@ export default function CreateRoom() {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            className="rounded-md border border-primary/40 bg-primary/10 px-4 py-3 text-sm text-primary"
+            className="rounded-md border border-emerald-300/80 bg-emerald-100/80 px-4 py-3 text-sm text-emerald-950 dark:border-primary/40 dark:bg-primary/10 dark:text-primary"
           >
             {feedback}
           </motion.div>
@@ -831,7 +832,7 @@ export default function CreateRoom() {
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {!isLeader && (
+                  {!isLeader && isLobbyState && (
                     <Button
                       variant={me?.ready ? "default" : "outline"}
                       onClick={() => sendSocketMessage({ type: "ROOM_SET_READY", ready: !me?.ready })}
@@ -841,7 +842,7 @@ export default function CreateRoom() {
                       {me?.ready ? "Ready" : "Set Ready"}
                     </Button>
                   )}
-                  {isLeader && (
+                  {isLeader && isLobbyState && (
                     <Button
                       onClick={() => sendSocketMessage({ type: "ROOM_START_GAME" })}
                       disabled={!canStartGame}
@@ -858,16 +859,16 @@ export default function CreateRoom() {
                 </div>
               </div>
             </CardHeader>
-            {isLeader && !canStartGame && roomState?.members?.length > 1 && (
+            {isLeader && isLobbyState && !canStartGame && roomState?.members?.length > 1 && (
               <CardContent className="border-t border-border/50 bg-muted/30 py-3">
                 <p className="text-center text-sm text-muted-foreground">
                   Waiting for all players to ready up...
                 </p>
               </CardContent>
             )}
-            {isLeader && roomState?.members?.length === 1 && (
+            {isLeader && isLobbyState && roomState?.members?.length === 1 && (
               <CardContent className="border-t border-border/50 bg-muted/30 py-3">
-                <p className="text-center text-sm text-muted-foreground">
+                <p className="text-center text-sm text-foreground/80">
                   Share the room code with friends to start playing!
                 </p>
               </CardContent>
@@ -875,7 +876,8 @@ export default function CreateRoom() {
           </Card>
 
           {/* Members & Settings Grid */}
-          <div className="grid gap-6 lg:grid-cols-2">
+          {isLobbyState && (
+            <div className="grid gap-6 lg:grid-cols-2">
             {/* Members Card - Different UI for FFA vs Coop */}
             {settingsForm.gameMode === "ffa" ? (
               /* FFA Mode - Simple player list */
@@ -1148,6 +1150,7 @@ export default function CreateRoom() {
               </CardContent>
             </Card>
           </div>
+          )}
 
           {/* Countdown State */}
           <AnimatePresence>
@@ -1219,7 +1222,7 @@ export default function CreateRoom() {
                       value={gameInput}
                       onChange={(e) => setGameInput(e.target.value)}
                       onKeyDown={submitWord}
-                      placeholder="Type and press Enter or Space"
+                      placeholder="Type your word"
                       className="text-center font-mono text-xl"
                       autoFocus
                     />

@@ -5,14 +5,13 @@ import { useAuth } from "@/context/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
 import { DotLoader } from "@/components/ui/dot-loader";
 import { FiUser, FiClock, FiArrowLeft, FiZap, FiTrendingUp } from "react-icons/fi";
 
 const Game = () => {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
-  const [gameState, setGameState] = useState("connecting");
+  const [gameState, setGameState] = useState("waiting");
   const [connectionError, setConnectionError] = useState(null);
   const [opponent, setOpponent] = useState(null);
   const [countdown, setCountdown] = useState(null);
@@ -24,7 +23,13 @@ const Game = () => {
   const [timeLeft, setTimeLeft] = useState(60);
   const [input, setInput] = useState("");
   const [gameResults, setGameResults] = useState(null);
-  const [userStats, setUserStats] = useState(null);
+  const [userStats, setUserStats] = useState(() => ({
+    username:
+      currentUser?.displayName || currentUser?.email?.split("@")[0] || "Player",
+    rating: 800,
+    gamesPlayed: 0,
+    gamesWon: 0,
+  }));
   const inputRef = useRef(null);
   const timerRef = useRef(null);
   const wsRef = useRef(null);
@@ -48,6 +53,18 @@ const Game = () => {
       timerRef.current = null;
     }
   };
+
+  useEffect(() => {
+    if (!currentUser) return;
+
+    setUserStats((prev) => ({
+      ...prev,
+      username:
+        prev?.username && prev.username !== "Player"
+          ? prev.username
+          : currentUser.displayName || currentUser.email?.split("@")[0] || "Player",
+    }));
+  }, [currentUser]);
 
   const fetchUserStats = useCallback(async () => {
     if (!currentUser) return;
@@ -212,7 +229,7 @@ const Game = () => {
   }, []); // Only run once on mount! fetchUserStats uses latest refs or is stable enough.
 
   useEffect(() => {
-    if (userStats && gameState === "connecting" && !wsRef.current) {
+    if (userStats && gameState === "waiting" && !wsRef.current && !isConnectingRef.current) {
       connectWebSocket();
     }
   }, [connectWebSocket, gameState, userStats]);
@@ -509,28 +526,6 @@ const Game = () => {
     return "text-muted-foreground";
   };
 
-  // Skeleton loading state - show a consistent card-based loader
-  if (!userStats) {
-    return (
-      <div className="flex h-full flex-col gap-6">
-        <div className="flex items-center justify-between border-b border-border/50 pb-4">
-          <div>
-            <Skeleton className="mb-2 h-3 w-24" />
-            <Skeleton className="h-6 w-32" />
-          </div>
-        </div>
-        <div className="flex flex-1 items-center justify-center py-12">
-          <Card className="w-full max-w-md">
-            <CardContent className="flex flex-col items-center gap-4 py-12">
-              <DotLoader duration={100} className="scale-150" />
-              <p className="font-mono text-sm text-muted-foreground">Loading...</p>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="flex h-full flex-col gap-6">
       {/* Header */}
@@ -555,7 +550,7 @@ const Game = () => {
       </motion.div>
 
       {/* Game States */}
-      <AnimatePresence mode="wait">
+      <AnimatePresence initial={false} mode="wait">
         {gameState === "error" && (
           <motion.div
             key="error"
@@ -585,25 +580,6 @@ const Game = () => {
                     <FiArrowLeft className="h-4 w-4" />
                     Back to Dashboard
                   </Button>
-                </CardContent>
-              </Card>
-            </motion.div>
-          )}
-
-          {gameState === "connecting" && (
-            <motion.div
-              key="connecting"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="flex flex-1 items-center justify-center py-12"
-            >
-              <Card className="w-full max-w-md">
-                <CardContent className="flex flex-col items-center gap-4 py-12">
-                  <DotLoader duration={100} className="scale-150" />
-                  <p className="font-mono text-sm text-muted-foreground">
-                    Connecting to game server...
-                  </p>
                 </CardContent>
               </Card>
             </motion.div>
@@ -802,12 +778,6 @@ const Game = () => {
                         />
                       )}
                     </motion.div>
-                    {/* Show what was typed if wrong */}
-                    {input && input !== (words[currentWordIndex] || "").slice(0, input.length) && (
-                      <p className="mt-2 font-mono text-sm text-destructive">
-                        Press Space or Enter to submit
-                      </p>
-                    )}
                   </div>
                   <input
                     ref={inputRef}
@@ -824,7 +794,7 @@ const Game = () => {
                   >
                     <p className="font-mono text-sm text-muted-foreground">
                       {input.length > 0 ? (
-                        <span>Typing: <span className="text-foreground">{input}</span> • Press Space or Enter</span>
+                        <span>Typing: <span className="text-foreground">{input}</span></span>
                       ) : (
                         "Click here or start typing..."
                       )}
