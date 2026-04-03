@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 
@@ -60,9 +60,43 @@ export default function AppShell() {
 
   const [expanded, setExpanded] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [statsUsername, setStatsUsername] = useState(null);
+
+  useEffect(() => {
+    const fetchSidebarUsername = async () => {
+      if (!currentUser) {
+        setStatsUsername(null);
+        return;
+      }
+
+      try {
+        const idToken = await currentUser.getIdToken();
+        const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
+        const fullUrl = serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
+
+        const response = await fetch(`${fullUrl}/api/users/${currentUser.uid}/stats`, {
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+          },
+        });
+
+        if (!response.ok) return;
+
+        const payload = await response.json();
+        setStatsUsername(payload?.username || null);
+      } catch (error) {
+        console.error("Failed to fetch sidebar username:", error);
+      }
+    };
+
+    fetchSidebarUsername();
+  }, [currentUser]);
 
   const username =
-    currentUser?.displayName || currentUser?.email?.split("@")[0] || "username";
+    statsUsername ||
+    currentUser?.displayName ||
+    currentUser?.email?.split("@")[0] ||
+    "username";
 
   const navItems = useMemo(
     () => [

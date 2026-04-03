@@ -29,6 +29,13 @@
       "when": 1775010000000,
       "tag": "0003_rated_modes",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1775020000000,
+      "tag": "0004_solid_harbor",
+      "breakpoints": true
     }
   ]
 }

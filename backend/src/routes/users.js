@@ -5,6 +5,7 @@ import { alias } from 'drizzle-orm/sqlite-core';
 import {
 	friendships,
 	friendRequests,
+	games,
 	rankedGameLogs,
 	userModeStats,
 	users,
@@ -18,9 +19,10 @@ const requireAuth = requireFirebaseAuth();
 
 const FRIEND_REQUEST_PENDING = 'pending';
 const FRIEND_REQUEST_ACCEPTED = 'accepted';
-const FRIEND_REQUEST_DECLINED = 'declined';
+const FRIEND_REQUEST_REJECTED = 'rejected';
 const RANKED_MODE_SECONDS = [15, 30, 60, 120];
 const DEFAULT_RATING = 800;
+const GAME_STATUS_FINISHED = 'finished';
 
 function generateEntityId(prefix) {
 	if (typeof crypto?.randomUUID === 'function') {
@@ -48,16 +50,50 @@ function normalizeModeSeconds(rawValue) {
 }
 
 function modeStatsRowToDto(row) {
+	const gamesPlayed = Number(row.gamesPlayed || 0);
+	const totalScore = Number(row.totalScore || 0);
+	const averageScore = gamesPlayed > 0 ? totalScore / gamesPlayed : 0;
+
 	return {
 		modeSeconds: row.modeSeconds,
-		gamesPlayed: row.gamesPlayed,
+		gamesPlayed,
 		gamesWon: row.gamesWon,
 		gamesLost: row.gamesLost,
 		gamesDrawn: row.gamesDrawn,
-		totalScore: row.totalScore,
-		averageScore: Number(row.averageScore || 0),
+		totalScore,
+		averageScore,
 		rating: row.rating,
 	};
+}
+
+function resolveFriendshipPair(userOne, userTwo) {
+	if (!userOne || !userTwo || userOne === userTwo) {
+		return null;
+	}
+
+	return userOne < userTwo
+		? { userA: userOne, userB: userTwo }
+		: { userA: userTwo, userB: userOne };
+}
+
+function toDateValue(value) {
+	if (value instanceof Date) return value;
+	if (typeof value === 'number') {
+		// Handle both epoch seconds and epoch milliseconds.
+		const millis = value < 10_000_000_000 ? value * 1000 : value;
+		return new Date(millis);
+	}
+	if (typeof value === 'string') {
+		if (/^\d+$/.test(value)) {
+			const numeric = Number.parseInt(value, 10);
+			const millis = numeric < 10_000_000_000 ? numeric * 1000 : numeric;
+			return new Date(millis);
+		}
+
+		return new Date(value);
+	}
+
+	return null;
 }
 
 async function ensureUserModeRows(db, userId) {
@@ -85,7 +121,6 @@ async function ensureUserModeRows(db, userId) {
 				gamesLost: 0,
 				gamesDrawn: 0,
 				totalScore: 0,
-				averageScore: 0,
 				rating: DEFAULT_RATING,
 				updatedAt: now,
 			}))
@@ -94,20 +129,15 @@ async function ensureUserModeRows(db, userId) {
 }
 
 async function createFriendshipPair(db, userId, friendId) {
-	if (!userId || !friendId || userId === friendId) return;
+	const pair = resolveFriendshipPair(userId, friendId);
+	if (!pair) return;
 
 	const now = new Date();
 
-	await Promise.all([
-		db
-			.insert(friendships)
-			.values({ userId, friendId, createdAt: now })
-			.onConflictDoNothing(),
-		db
-			.insert(friendships)
-			.values({ userId: friendId, friendId: userId, createdAt: now })
-			.onConflictDoNothing(),
-	]);
+	await db
+		.insert(friendships)
+		.values({ userA: pair.userA, userB: pair.userB, createdAt: now })
+		.onConflictDoNothing();
 }
 
 // Public: Get leaderboard (top 10 players by rating)
@@ -310,6 +340,40 @@ userRouter.patch('/:id/game-result', requireAuth, async (c) => {
 		}
 
 		const modeSeconds = normalizeModeSeconds(rawModeSeconds);
+		const gameWriteTime = new Date();
+
+		const existingGame = await db
+			.select({ id: games.id, modeSeconds: games.modeSeconds, status: games.status })
+			.from(games)
+			.where(eq(games.id, gameId))
+			.limit(1);
+
+		if (existingGame.length > 0) {
+			if (existingGame[0].modeSeconds !== modeSeconds) {
+				return c.json({ error: 'modeSeconds does not match the stored game mode' }, 409);
+			}
+
+			if (existingGame[0].status !== GAME_STATUS_FINISHED) {
+				await db
+					.update(games)
+					.set({
+						status: GAME_STATUS_FINISHED,
+						finishedAt: gameWriteTime,
+					})
+					.where(eq(games.id, gameId));
+			}
+		} else {
+			await db.insert(games).values({
+				id: gameId,
+				modeSeconds,
+				difficulty: 'medium',
+				seed: 0,
+				status: GAME_STATUS_FINISHED,
+				createdAt: gameWriteTime,
+				finishedAt: gameWriteTime,
+			});
+		}
+
 		const isGameDraw = Boolean(isDraw);
 		const playerWon = isGameDraw ? false : Boolean(won);
 		const playerScore = Math.max(0, Number.parseInt(String(score), 10) || 0);
@@ -408,7 +472,6 @@ userRouter.patch('/:id/game-result', requireAuth, async (c) => {
 				gamesLost: !isGameDraw && !playerWon ? playerModeStats.gamesLost + 1 : playerModeStats.gamesLost,
 				gamesDrawn: isGameDraw ? playerModeStats.gamesDrawn + 1 : playerModeStats.gamesDrawn,
 				totalScore: playerModeStats.totalScore + playerScore,
-				averageScore: (playerModeStats.totalScore + playerScore) / playerModeGamesPlayed,
 				rating: newPlayerRating,
 				updatedAt: now,
 			})
@@ -423,7 +486,6 @@ userRouter.patch('/:id/game-result', requireAuth, async (c) => {
 				gamesLost: playerWon ? opponentModeStats.gamesLost + 1 : opponentModeStats.gamesLost,
 				gamesDrawn: isGameDraw ? opponentModeStats.gamesDrawn + 1 : opponentModeStats.gamesDrawn,
 				totalScore: opponentModeStats.totalScore + rivalScore,
-				averageScore: (opponentModeStats.totalScore + rivalScore) / opponentModeGamesPlayed,
 				rating: newOpponentRating,
 				updatedAt: now,
 			})
@@ -515,9 +577,6 @@ userRouter.get('/:id/stats', requireAuth, async (c) => {
 		const user = await db
 			.select({
 				username: users.username,
-				gamesPlayed: users.gamesPlayed,
-				gamesWon: users.gamesWon,
-				gamesLost: users.gamesLost,
 				rating: users.rating,
 			})
 			.from(users)
@@ -537,7 +596,19 @@ userRouter.get('/:id/stats', requireAuth, async (c) => {
 			.orderBy(userModeStats.modeSeconds);
 
 		const stats = user[0];
-		const winRate = stats.gamesPlayed > 0 ? ((stats.gamesWon / stats.gamesPlayed) * 100).toFixed(1) : 0;
+		const aggregate = modeRows.reduce(
+			(acc, row) => {
+				acc.gamesPlayed += Number(row.gamesPlayed || 0);
+				acc.gamesWon += Number(row.gamesWon || 0);
+				acc.gamesLost += Number(row.gamesLost || 0);
+				return acc;
+			},
+			{ gamesPlayed: 0, gamesWon: 0, gamesLost: 0 }
+		);
+		const winRate =
+			aggregate.gamesPlayed > 0
+				? ((aggregate.gamesWon / aggregate.gamesPlayed) * 100).toFixed(1)
+				: 0;
 		const modeStats = RANKED_MODE_SECONDS.map((modeSeconds) => {
 			const row = modeRows.find((entry) => entry.modeSeconds === modeSeconds);
 			if (!row) {
@@ -557,7 +628,11 @@ userRouter.get('/:id/stats', requireAuth, async (c) => {
 		});
 
 		return c.json({
-			...stats,
+			username: stats.username,
+			gamesPlayed: aggregate.gamesPlayed,
+			gamesWon: aggregate.gamesWon,
+			gamesLost: aggregate.gamesLost,
+			rating: stats.rating,
 			winRate: parseFloat(winRate),
 			modeStats,
 		});
@@ -582,17 +657,22 @@ userRouter.get('/:id/activity', requireAuth, async (c) => {
 
 		const logs = await db
 			.select({
-				activityDate: sql`date(${rankedGameLogs.createdAt})`.as('activity_date'),
-				count: sql`count(*)`.as('count'),
+				createdAt: rankedGameLogs.createdAt,
 			})
 			.from(rankedGameLogs)
-			.where(and(eq(rankedGameLogs.userId, uid), sql`${rankedGameLogs.createdAt} >= ${startDate}`))
-			.groupBy(sql`date(${rankedGameLogs.createdAt})`)
-			.orderBy(sql`date(${rankedGameLogs.createdAt})`);
+			.where(eq(rankedGameLogs.userId, uid))
+			.orderBy(rankedGameLogs.createdAt);
 
 		const countsByDay = {};
 		for (const row of logs) {
-			countsByDay[row.activityDate] = Number(row.count || 0);
+			const parsed = toDateValue(row.createdAt);
+			if (!parsed || Number.isNaN(parsed.getTime()) || parsed < startDate) {
+				continue;
+			}
+
+			parsed.setHours(0, 0, 0, 0);
+			const dateKey = parsed.toISOString().slice(0, 10);
+			countsByDay[dateKey] = (countsByDay[dateKey] || 0) + 1;
 		}
 
 		const activity = [];
@@ -619,6 +699,56 @@ userRouter.get('/:id/activity', requireAuth, async (c) => {
 	}
 });
 
+userRouter.get('/:id/rating-trend', requireAuth, async (c) => {
+	try {
+		const db = drizzle(c.env.DB);
+		const uid = c.req.param('id');
+		const auth = c.get('auth');
+		if (auth?.uid !== uid) {
+			return c.json({ error: 'Forbidden' }, 403);
+		}
+
+		const modeSeconds = normalizeModeSeconds(c.req.query('modeSeconds') || 60);
+		const limit = Math.min(
+			300,
+			Math.max(10, Number.parseInt(c.req.query('limit') || '120', 10) || 120)
+		);
+
+		const rows = await db
+			.select({
+				gameId: rankedGameLogs.gameId,
+				rating: rankedGameLogs.ratingAfter,
+				score: rankedGameLogs.score,
+				createdAt: rankedGameLogs.createdAt,
+			})
+			.from(rankedGameLogs)
+			.where(
+				and(eq(rankedGameLogs.userId, uid), eq(rankedGameLogs.modeSeconds, modeSeconds))
+			)
+			.orderBy(desc(rankedGameLogs.createdAt))
+			.limit(limit);
+
+		const points = rows
+			.slice()
+			.reverse()
+			.map((row, index) => ({
+				index: index + 1,
+				gameId: row.gameId,
+				rating: row.rating,
+				score: row.score,
+				date: new Date(row.createdAt).toISOString().slice(0, 10),
+			}));
+
+		return c.json({
+			modeSeconds,
+			points,
+		});
+	} catch (error) {
+		console.error('Failed to fetch rating trend:', error);
+		return c.json({ error: 'Failed to fetch rating trend' }, 500);
+	}
+});
+
 userRouter.get('/me/friends', requireAuth, async (c) => {
 	try {
 		const db = drizzle(c.env.DB);
@@ -631,20 +761,38 @@ userRouter.get('/me/friends', requireAuth, async (c) => {
 
 		const friendUser = alias(users, 'friend_user');
 
-		const friends = await db
-			.select({
-				id: friendUser.id,
-				username: friendUser.username,
-				rating: friendUser.rating,
-				gamesPlayed: friendUser.gamesPlayed,
-				gamesWon: friendUser.gamesWon,
-				gamesLost: friendUser.gamesLost,
-				friendsSince: friendships.createdAt,
-			})
-			.from(friendships)
-			.innerJoin(friendUser, eq(friendships.friendId, friendUser.id))
-			.where(eq(friendships.userId, uid))
-			.orderBy(desc(friendships.createdAt));
+		const [asUserA, asUserB] = await Promise.all([
+			db
+				.select({
+					id: friendUser.id,
+					username: friendUser.username,
+					rating: friendUser.rating,
+					gamesPlayed: friendUser.gamesPlayed,
+					gamesWon: friendUser.gamesWon,
+					gamesLost: friendUser.gamesLost,
+					friendsSince: friendships.createdAt,
+				})
+				.from(friendships)
+				.innerJoin(friendUser, eq(friendships.userB, friendUser.id))
+				.where(eq(friendships.userA, uid)),
+			db
+				.select({
+					id: friendUser.id,
+					username: friendUser.username,
+					rating: friendUser.rating,
+					gamesPlayed: friendUser.gamesPlayed,
+					gamesWon: friendUser.gamesWon,
+					gamesLost: friendUser.gamesLost,
+					friendsSince: friendships.createdAt,
+				})
+				.from(friendships)
+				.innerJoin(friendUser, eq(friendships.userA, friendUser.id))
+				.where(eq(friendships.userB, uid)),
+		]);
+
+		const friends = [...asUserA, ...asUserB].sort(
+			(a, b) => new Date(b.friendsSince).getTime() - new Date(a.friendsSince).getTime()
+		);
 
 		return c.json({ friends });
 	} catch (error) {
@@ -760,9 +908,14 @@ userRouter.get('/me/search', requireAuth, async (c) => {
 
 		const [friendRows, outgoingRows, incomingRows] = await Promise.all([
 			db
-				.select({ friendId: friendships.friendId })
+				.select({ userA: friendships.userA, userB: friendships.userB })
 				.from(friendships)
-				.where(and(eq(friendships.userId, uid), inArray(friendships.friendId, candidateIds))),
+				.where(
+					or(
+						and(eq(friendships.userA, uid), inArray(friendships.userB, candidateIds)),
+						and(eq(friendships.userB, uid), inArray(friendships.userA, candidateIds))
+					)
+				),
 			db
 				.select({ receiverId: friendRequests.receiverId })
 				.from(friendRequests)
@@ -785,7 +938,9 @@ userRouter.get('/me/search', requireAuth, async (c) => {
 				),
 		]);
 
-		const friendIdSet = new Set(friendRows.map((row) => row.friendId));
+		const friendIdSet = new Set(
+			friendRows.map((row) => (row.userA === uid ? row.userB : row.userA))
+		);
 		const outgoingIdSet = new Set(outgoingRows.map((row) => row.receiverId));
 		const incomingIdSet = new Set(incomingRows.map((row) => row.senderId));
 
@@ -836,10 +991,23 @@ userRouter.post('/me/friend-requests', requireAuth, async (c) => {
 			return c.json({ error: 'You cannot add yourself as a friend' }, 400);
 		}
 
+		const friendshipPair = resolveFriendshipPair(uid, receiverId);
+
 		const [alreadyFriends] = await db
-			.select({ friendId: friendships.friendId })
+			.select({ userA: friendships.userA })
 			.from(friendships)
-			.where(and(eq(friendships.userId, uid), eq(friendships.friendId, receiverId)))
+			.where(
+				or(
+					and(
+						eq(friendships.userA, friendshipPair.userA),
+						eq(friendships.userB, friendshipPair.userB)
+					),
+					and(
+						eq(friendships.userA, friendshipPair.userB),
+						eq(friendships.userB, friendshipPair.userA)
+					)
+				)
+			)
 			.limit(1);
 
 		if (alreadyFriends) {
@@ -934,8 +1102,8 @@ userRouter.patch('/me/friend-requests/:requestId', requireAuth, async (c) => {
 		const body = await c.req.json().catch(() => ({}));
 		const action = body?.action;
 
-		if (action !== 'accept' && action !== 'decline') {
-			return c.json({ error: 'action must be either accept or decline' }, 400);
+		if (action !== 'accept' && action !== 'reject') {
+			return c.json({ error: 'action must be either accept or reject' }, 400);
 		}
 
 		const [request] = await db
@@ -960,7 +1128,7 @@ userRouter.patch('/me/friend-requests/:requestId', requireAuth, async (c) => {
 		}
 
 		const nextStatus =
-			action === 'accept' ? FRIEND_REQUEST_ACCEPTED : FRIEND_REQUEST_DECLINED;
+			action === 'accept' ? FRIEND_REQUEST_ACCEPTED : FRIEND_REQUEST_REJECTED;
 
 		await db
 			.update(friendRequests)
@@ -975,7 +1143,7 @@ userRouter.patch('/me/friend-requests/:requestId', requireAuth, async (c) => {
 		}
 
 		return c.json({
-			message: action === 'accept' ? 'Friend request accepted' : 'Friend request declined',
+			message: action === 'accept' ? 'Friend request accepted' : 'Friend request rejected',
 			request: {
 				id: request.id,
 				senderId: request.senderId,
@@ -1005,10 +1173,20 @@ userRouter.delete('/me/friends/:friendId', requireAuth, async (c) => {
 			return c.json({ error: 'Invalid friend id' }, 400);
 		}
 
+		const pair = resolveFriendshipPair(uid, friendId);
+		if (!pair) {
+			return c.json({ error: 'Invalid friend id' }, 400);
+		}
+
 		const [friendLink] = await db
-			.select({ friendId: friendships.friendId })
+			.select({ userA: friendships.userA })
 			.from(friendships)
-			.where(and(eq(friendships.userId, uid), eq(friendships.friendId, friendId)))
+			.where(
+				or(
+					and(eq(friendships.userA, pair.userA), eq(friendships.userB, pair.userB)),
+					and(eq(friendships.userA, pair.userB), eq(friendships.userB, pair.userA))
+				)
+			)
 			.limit(1);
 
 		if (!friendLink) {
@@ -1018,10 +1196,12 @@ userRouter.delete('/me/friends/:friendId', requireAuth, async (c) => {
 		await Promise.all([
 			db
 				.delete(friendships)
-				.where(and(eq(friendships.userId, uid), eq(friendships.friendId, friendId))),
-			db
-				.delete(friendships)
-				.where(and(eq(friendships.userId, friendId), eq(friendships.friendId, uid))),
+				.where(
+					or(
+						and(eq(friendships.userA, pair.userA), eq(friendships.userB, pair.userB)),
+						and(eq(friendships.userA, pair.userB), eq(friendships.userB, pair.userA))
+					)
+				),
 			db.delete(friendRequests).where(
 				and(
 					eq(friendRequests.status, FRIEND_REQUEST_PENDING),

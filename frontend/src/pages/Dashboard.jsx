@@ -2,8 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
+import { TypeGraph } from "@/components/charts/TypeGraph";
+import { RatingGrowthChart } from "@/components/charts/RatingGrowthChart";
 
 const MODE_ORDER = [15, 30, 60, 120];
+const CONTRIBUTION_DAYS = 364; // 52 columns x 7 rows
 
 export default function Dashboard() {
   const { currentUser } = useAuth();
@@ -13,6 +16,8 @@ export default function Dashboard() {
   const [userStats, setUserStats] = useState(null);
   const [activityData, setActivityData] = useState([]);
   const [maxDailyCount, setMaxDailyCount] = useState(0);
+  const [selectedMode, setSelectedMode] = useState(15);
+  const [ratingTrend, setRatingTrend] = useState([]);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -32,7 +37,7 @@ export default function Dashboard() {
               Authorization: `Bearer ${idToken}`,
             },
           }),
-          fetch(`${fullUrl}/api/users/${currentUser.uid}/activity?days=365`, {
+          fetch(`${fullUrl}/api/users/${currentUser.uid}/activity?days=${CONTRIBUTION_DAYS}`, {
             headers: {
               Authorization: `Bearer ${idToken}`,
             },
@@ -59,10 +64,45 @@ export default function Dashboard() {
     fetchDashboardData();
   }, [currentUser]);
 
-  const currentHour = new Date().getHours();
+  useEffect(() => {
+    const fetchRatingTrend = async () => {
+      if (!currentUser) return;
+
+      try {
+        const idToken = await currentUser.getIdToken();
+        const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
+        const fullUrl = serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
+
+        const response = await fetch(
+          `${fullUrl}/api/users/${currentUser.uid}/rating-trend?modeSeconds=${selectedMode}&limit=120`,
+          {
+            headers: {
+              Authorization: `Bearer ${idToken}`,
+            },
+          }
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+          setRatingTrend(data.points || []);
+        } else {
+          setRatingTrend([]);
+        }
+      } catch (error) {
+        console.error("Failed to fetch rating trend:", error);
+        setRatingTrend([]);
+      }
+    };
+
+    fetchRatingTrend();
+  }, [currentUser, selectedMode]);
+
+  const now = new Date();
+  const currentHour = now.getHours();
+  const currentMinute = now.getMinutes();
   let greeting = "Good evening";
   if (currentHour < 12) greeting = "Good morning";
-  else if (currentHour < 18) greeting = "Good afternoon";
+  else if (currentHour < 17 || (currentHour === 17 && currentMinute === 0)) greeting = "Good afternoon";
 
   const username =
     userStats?.username ||
@@ -102,28 +142,6 @@ export default function Dashboard() {
     });
   }, [userStats]);
 
-  const calendarWeeks = useMemo(() => {
-    const weeks = [];
-    for (let index = 0; index < activityData.length; index += 7) {
-      weeks.push(activityData.slice(index, index + 7));
-    }
-    return weeks;
-  }, [activityData]);
-
-  const totalYearGames = useMemo(
-    () => activityData.reduce((sum, day) => sum + day.count, 0),
-    [activityData]
-  );
-
-  const getContributionClass = (count) => {
-    if (!maxDailyCount || count <= 0) return "bg-muted/40";
-    const ratio = count / maxDailyCount;
-    if (ratio < 0.25) return "bg-primary/25";
-    if (ratio < 0.5) return "bg-primary/45";
-    if (ratio < 0.75) return "bg-primary/70";
-    return "bg-primary";
-  };
-
   if (loading) {
     return (
       <div className="flex h-full min-h-[60svh] items-center justify-center text-foreground">
@@ -133,38 +151,38 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="border-b border-border/70 pb-5">
+    <div className="flex min-h-full flex-col gap-4">
+      <header className="border-b border-border/70 pb-4">
         <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Dashboard</p>
-        <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">
-          {greeting}, {username}
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Review your ranked performance, then queue your next mode.
-        </p>
-      </div>
+        <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">{greeting}, {username}</h1>
+      </header>
 
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-3 md:grid-cols-3">
+        <Button className="h-14 text-sm sm:h-16 sm:text-base" onClick={() => navigate("/start-game")}>Start Ranked Match</Button>
+        <Button variant="outline" className="h-14 text-sm sm:h-16 sm:text-base" onClick={() => navigate("/create-room")}>Create Friendly Room</Button>
+        <Button variant="secondary" className="h-14 text-sm sm:h-16 sm:text-base" onClick={() => navigate("/leaderboard")}>Open Leaderboard</Button>
+      </section>
+
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {quickStats.map((stat) => (
-          <div key={stat.label} className="rounded-md border border-border/70 bg-card/30 p-3">
+          <div key={stat.label} className="rounded-md border border-border/70 bg-card/30 p-4 sm:p-5">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">{stat.label}</p>
-            <p className="mt-1 text-2xl font-semibold tabular-nums">{stat.value}</p>
+            <p className="mt-2 text-2xl font-semibold tabular-nums sm:text-3xl">{stat.value}</p>
           </div>
         ))}
-      </div>
+      </section>
 
-      <div className="mt-5 grid gap-4 xl:grid-cols-[1.05fr_1.95fr]">
-        <section className="rounded-md border border-border/70 bg-card/30 p-4">
+      <section className="grid gap-4 xl:grid-cols-[1.05fr_1.95fr]">
+        <div className="rounded-md border border-border/70 bg-card/30 p-4">
           <div className="flex items-center justify-between">
             <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Mode Ratings</p>
-            <Button size="sm" onClick={() => navigate("/start-game")}>Play Ranked</Button>
           </div>
 
           <div className="mt-3 space-y-2">
             {modeRows.map((mode) => (
               <div
                 key={mode.modeSeconds}
-                className="grid grid-cols-[64px_1fr_1fr_1fr] items-center rounded border border-border/70 bg-background/60 px-3 py-2 text-sm"
+                className="grid grid-cols-[56px_1fr_1fr_1fr] items-center rounded border border-border/70 bg-background/60 px-3 py-2 text-sm"
               >
                 <span className="font-mono tabular-nums text-muted-foreground">{mode.modeSeconds}s</span>
                 <span className="font-mono tabular-nums">{mode.rating}</span>
@@ -173,44 +191,35 @@ export default function Dashboard() {
               </div>
             ))}
           </div>
-        </section>
+        </div>
 
-        <section className="rounded-md border border-border/70 bg-card/30 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Contribution Calendar</p>
-            <p className="text-xs text-muted-foreground tabular-nums">
-              {totalYearGames} games in last 365 days
-            </p>
-          </div>
+        <TypeGraph
+          title="Type Graph"
+          activityData={activityData}
+          maxDailyCount={maxDailyCount}
+          days={CONTRIBUTION_DAYS}
+        />
+      </section>
 
-          <div className="mt-3 overflow-x-auto pb-1">
-            <div className="inline-flex min-w-max gap-1">
-              {calendarWeeks.map((week, weekIndex) => (
-                <div key={`week-${weekIndex}`} className="grid grid-rows-7 gap-1">
-                  {week.map((day) => (
-                    <div
-                      key={day.date}
-                      title={`${day.date}: ${day.count} game${day.count === 1 ? "" : "s"}`}
-                      className={`h-3.5 w-3.5 rounded-[3px] border border-border/50 ${getContributionClass(day.count)}`}
-                    />
-                  ))}
-                </div>
+      <section className="rounded-md border border-border/70 bg-card/30 p-4">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Rating Growth</p>
+          <label className="flex items-center gap-2 text-xs uppercase tracking-[0.12em] text-muted-foreground">
+            Mode
+            <select
+              className="rounded border border-border bg-background px-2 py-1 text-xs text-foreground"
+              value={selectedMode}
+              onChange={(event) => setSelectedMode(Number(event.target.value))}
+            >
+              {MODE_ORDER.map((mode) => (
+                <option key={mode} value={mode}>{mode}s</option>
               ))}
-            </div>
-          </div>
+            </select>
+          </label>
+        </div>
 
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
-            <span className="tabular-nums">Peak day: {maxDailyCount} game{maxDailyCount === 1 ? "" : "s"}</span>
-            <div className="flex items-center gap-1">
-              <span className="h-2.5 w-2.5 rounded-[2px] border border-border/50 bg-muted/40" />
-              <span className="h-2.5 w-2.5 rounded-[2px] border border-border/50 bg-primary/25" />
-              <span className="h-2.5 w-2.5 rounded-[2px] border border-border/50 bg-primary/45" />
-              <span className="h-2.5 w-2.5 rounded-[2px] border border-border/50 bg-primary/70" />
-              <span className="h-2.5 w-2.5 rounded-[2px] border border-border/50 bg-primary" />
-            </div>
-          </div>
-        </section>
-      </div>
+        <RatingGrowthChart points={ratingTrend} />
+      </section>
     </div>
   );
 }

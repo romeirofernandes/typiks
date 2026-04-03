@@ -6,30 +6,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { TypeGraph } from "@/components/charts/TypeGraph";
 import { ViewIcon } from "hugeicons-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
-const DEFAULT_ACTIVITY_DAYS = 91;
-
-function buildBlankActivity(days = DEFAULT_ACTIVITY_DAYS) {
-  const today = new Date();
-  const points = [];
-
-  for (let offset = days - 1; offset >= 0; offset -= 1) {
-    const date = new Date(today);
-    date.setDate(today.getDate() - offset);
-    points.push({
-      date: date.toISOString().slice(0, 10),
-      count: 0,
-    });
-  }
-
-  return points;
-}
+const PROFILE_GRAPH_DAYS = 364;
 
 const Profile = () => {
   const { currentUser } = useAuth();
-  const [stats, setStats] = useState(null);
   const [activityData, setActivityData] = useState([]);
   const [maxCount, setMaxCount] = useState(0);
 
@@ -53,7 +37,7 @@ const Profile = () => {
               Authorization: `Bearer ${idToken}`,
             },
           }),
-          fetch(`${fullUrl}/api/users/${currentUser.uid}/activity?days=91`, {
+          fetch(`${fullUrl}/api/users/${currentUser.uid}/activity?days=${PROFILE_GRAPH_DAYS}`, {
             headers: {
               Authorization: `Bearer ${idToken}`,
             },
@@ -61,8 +45,7 @@ const Profile = () => {
         ]);
 
         if (statsResponse.ok) {
-          const payload = await statsResponse.json();
-          setStats(payload);
+          await statsResponse.json();
         }
 
         if (activityResponse.ok) {
@@ -77,31 +60,6 @@ const Profile = () => {
 
     fetchProfileData();
   }, [currentUser]);
-
-  const timelineData = useMemo(() => {
-    if (activityData.length > 0) return activityData;
-    return buildBlankActivity(DEFAULT_ACTIVITY_DAYS);
-  }, [activityData]);
-
-  const groupedWeeks = useMemo(() => {
-    const weeks = [];
-
-    for (let index = 0; index < timelineData.length; index += 7) {
-      weeks.push(timelineData.slice(index, index + 7));
-    }
-
-    return weeks;
-  }, [timelineData]);
-
-  const getContributionLevel = (count) => {
-    if (!maxCount || count <= 0) return "bg-muted/40";
-
-    const ratio = count / maxCount;
-    if (ratio < 0.25) return "bg-primary/25";
-    if (ratio < 0.5) return "bg-primary/45";
-    if (ratio < 0.75) return "bg-primary/70";
-    return "bg-primary";
-  };
 
   return (
     <div className="flex h-full items-start">
@@ -132,43 +90,13 @@ const Profile = () => {
             </p>
           </section>
 
-          <section className="space-y-3 border-t border-border/60 pt-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
-                Contribution Graph
-              </p>
-              <p className="font-mono text-xs text-muted-foreground tabular-nums">
-                {stats?.gamesPlayed || 0} total games
-              </p>
-            </div>
-
-            <div className="mt-3 overflow-x-auto pb-2">
-              <div className="inline-flex min-w-max gap-1">
-                {groupedWeeks.map((week, weekIndex) => (
-                  <div key={`week-${weekIndex}`} className="grid grid-rows-7 gap-1">
-                    {week.map((day) => (
-                      <div
-                        key={day.date}
-                        title={`${day.date}: ${day.count} game${day.count === 1 ? "" : "s"}`}
-                        className={`h-3.5 w-3.5 rounded-[3px] border border-border/50 ${getContributionLevel(day.count)}`}
-                      />
-                    ))}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-2 flex items-center justify-between font-mono text-[11px] text-muted-foreground">
-              <span>Less</span>
-              <div className="flex items-center gap-1">
-                <span className="h-2.5 w-2.5 rounded-[2px] border border-border/50 bg-muted/40" />
-                <span className="h-2.5 w-2.5 rounded-[2px] border border-border/50 bg-primary/25" />
-                <span className="h-2.5 w-2.5 rounded-[2px] border border-border/50 bg-primary/45" />
-                <span className="h-2.5 w-2.5 rounded-[2px] border border-border/50 bg-primary/70" />
-                <span className="h-2.5 w-2.5 rounded-[2px] border border-border/50 bg-primary" />
-              </div>
-              <span>More</span>
-            </div>
+          <section className="border-t border-border/60 pt-4">
+            <TypeGraph
+              title="Type Graph"
+              activityData={activityData}
+              maxDailyCount={maxCount}
+              days={PROFILE_GRAPH_DAYS}
+            />
           </section>
         </CardContent>
       </Card>

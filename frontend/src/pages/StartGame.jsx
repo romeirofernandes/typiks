@@ -21,16 +21,6 @@ export default function StartGame() {
     RANKED_MODES.map((modeSeconds) => defaultModeStats(modeSeconds))
   );
 
-  const currentHour = new Date().getHours();
-  let greeting = "Good evening";
-  if (currentHour < 12) greeting = "Good morning";
-  else if (currentHour < 18) greeting = "Good afternoon";
-
-  const username =
-    currentUser?.displayName ||
-    currentUser?.email?.split("@")[0] ||
-    "Player";
-
   useEffect(() => {
     const fetchStats = async () => {
       if (!currentUser) {
@@ -88,9 +78,7 @@ export default function StartGame() {
     <div className="flex h-full min-h-0 flex-col">
       <div className="border-b border-border/70 pb-4">
         <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Ranked Match</p>
-        <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">
-          {greeting}, {username}
-        </h1>
+        <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">Choose Your Mode</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Choose a timer. Each mode keeps separate rating and score average.
         </p>
