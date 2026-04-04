@@ -21,10 +21,11 @@ import {
   Menu01Icon,
   RankingIcon,
   UserIcon,
+  DashboardSquare01Icon
 } from "hugeicons-react";
 import { DoorOpen, Users } from "lucide-react";
 
-function SidebarNavButton({ icon, label, active, expanded, onClick }) {
+function SidebarNavButton({ icon, label, active, expanded, onClick, badgeCount = 0 }) {
   const Icon = icon;
 
   return (
@@ -41,7 +42,20 @@ function SidebarNavButton({ icon, label, active, expanded, onClick }) {
         )}
       >
         <Icon size={18} className="shrink-0" />
-        {expanded ? <span className="ml-3 truncate">{label}</span> : null}
+        {expanded ? (
+          <>
+            <span className="ml-3 truncate">{label}</span>
+            {badgeCount > 0 ? (
+              <span className="ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">
+                {badgeCount > 99 ? "99+" : badgeCount}
+              </span>
+            ) : null}
+          </>
+        ) : badgeCount > 0 ? (
+          <span className="absolute -right-1 -top-1 inline-flex min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
+            {badgeCount > 99 ? "99+" : badgeCount}
+          </span>
+        ) : null}
       </Button>
 
       {!expanded ? (
@@ -61,6 +75,11 @@ export default function AppShell() {
   const [expanded, setExpanded] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [statsUsername, setStatsUsername] = useState(null);
+  const [notificationCounts, setNotificationCounts] = useState({
+    pendingFriendRequests: 0,
+    pendingRoomInvites: 0,
+    total: 0,
+  });
 
   useEffect(() => {
     const fetchSidebarUsername = async () => {
@@ -92,6 +111,59 @@ export default function AppShell() {
     fetchSidebarUsername();
   }, [currentUser]);
 
+  useEffect(() => {
+    if (!currentUser) return;
+
+    let isMounted = true;
+    let timerId = null;
+
+    const syncPresenceAndNotifications = async () => {
+      try {
+        const idToken = await currentUser.getIdToken();
+        const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
+        const fullUrl = serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
+
+        await fetch(`${fullUrl}/api/users/me/presence`, {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+          },
+        });
+
+        const notificationRes = await fetch(`${fullUrl}/api/users/me/notifications`, {
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+          },
+        });
+
+        if (!notificationRes.ok || !isMounted) {
+          return;
+        }
+
+        const payload = await notificationRes.json();
+        if (!isMounted) return;
+
+        setNotificationCounts({
+          pendingFriendRequests: Number(payload?.pendingFriendRequests || 0),
+          pendingRoomInvites: Number(payload?.pendingRoomInvites || 0),
+          total: Number(payload?.total || 0),
+        });
+      } catch (error) {
+        console.error("Failed to sync presence/notifications:", error);
+      }
+    };
+
+    syncPresenceAndNotifications();
+    timerId = window.setInterval(syncPresenceAndNotifications, 25000);
+
+    return () => {
+      isMounted = false;
+      if (timerId) {
+        window.clearInterval(timerId);
+      }
+    };
+  }, [currentUser]);
+
   const username =
     statsUsername ||
     currentUser?.displayName ||
@@ -103,7 +175,7 @@ export default function AppShell() {
       {
         key: "dashboard",
         label: "Dashboard",
-        icon: GlobeIcon,
+        icon: DashboardSquare01Icon,
         active: location.pathname === "/dashboard",
         onClick: () => navigate("/dashboard"),
       },
@@ -119,7 +191,7 @@ export default function AppShell() {
       },
       {
         key: "create-room",
-        label: "Friendlies",
+        label: "Unranked Match",
         icon: DoorOpen,
         active: location.pathname === "/create-room",
         onClick: () => navigate("/create-room"),
@@ -130,6 +202,14 @@ export default function AppShell() {
         icon: Users,
         active: location.pathname === "/friends",
         onClick: () => navigate("/friends"),
+        badgeCount: notificationCounts.pendingFriendRequests + notificationCounts.pendingRoomInvites,
+      },
+      {
+        key: "the-globe",
+        label: "The Globe",
+        icon: GlobeIcon,
+        active: location.pathname === "/the-globe",
+        onClick: () => navigate("/the-globe"),
       },
       {
         key: "leaderboard",
@@ -139,7 +219,7 @@ export default function AppShell() {
         onClick: () => navigate("/leaderboard"),
       },
     ],
-    [location.pathname, navigate]
+    [location.pathname, navigate, notificationCounts.pendingFriendRequests, notificationCounts.pendingRoomInvites]
   );
 
   const handleProfile = () => {
@@ -195,6 +275,7 @@ export default function AppShell() {
                       active={item.active}
                       expanded={expanded}
                       onClick={item.onClick}
+                      badgeCount={item.badgeCount}
                     />
                   ))}
                 </nav>
@@ -257,7 +338,7 @@ export default function AppShell() {
 
                   <SheetContent side="left" className="w-[18rem] border-r border-border p-0">
                     <SheetHeader className="border-b border-border px-4 py-4">
-                      <SheetTitle className="text-2xl leading-none">typiks</SheetTitle>
+                      <SheetTitle className="text-2xl font-sans leading-none">typiks</SheetTitle>
                     </SheetHeader>
 
                     <div className="flex h-full flex-col justify-between p-3">
@@ -273,6 +354,7 @@ export default function AppShell() {
                               item.onClick();
                               setMobileOpen(false);
                             }}
+                            badgeCount={item.badgeCount}
                           />
                         ))}
                       </nav>
@@ -302,7 +384,7 @@ export default function AppShell() {
                           }}
                           className="h-11 w-full justify-start border-destructive/40 px-3 text-destructive hover:bg-destructive/10 hover:text-destructive"
                         >
-                          <ArrowLeft01Icon size={18} className="rotate-180" />
+                          <ArrowLeft01Icon size={18} />
                           <span>Logout</span>
                         </Button>
                       </div>
@@ -310,7 +392,7 @@ export default function AppShell() {
                   </SheetContent>
                 </Sheet>
 
-                <span className="text-base font-semibold">typiks</span>
+                <span className="text-base font-sans font-semibold">typiks</span>
               </div>
 
               <main className="relative z-10 min-h-0 flex-1 overflow-hidden rounded-xl border border-border/80 bg-background/95 p-4 shadow-xl sm:p-6">

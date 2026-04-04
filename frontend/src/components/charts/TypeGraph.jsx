@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Tooltip,
   TooltipContent,
@@ -32,6 +32,20 @@ function getContributionClass(count, maxDailyCount) {
   return "bg-primary";
 }
 
+// Adjust these values if you want different day ranges on phones/tablets.
+const DAYS_BY_DEVICE = {
+  mobile: 105,
+  tablet: 259,
+};
+
+function getDaysForViewport(desktopDays) {
+  if (typeof window === "undefined") return desktopDays;
+  const width = window.innerWidth;
+  if (width < 768) return DAYS_BY_DEVICE.mobile;
+  if (width < 1024) return DAYS_BY_DEVICE.tablet;
+  return desktopDays;
+}
+
 export function TypeGraph({
   activityData = [],
   maxDailyCount = 0,
@@ -39,6 +53,17 @@ export function TypeGraph({
   title = "Type Graph",
 }) {
   const scrollContainerRef = useRef(null);
+  const [visibleDays, setVisibleDays] = useState(() => getDaysForViewport(days));
+
+  useEffect(() => {
+    const handleResize = () => {
+      setVisibleDays(getDaysForViewport(days));
+    };
+
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [days]);
 
   const activityByDate = useMemo(() => {
     const map = new Map();
@@ -53,9 +78,9 @@ export function TypeGraph({
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const start = new Date(today);
-    start.setDate(today.getDate() - (days - 1));
+    start.setDate(today.getDate() - (visibleDays - 1));
 
-    for (let i = 0; i < days; i++) {
+    for (let i = 0; i < visibleDays; i++) {
       const date = new Date(start);
       date.setDate(start.getDate() + i);
       const dateKey = toLocalDateKey(date);
@@ -66,7 +91,7 @@ export function TypeGraph({
     }
 
     return list;
-  }, [activityByDate, days]);
+  }, [activityByDate, visibleDays]);
 
   const weeks = useMemo(() => {
     const list = [];
@@ -102,7 +127,7 @@ export function TypeGraph({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{title}</p>
         <p className="text-xs text-muted-foreground tabular-nums">
-          {totalGames} games in last {days} days
+          {totalGames} games in last {visibleDays} days
         </p>
       </div>
 

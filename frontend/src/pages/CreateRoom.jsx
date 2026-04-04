@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/context/AuthContext";
+import { useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
-import { FiCopy, FiCheck, FiUsers, FiClock, FiHash, FiUser, FiLogOut, FiPlay, FiSettings } from "react-icons/fi";
+import { FiCopy, FiCheck, FiUsers, FiClock, FiHash, FiUser, FiLogOut, FiPlay, FiSettings, FiPlus, FiTrash2, FiSend } from "react-icons/fi";
 
 function getServerBaseUrl() {
   const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
@@ -46,11 +47,13 @@ function clampSettingValue(rawValue, min, max, fallback) {
 
 export default function CreateRoom() {
   const { currentUser } = useAuth();
+  const location = useLocation();
 
   const wsRef = useRef(null);
   const manualDisconnectRef = useRef(false);
   const timerRef = useRef(null);
   const inputRef = useRef(null);
+  const autoJoinHandledRef = useRef(false);
 
   const [wsStatus, setWsStatus] = useState("idle");
   const [roomState, setRoomState] = useState(null);
@@ -68,6 +71,10 @@ export default function CreateRoom() {
   const [gameResult, setGameResult] = useState(null);
   const [copied, setCopied] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [friendsForInvite, setFriendsForInvite] = useState([]);
+  const [invitingFriendIds, setInvitingFriendIds] = useState([]);
+  const [pendingInviteFriendIds, setPendingInviteFriendIds] = useState([]);
+  const [teamNameDrafts, setTeamNameDrafts] = useState({});
 
   const fetchUserInfo = useCallback(async () => {
     if (!currentUser) return;
@@ -109,6 +116,30 @@ export default function CreateRoom() {
   useEffect(() => {
     fetchUserInfo();
   }, [fetchUserInfo]);
+
+  const fetchFriendsForInvite = useCallback(async () => {
+    if (!currentUser) return;
+
+    try {
+      const idToken = await currentUser.getIdToken();
+      const baseUrl = getServerBaseUrl();
+      const response = await fetch(`${baseUrl}/api/users/me/friends`, {
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to load friends");
+      }
+
+      const payload = await response.json();
+      setFriendsForInvite(Array.isArray(payload?.friends) ? payload.friends : []);
+    } catch (error) {
+      console.error("Failed to fetch friends for invite:", error);
+      setFriendsForInvite([]);
+    }
+  }, [currentUser]);
 
   const cleanupSocket = useCallback(() => {
     if (wsRef.current) {
@@ -444,8 +475,16 @@ export default function CreateRoom() {
   };
 
   const updateTeamName = (teamId, value) => {
+    setTeamNameDrafts((prev) => ({
+      ...prev,
+      [teamId]: value,
+    }));
+  };
+
+  const commitTeamName = (teamId) => {
     if (!isInRoom || settingsForm.gameMode !== "coop") return;
-    sendSocketMessage({ type: "ROOM_SET_TEAM_NAME", teamId, name: value });
+    const nextValue = (teamNameDrafts[teamId] ?? "").slice(0, 24);
+    sendSocketMessage({ type: "ROOM_SET_TEAM_NAME", teamId, name: nextValue });
   };
 
   const canStartGame = useMemo(() => {
@@ -523,6 +562,68 @@ export default function CreateRoom() {
     if (!isLeader) return;
     sendSocketMessage({ type: "ROOM_UPDATE_SETTINGS", settings: settingsForm });
   };
+
+  const sendFriendInvite = async (friendId) => {
+    if (!currentUser || !roomCode || !friendId) return;
+
+    try {
+      setInvitingFriendIds((prev) => [...prev, friendId]);
+      const idToken = await currentUser.getIdToken();
+      const baseUrl = getServerBaseUrl();
+
+      const response = await fetch(`${baseUrl}/api/users/me/room-invites`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ roomCode, inviteeId: friendId }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || "Failed to send invite");
+      }
+
+      setPendingInviteFriendIds((prev) => Array.from(new Set([...prev, friendId])));
+    } catch (error) {
+      setRoomError(error.message || "Failed to send invite");
+    } finally {
+      setInvitingFriendIds((prev) => prev.filter((id) => id !== friendId));
+    }
+  };
+
+  useEffect(() => {
+    if (!isInRoom || !isLeader || !isLobbyState) return;
+    fetchFriendsForInvite();
+  }, [fetchFriendsForInvite, isInRoom, isLeader, isLobbyState]);
+
+  useEffect(() => {
+    if (!Array.isArray(coopTeams) || coopTeams.length === 0) {
+      setTeamNameDrafts({});
+      return;
+    }
+
+    setTeamNameDrafts((prev) => {
+      const next = {};
+      for (const team of coopTeams) {
+        next[team.id] = prev[team.id] ?? team.name;
+      }
+      return next;
+    });
+  }, [coopTeams]);
+
+  useEffect(() => {
+    if (autoJoinHandledRef.current || !currentUser || isInRoom) return;
+
+    const inviteCode = sanitizeRoomCode(location.state?.joinRoomCode || "");
+    if (inviteCode.length !== 6) return;
+
+    autoJoinHandledRef.current = true;
+    setEntryMode("join");
+    setJoinCode(inviteCode);
+    connectToRoom(inviteCode, settingsForm);
+  }, [connectToRoom, currentUser, isInRoom, location.state?.joinRoomCode, settingsForm]);
 
   // Skeleton loading state
   if (isLoading) {
@@ -876,6 +977,53 @@ export default function CreateRoom() {
             </CardHeader>
           </Card>
 
+          {isLeader && isLobbyState ? (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 font-sans text-base">
+                  <FiSend className="h-4 w-4" />
+                  Invite Friends
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {friendsForInvite.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No friends available to invite.</p>
+                ) : (
+                  <div className="grid gap-2 md:grid-cols-2">
+                    {friendsForInvite.map((friend) => {
+                      const isOnline = Boolean(friend.online);
+                      const isInviting = invitingFriendIds.includes(friend.id);
+                      const alreadyInvited = pendingInviteFriendIds.includes(friend.id);
+                      const cannotInvite = !isOnline || isInviting || alreadyInvited;
+
+                      return (
+                        <div
+                          key={friend.id}
+                          className="flex items-center justify-between rounded-md border border-border/60 bg-card/40 px-3 py-2"
+                        >
+                          <div>
+                            <p className="font-semibold">{friend.username}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {friend.rating} rating • {isOnline ? "Online" : "Offline"}
+                            </p>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant={cannotInvite ? "outline" : "default"}
+                            disabled={cannotInvite}
+                            onClick={() => sendFriendInvite(friend.id)}
+                          >
+                            {alreadyInvited ? "Invited" : isInviting ? "Sending..." : "Invite"}
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ) : null}
+
           {/* Members & Settings Grid */}
           {isLobbyState && (
             <div className="grid gap-6 lg:grid-cols-2">
@@ -949,6 +1097,22 @@ export default function CreateRoom() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  {isLeader ? (
+                    <div className="flex items-center justify-end">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="gap-2"
+                        onClick={() => sendSocketMessage({ type: "ROOM_ADD_TEAM" })}
+                        disabled={coopTeams.length >= (roomState?.members?.length || 0)}
+                      >
+                        <FiPlus className="h-4 w-4" />
+                        Add Team
+                      </Button>
+                    </div>
+                  ) : null}
+
                   <div className="grid gap-2 sm:grid-cols-2">
                     {coopTeams.map((team) => {
                       const players = getTeamPlayers(team.id);
@@ -961,8 +1125,15 @@ export default function CreateRoom() {
                             </p>
                             {isLeader ? (
                               <Input
-                                value={team.name}
+                                value={teamNameDrafts[team.id] ?? team.name}
                                 onChange={(event) => updateTeamName(team.id, event.target.value)}
+                                onBlur={() => commitTeamName(team.id)}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter") {
+                                    event.preventDefault();
+                                    commitTeamName(team.id);
+                                  }
+                                }}
                                 placeholder="Team name"
                                 maxLength={24}
                                 className="h-8 font-mono text-sm"
@@ -979,6 +1150,18 @@ export default function CreateRoom() {
                           >
                             {isMyTeam ? "Joined" : `Join ${team.name}`}
                           </Button>
+                          {isLeader && coopTeams.length > 2 ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              className="w-full gap-2 text-destructive hover:text-destructive"
+                              disabled={players.length > 0}
+                              onClick={() => sendSocketMessage({ type: "ROOM_REMOVE_TEAM", teamId: team.id })}
+                            >
+                              <FiTrash2 className="h-4 w-4" />
+                              Remove Team
+                            </Button>
+                          ) : null}
                           <div className="min-h-[90px] space-y-1 rounded-md border border-border/40 p-2">
                             {players.length === 0 ? (
                               <p className="py-2 text-center text-xs text-muted-foreground">No players yet</p>
@@ -1014,7 +1197,7 @@ export default function CreateRoom() {
                   {/* Team validation message */}
                   {!teamsValid && (
                     <p className="text-center text-xs text-destructive">
-                      Coop requires all players assigned and at least two active teams.
+                      Coop requires every player assigned and each team to have at least one player.
                     </p>
                   )}
                 </CardContent>
@@ -1299,13 +1482,7 @@ export default function CreateRoom() {
                 exit={{ opacity: 0, scale: 0.9 }}
               >
                 <Card className="overflow-hidden">
-                  <CardHeader className={`text-center ${
-                    gameResult.winnerId === currentUser?.uid
-                      ? "bg-primary/10"
-                      : gameResult.isDraw
-                      ? "bg-muted/50"
-                      : "bg-destructive/10"
-                  }`}>
+                  <CardHeader className="text-center">
                     <CardTitle className="font-sans text-2xl">
                       {gameResult.isDraw
                         ? "It's a Draw!"

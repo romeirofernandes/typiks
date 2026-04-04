@@ -7,7 +7,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/spinner";
+import { DotLoader } from "@/components/ui/dot-loader";
 import {
   getSubmitKeyOptionById,
   loadPlayerPreferences,
@@ -622,6 +622,32 @@ const Game = () => {
     navigate("/dashboard");
   };
 
+  const handleRematch = () => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      try {
+        wsRef.current.send(JSON.stringify({ type: "LEAVE_QUEUE" }));
+      } catch {
+        // no-op
+      }
+    }
+
+    cleanup();
+    gameEndedRef.current = false;
+    resultPersistedRef.current = false;
+    setConnectionError(null);
+    setOpponent(null);
+    setCountdown(null);
+    setWords([]);
+    setCurrentWordIndex(0);
+    setOpponentWordIndex(0);
+    setMyScore(0);
+    setOpponentScore(0);
+    setInput("");
+    setGameResults(null);
+    setActiveGameId(null);
+    setGameState("waiting");
+  };
+
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -719,7 +745,7 @@ const Game = () => {
                   <CardTitle className="font-sans">Finding Opponent</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-6 py-8 text-center">
-                  <Spinner className="mx-auto size-6 text-primary" />
+                  <DotLoader duration={100} className="mx-auto scale-150" />
                   <div className="space-y-2">
                     <p className="font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">
                       Searching for players...
@@ -1023,6 +1049,9 @@ const Game = () => {
                   <Button onClick={handleBackToDashboard} className="w-full gap-2">
                     <FiArrowLeft className="h-4 w-4" />
                     Back to Dashboard
+                  </Button>
+                  <Button variant="outline" onClick={handleRematch} className="w-full">
+                    Rematch
                   </Button>
                 </CardContent>
               </Card>

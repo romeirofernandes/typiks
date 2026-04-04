@@ -13,6 +13,7 @@ import AppShell from "./components/app-shell";
 import StartGame from "./pages/StartGame";
 import Friends from "./pages/Friends";
 import CreateRoom from "./pages/CreateRoom";
+import TheGlobe from "./pages/TheGlobe";
 
 export default function App() {
   return (
@@ -34,6 +35,7 @@ export default function App() {
             <Route path="/profile" element={<Profile />} />
             <Route path="/start-game" element={<StartGame />} />
             <Route path="/friends" element={<Friends />} />
+            <Route path="/the-globe" element={<TheGlobe />} />
             <Route path="/create-room" element={<CreateRoom />} />
             <Route path="/game/waiting" element={<WaitingRoom />} />
             <Route path="/game" element={<Game />} />

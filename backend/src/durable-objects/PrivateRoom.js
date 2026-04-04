@@ -19,18 +19,19 @@ const DEFAULT_ROOM_SETTINGS = {
 	gameMode: 'ffa', // 'ffa' or 'coop'
 };
 
-const DEFAULT_COOP_TEAMS = [
-	{ id: 'team1', defaultName: 'Team Alpha' },
-	{ id: 'team2', defaultName: 'Team Beta' },
-];
+const DEFAULT_TEAM_NAMES = ['Team Alpha', 'Team Beta', 'Team Gamma', 'Team Delta', 'Team Epsilon', 'Team Zeta'];
+
+function getDefaultTeamName(index) {
+	return DEFAULT_TEAM_NAMES[index] || `Team ${index + 1}`;
+}
 
 function sanitizeTeamName(rawName, fallbackName) {
 	if (typeof rawName !== 'string') {
 		return fallbackName;
 	}
 
-	const compact = rawName.replace(/\s+/g, ' ').trim();
-	if (!compact) {
+	const compact = rawName.replace(/\s+/g, ' ');
+	if (!compact.trim()) {
 		return fallbackName;
 	}
 
@@ -118,15 +119,16 @@ export class PrivateRoom {
 		this.game = null;
 	}
 
-	getDefaultCoopTeams() {
-		return DEFAULT_COOP_TEAMS.map((team) => ({
-			id: team.id,
-			name: team.defaultName,
+	getDefaultCoopTeams(teamCount = 2) {
+		const normalizedCount = Math.max(2, Math.min(PRIVATE_ROOM_LIMITS.maxPlayers, Number(teamCount) || 2));
+		return Array.from({ length: normalizedCount }).map((_, index) => ({
+			id: `team${index + 1}`,
+			name: getDefaultTeamName(index),
 		}));
 	}
 
-	resetCoopTeams() {
-		this.coopTeams = this.getDefaultCoopTeams();
+	resetCoopTeams(teamCount = this.coopTeams.length || 2) {
+		this.coopTeams = this.getDefaultCoopTeams(teamCount);
 		for (const member of this.members.values()) {
 			member.teamId = null;
 		}
@@ -140,7 +142,7 @@ export class PrivateRoom {
 			memberIds: this.getSortedMembers()
 				.filter((member) => member.teamId === team.id)
 				.map((member) => member.id),
-			defaultName: DEFAULT_COOP_TEAMS.find((base) => base.id === team.id)?.defaultName || team.name,
+			defaultName: getDefaultTeamName(this.coopTeams.findIndex((entry) => entry.id === team.id)),
 			canRename: true,
 			label: teamNames.get(team.id) || team.name,
 		}));
@@ -164,9 +166,13 @@ export class PrivateRoom {
 			teamCounts.set(member.teamId, (teamCounts.get(member.teamId) || 0) + 1);
 		}
 
-		const activeTeamCount = Array.from(teamCounts.values()).filter((count) => count > 0).length;
-		if (activeTeamCount < 2) {
-			return { ok: false, error: 'At least two teams are required for coop matches' };
+		if (this.coopTeams.length > memberList.length) {
+			return { ok: false, error: 'Team count cannot exceed joined players' };
+		}
+
+		const hasEmptyTeam = Array.from(teamCounts.values()).some((count) => count === 0);
+		if (hasEmptyTeam) {
+			return { ok: false, error: 'Each team must have at least one player' };
 		}
 
 		return { ok: true };
@@ -913,12 +919,100 @@ export class PrivateRoom {
 			return;
 		}
 
-		const fallback = DEFAULT_COOP_TEAMS.find((team) => team.id === teamId)?.defaultName || 'Team';
+		const fallback = getDefaultTeamName(teamIndex);
 		this.coopTeams[teamIndex] = {
 			...this.coopTeams[teamIndex],
 			name: sanitizeTeamName(name, fallback),
 		};
 		this.broadcastRoomState();
+	}
+
+	handleAddTeam(playerId) {
+		if (playerId !== this.ownerId) {
+			const sessionId = this.playerToSession.get(playerId);
+			this.sendRoomError(sessionId, 'Only the room leader can add teams');
+			return;
+		}
+
+		if (this.gameState !== 'lobby') {
+			const sessionId = this.playerToSession.get(playerId);
+			this.sendRoomError(sessionId, 'Teams can only be changed in the lobby');
+			return;
+		}
+
+		if (this.settings.gameMode !== 'coop') {
+			const sessionId = this.playerToSession.get(playerId);
+			this.sendRoomError(sessionId, 'Teams are only available in coop mode');
+			return;
+		}
+
+		if (this.coopTeams.length >= this.members.size) {
+			const sessionId = this.playerToSession.get(playerId);
+			this.sendRoomError(sessionId, 'Team count cannot exceed joined players');
+			return;
+		}
+
+		const nextIndex = this.coopTeams.length;
+		this.coopTeams.push({
+			id: `team${nextIndex + 1}`,
+			name: getDefaultTeamName(nextIndex),
+		});
+
+		for (const member of this.members.values()) {
+			member.ready = false;
+		}
+
+		this.broadcastRoomState();
+	}
+
+	handleRemoveTeam(playerId, teamId) {
+		if (playerId !== this.ownerId) {
+			const sessionId = this.playerToSession.get(playerId);
+			this.sendRoomError(sessionId, 'Only the room leader can remove teams');
+			return;
+		}
+
+		if (this.gameState !== 'lobby') {
+			const sessionId = this.playerToSession.get(playerId);
+			this.sendRoomError(sessionId, 'Teams can only be changed in the lobby');
+			return;
+		}
+
+		if (this.settings.gameMode !== 'coop') {
+			const sessionId = this.playerToSession.get(playerId);
+			this.sendRoomError(sessionId, 'Teams are only available in coop mode');
+			return;
+		}
+
+		if (this.coopTeams.length <= 2) {
+			const sessionId = this.playerToSession.get(playerId);
+			this.sendRoomError(sessionId, 'At least two teams are required');
+			return;
+		}
+
+		const teamIndex = this.coopTeams.findIndex((team) => team.id === teamId);
+		if (teamIndex === -1) {
+			const sessionId = this.playerToSession.get(playerId);
+			this.sendRoomError(sessionId, 'Invalid team');
+			return;
+		}
+
+		const hasAssignedPlayers = this.getSortedMembers().some((member) => member.teamId === teamId);
+		if (hasAssignedPlayers) {
+			const sessionId = this.playerToSession.get(playerId);
+			this.sendRoomError(sessionId, 'Move players out before removing this team');
+			return;
+		}
+
+		this.coopTeams.splice(teamIndex, 1);
+		for (const member of this.members.values()) {
+			member.ready = false;
+		}
+		this.broadcastRoomState();
+	}
+
+	handleRematchRequest(playerId) {
+		this.handleStartRequest(playerId);
 	}
 
 	handleStartRequest(playerId) {
@@ -1103,6 +1197,30 @@ export class PrivateRoom {
 							return;
 						}
 						this.handleStartRequest(playerId);
+						break;
+
+					case 'ROOM_ADD_TEAM':
+						if (!playerId) {
+							this.sendRoomError(sessionId, 'Join the room first');
+							return;
+						}
+						this.handleAddTeam(playerId);
+						break;
+
+					case 'ROOM_REMOVE_TEAM':
+						if (!playerId) {
+							this.sendRoomError(sessionId, 'Join the room first');
+							return;
+						}
+						this.handleRemoveTeam(playerId, message.teamId);
+						break;
+
+					case 'ROOM_REMATCH':
+						if (!playerId) {
+							this.sendRoomError(sessionId, 'Join the room first');
+							return;
+						}
+						this.handleRematchRequest(playerId);
 						break;
 
 					case 'PLAYER_INPUT':

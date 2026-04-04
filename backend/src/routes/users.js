@@ -7,6 +7,7 @@ import {
 	friendRequests,
 	games,
 	rankedGameLogs,
+	roomInvites,
 	userModeStats,
 	users,
 } from '../db/schema.js';
@@ -20,9 +21,13 @@ const requireAuth = requireFirebaseAuth();
 const FRIEND_REQUEST_PENDING = 'pending';
 const FRIEND_REQUEST_ACCEPTED = 'accepted';
 const FRIEND_REQUEST_REJECTED = 'rejected';
+const ROOM_INVITE_PENDING = 'pending';
+const ROOM_INVITE_ACCEPTED = 'accepted';
+const ROOM_INVITE_REJECTED = 'rejected';
 const RANKED_MODE_SECONDS = [15, 30, 60, 120];
 const DEFAULT_RATING = 800;
 const GAME_STATUS_FINISHED = 'finished';
+const ONLINE_WINDOW_MS = 60 * 1000;
 const LOCATION_CACHE_TTL_MS = 1000 * 60 * 60 * 12;
 const locationCache = {
 	countries: {
@@ -30,7 +35,14 @@ const locationCache = {
 		expiresAt: 0,
 	},
 	citiesByCountry: new Map(),
+	cityGeocodes: new Map(),
 };
+
+function normalizeLocationKey(value) {
+	if (typeof value !== 'string') return null;
+	const normalized = value.trim().toLowerCase();
+	return normalized.length > 0 ? normalized : null;
+}
 
 function generateEntityId(prefix) {
 	if (typeof crypto?.randomUUID === 'function') {
@@ -61,6 +73,42 @@ function normalizeOptionalLocationValue(value, maxLength = 80) {
 	if (typeof value !== 'string') return null;
 	const normalized = value.trim().slice(0, maxLength);
 	return normalized.length > 0 ? normalized : null;
+}
+
+function normalizeRoomCode(value) {
+	if (typeof value !== 'string') return null;
+	const code = value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+	return code.length === 6 ? code : null;
+}
+
+function isRecentlyOnline(lastSeenAt) {
+	if (!lastSeenAt) return false;
+	const value = new Date(lastSeenAt).getTime();
+	if (!Number.isFinite(value)) return false;
+	return Date.now() - value <= ONLINE_WINDOW_MS;
+}
+
+async function buildOnlineMap(db, userIds) {
+	const ids = Array.from(new Set((userIds || []).filter(Boolean)));
+	if (ids.length === 0) return new Map();
+
+	const rows = await db
+		.select({ id: users.id, lastSeenAt: users.lastSeenAt })
+		.from(users)
+		.where(inArray(users.id, ids));
+
+	const map = new Map();
+	for (const row of rows) {
+		map.set(row.id, isRecentlyOnline(row.lastSeenAt));
+	}
+
+	for (const id of ids) {
+		if (!map.has(id)) {
+			map.set(id, false);
+		}
+	}
+
+	return map;
 }
 
 async function fetchLocationCountries() {
@@ -128,6 +176,51 @@ async function fetchCitiesByCountry(country) {
 	});
 
 	return cities;
+}
+
+async function fetchCityCoordinates(country, city) {
+	const normalizedCountry = normalizeLocationKey(country);
+	const normalizedCity = normalizeLocationKey(city);
+
+	if (!normalizedCountry || !normalizedCity) {
+		return null;
+	}
+
+	const cacheKey = `${normalizedCountry}::${normalizedCity}`;
+	const now = Date.now();
+	const cached = locationCache.cityGeocodes.get(cacheKey);
+	if (cached && cached.expiresAt > now) {
+		return cached.data;
+	}
+
+	const params = new URLSearchParams({
+		city,
+		country,
+		format: 'jsonv2',
+		limit: '1',
+	});
+	const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+		headers: {
+			'User-Agent': 'typiks/1.0',
+		},
+	});
+
+	if (!response.ok) {
+		throw new Error(`Geocoding API returned ${response.status}`);
+	}
+
+	const payload = await response.json();
+	const first = Array.isArray(payload) ? payload[0] : null;
+	const lat = Number.parseFloat(first?.lat);
+	const lng = Number.parseFloat(first?.lon);
+	const data = Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+
+	locationCache.cityGeocodes.set(cacheKey, {
+		data,
+		expiresAt: now + LOCATION_CACHE_TTL_MS,
+	});
+
+	return data;
 }
 
 function modeStatsRowToDto(row) {
@@ -295,6 +388,196 @@ userRouter.get('/locations/cities', requireAuth, async (c) => {
 	} catch (error) {
 		console.error('Failed to fetch cities:', error);
 		return c.json({ error: 'Failed to fetch cities' }, 500);
+	}
+});
+
+userRouter.get('/locations/geocode', requireAuth, async (c) => {
+	try {
+		const country = normalizeOptionalLocationValue(c.req.query('country'));
+		const city = normalizeOptionalLocationValue(c.req.query('city'));
+
+		if (!country || !city) {
+			return c.json({ error: 'country and city are required' }, 400);
+		}
+
+		const coordinates = await fetchCityCoordinates(country, city);
+		if (!coordinates) {
+			return c.json({ error: 'City coordinates not found' }, 404);
+		}
+
+		return c.json({
+			country,
+			city,
+			coordinates,
+		});
+	} catch (error) {
+		console.error('Failed to geocode city:', error);
+		return c.json({ error: 'Failed to geocode city' }, 500);
+	}
+});
+
+userRouter.get('/globe/country-ratings', requireAuth, async (c) => {
+	try {
+		const db = drizzle(c.env.DB);
+		const parsedMinUsers = Number.parseInt(String(c.req.query('minUsers') || '1'), 10);
+		const minUsers = Number.isFinite(parsedMinUsers)
+			? Math.min(50, Math.max(1, parsedMinUsers))
+			: 1;
+
+		const [countryRows, usersByCountryRows, countryModeRows, countryWinRows] = await Promise.all([
+			fetch('https://restcountries.com/v3.1/all?fields=name,latlng,region')
+				.then((response) => {
+					if (!response.ok) {
+						throw new Error(`Countries API returned ${response.status}`);
+					}
+					return response.json();
+				}),
+			db
+				.select({
+					country: users.country,
+					avgRating: sql`avg(${users.rating})`,
+					userCount: sql`count(*)`,
+				})
+				.from(users)
+				.where(sql`${users.country} is not null and trim(${users.country}) <> ''`)
+				.groupBy(users.country),
+			db
+				.select({
+					country: users.country,
+					modeSeconds: rankedGameLogs.modeSeconds,
+					games: sql`count(*)`,
+				})
+				.from(rankedGameLogs)
+				.innerJoin(users, eq(users.id, rankedGameLogs.userId))
+				.where(sql`${users.country} is not null and trim(${users.country}) <> ''`)
+				.groupBy(users.country, rankedGameLogs.modeSeconds),
+			db
+				.select({
+					country: users.country,
+					games: sql`count(*)`,
+					wins: sql`sum(${rankedGameLogs.won})`,
+				})
+				.from(rankedGameLogs)
+				.innerJoin(users, eq(users.id, rankedGameLogs.userId))
+				.where(sql`${users.country} is not null and trim(${users.country}) <> ''`)
+				.groupBy(users.country),
+		]);
+
+		const countryStatsByName = new Map(
+			usersByCountryRows
+				.map((row) => {
+					const key = normalizeLocationKey(row.country);
+					if (!key) return null;
+					return [
+						key,
+						{
+							avgRating: Math.round(Number(row.avgRating || 0)),
+							userCount: Number(row.userCount || 0),
+						},
+					];
+				})
+				.filter(Boolean)
+		);
+
+		const countryWinRateByName = new Map(
+			countryWinRows
+				.map((row) => {
+					const key = normalizeLocationKey(row.country);
+					if (!key) return null;
+					const games = Number(row.games || 0);
+					const wins = Number(row.wins || 0);
+					const avgWinRate = games > 0 ? Math.round((wins / games) * 100) : null;
+					return [key, { avgWinRate }];
+				})
+				.filter(Boolean)
+		);
+
+		const countryModeByName = new Map();
+		for (const row of countryModeRows) {
+			const key = normalizeLocationKey(row.country);
+			if (!key) continue;
+			const games = Number(row.games || 0);
+			const modeSeconds = Number(row.modeSeconds || 0);
+			const current = countryModeByName.get(key);
+			if (!current || games > current.games) {
+				countryModeByName.set(key, {
+					modeSeconds,
+					games,
+				});
+			}
+		}
+
+		const countries = (Array.isArray(countryRows) ? countryRows : [])
+			.map((country) => {
+				const name = country?.name?.common;
+				const lat = Number(country?.latlng?.[0]);
+				const lng = Number(country?.latlng?.[1]);
+				if (
+					typeof name !== 'string' ||
+					!name.trim() ||
+					!Number.isFinite(lat) ||
+					!Number.isFinite(lng)
+				) {
+					return null;
+				}
+
+				const key = normalizeLocationKey(name);
+				const stats = key ? countryStatsByName.get(key) : null;
+				const winStats = key ? countryWinRateByName.get(key) : null;
+				const modeStats = key ? countryModeByName.get(key) : null;
+
+				return {
+					country: name.trim(),
+					region: typeof country?.region === 'string' ? country.region : 'Other',
+					lat,
+					lng,
+					avgRating: stats?.avgRating || null,
+					avgWinRate: winStats?.avgWinRate ?? null,
+					mostPlayedMode: Number.isFinite(modeStats?.modeSeconds)
+						? modeStats.modeSeconds
+						: null,
+					userCount: stats?.userCount || 0,
+				};
+			})
+			.filter(Boolean)
+			.sort((a, b) => a.country.localeCompare(b.country));
+
+		const markerCountries = countries.filter((country) => country.userCount >= minUsers);
+		const regionSummary = Object.values(
+			markerCountries.reduce((acc, country) => {
+				const key = country.region || 'Other';
+				if (!acc[key]) {
+					acc[key] = {
+						region: key,
+						countries: 0,
+						users: 0,
+						ratingWeighted: 0,
+					};
+				}
+
+				acc[key].countries += 1;
+				acc[key].users += country.userCount;
+				acc[key].ratingWeighted += (country.avgRating || 0) * country.userCount;
+				return acc;
+			}, {})
+		)
+			.map((entry) => ({
+				region: entry.region,
+				countries: entry.countries,
+				users: entry.users,
+				avgRating: entry.users > 0 ? Math.round(entry.ratingWeighted / entry.users) : null,
+			}))
+			.sort((a, b) => b.users - a.users);
+
+		return c.json({
+			countries,
+			markerCountries,
+			regionSummary,
+			minUsers,
+		});
+	} catch (error) {
+		console.error('Failed to build globe country ratings:', error);
+		return c.json({ error: 'Failed to build globe country ratings' }, 500);
 	}
 });
 
@@ -985,7 +1268,18 @@ userRouter.get('/me/friends', requireAuth, async (c) => {
 				.where(eq(friendships.userB, uid)),
 		]);
 
-		const friends = [...asUserA, ...asUserB].sort(
+		const mergedFriends = [...asUserA, ...asUserB];
+		const onlineMap = await buildOnlineMap(
+			db,
+			mergedFriends.map((friend) => friend.id)
+		);
+
+		const friends = mergedFriends
+			.map((friend) => ({
+				...friend,
+				online: Boolean(onlineMap.get(friend.id)),
+			}))
+			.sort(
 			(a, b) => new Date(b.friendsSince).getTime() - new Date(a.friendsSince).getTime()
 		);
 
@@ -1046,10 +1340,48 @@ userRouter.get('/me/friend-requests', requireAuth, async (c) => {
 				.orderBy(desc(friendRequests.createdAt)),
 		]);
 
-		return c.json({ incoming, outgoing });
+		const onlineMap = await buildOnlineMap(db, [
+			...incoming.map((row) => row.senderId),
+			...outgoing.map((row) => row.receiverId),
+		]);
+
+		return c.json({
+			incoming: incoming.map((row) => ({
+				...row,
+				senderOnline: Boolean(onlineMap.get(row.senderId)),
+			})),
+			outgoing: outgoing.map((row) => ({
+				...row,
+				receiverOnline: Boolean(onlineMap.get(row.receiverId)),
+			})),
+		});
 	} catch (error) {
 		console.error('Failed to fetch friend requests:', error);
 		return c.json({ error: 'Failed to fetch friend requests' }, 500);
+	}
+});
+
+userRouter.patch('/me/presence', requireAuth, async (c) => {
+	try {
+		const db = drizzle(c.env.DB);
+		const auth = c.get('auth');
+		const uid = auth?.uid;
+
+		if (!uid) {
+			return c.json({ error: 'Unauthorized' }, 401);
+		}
+
+		await db
+			.update(users)
+			.set({
+				lastSeenAt: new Date(),
+			})
+			.where(eq(users.id, uid));
+
+		return c.json({ ok: true, lastSeenAt: new Date().toISOString() });
+	} catch (error) {
+		console.error('Failed to update presence:', error);
+		return c.json({ error: 'Failed to update presence' }, 500);
 	}
 });
 
@@ -1349,6 +1681,240 @@ userRouter.patch('/me/friend-requests/:requestId', requireAuth, async (c) => {
 	} catch (error) {
 		console.error('Failed to handle friend request:', error);
 		return c.json({ error: 'Failed to handle friend request' }, 500);
+	}
+});
+
+userRouter.get('/me/room-invites', requireAuth, async (c) => {
+	try {
+		const db = drizzle(c.env.DB);
+		const auth = c.get('auth');
+		const uid = auth?.uid;
+
+		if (!uid) {
+			return c.json({ error: 'Unauthorized' }, 401);
+		}
+
+		const inviterUser = alias(users, 'inviter_user');
+
+		const invites = await db
+			.select({
+				id: roomInvites.id,
+				roomCode: roomInvites.roomCode,
+				status: roomInvites.status,
+				createdAt: roomInvites.createdAt,
+				inviterId: roomInvites.inviterId,
+				inviterUsername: inviterUser.username,
+			})
+			.from(roomInvites)
+			.innerJoin(inviterUser, eq(roomInvites.inviterId, inviterUser.id))
+			.where(eq(roomInvites.inviteeId, uid))
+			.orderBy(desc(roomInvites.createdAt));
+
+		const onlineMap = await buildOnlineMap(db, invites.map((invite) => invite.inviterId));
+
+		return c.json({
+			invites: invites.map((invite) => ({
+				...invite,
+				inviterOnline: Boolean(onlineMap.get(invite.inviterId)),
+			})),
+		});
+	} catch (error) {
+		console.error('Failed to fetch room invites:', error);
+		return c.json({ error: 'Failed to fetch room invites' }, 500);
+	}
+});
+
+userRouter.post('/me/room-invites', requireAuth, async (c) => {
+	try {
+		const db = drizzle(c.env.DB);
+		const auth = c.get('auth');
+		const uid = auth?.uid;
+
+		if (!uid) {
+			return c.json({ error: 'Unauthorized' }, 401);
+		}
+
+		const body = await c.req.json().catch(() => ({}));
+		const roomCode = normalizeRoomCode(body?.roomCode);
+		const inviteeId = typeof body?.inviteeId === 'string' ? body.inviteeId : null;
+
+		if (!roomCode || !inviteeId) {
+			return c.json({ error: 'roomCode and inviteeId are required' }, 400);
+		}
+
+		if (inviteeId === uid) {
+			return c.json({ error: 'You cannot invite yourself' }, 400);
+		}
+
+		const pair = resolveFriendshipPair(uid, inviteeId);
+		if (!pair) {
+			return c.json({ error: 'Invalid invitee' }, 400);
+		}
+
+		const [friendLink] = await db
+			.select({ userA: friendships.userA })
+			.from(friendships)
+			.where(
+				or(
+					and(eq(friendships.userA, pair.userA), eq(friendships.userB, pair.userB)),
+					and(eq(friendships.userA, pair.userB), eq(friendships.userB, pair.userA))
+				)
+			)
+			.limit(1);
+
+		if (!friendLink) {
+			return c.json({ error: 'You can only invite friends' }, 403);
+		}
+
+		const onlineMap = await buildOnlineMap(db, [inviteeId]);
+		if (!onlineMap.get(inviteeId)) {
+			return c.json({ error: 'Friend is offline' }, 409);
+		}
+
+		const [existingPending] = await db
+			.select({ id: roomInvites.id })
+			.from(roomInvites)
+			.where(
+				and(
+					eq(roomInvites.roomCode, roomCode),
+					eq(roomInvites.inviterId, uid),
+					eq(roomInvites.inviteeId, inviteeId),
+					eq(roomInvites.status, ROOM_INVITE_PENDING)
+				)
+			)
+			.limit(1);
+
+		if (existingPending) {
+			return c.json({ error: 'Invite already sent' }, 409);
+		}
+
+		const inviteId = generateEntityId('room_invite');
+		await db.insert(roomInvites).values({
+			id: inviteId,
+			roomCode,
+			inviterId: uid,
+			inviteeId,
+			status: ROOM_INVITE_PENDING,
+			createdAt: new Date(),
+			respondedAt: null,
+		});
+
+		return c.json({
+			message: 'Room invite sent',
+			invite: {
+				id: inviteId,
+				roomCode,
+				inviteeId,
+				status: ROOM_INVITE_PENDING,
+			},
+		});
+	} catch (error) {
+		console.error('Failed to send room invite:', error);
+		return c.json({ error: 'Failed to send room invite' }, 500);
+	}
+});
+
+userRouter.patch('/me/room-invites/:inviteId', requireAuth, async (c) => {
+	try {
+		const db = drizzle(c.env.DB);
+		const auth = c.get('auth');
+		const uid = auth?.uid;
+
+		if (!uid) {
+			return c.json({ error: 'Unauthorized' }, 401);
+		}
+
+		const inviteId = c.req.param('inviteId');
+		const body = await c.req.json().catch(() => ({}));
+		const action = body?.action;
+
+		if (action !== 'accept' && action !== 'reject') {
+			return c.json({ error: 'action must be either accept or reject' }, 400);
+		}
+
+		const [invite] = await db
+			.select({
+				id: roomInvites.id,
+				roomCode: roomInvites.roomCode,
+				status: roomInvites.status,
+			})
+			.from(roomInvites)
+			.where(
+				and(
+					eq(roomInvites.id, inviteId),
+					eq(roomInvites.inviteeId, uid),
+					eq(roomInvites.status, ROOM_INVITE_PENDING)
+				)
+			)
+			.limit(1);
+
+		if (!invite) {
+			return c.json({ error: 'Invite not found or already handled' }, 404);
+		}
+
+		const nextStatus = action === 'accept' ? ROOM_INVITE_ACCEPTED : ROOM_INVITE_REJECTED;
+
+		await db
+			.update(roomInvites)
+			.set({
+				status: nextStatus,
+				respondedAt: new Date(),
+			})
+			.where(eq(roomInvites.id, inviteId));
+
+		return c.json({
+			message: action === 'accept' ? 'Invite accepted' : 'Invite rejected',
+			invite: {
+				id: invite.id,
+				roomCode: invite.roomCode,
+				status: nextStatus,
+			},
+		});
+	} catch (error) {
+		console.error('Failed to respond to room invite:', error);
+		return c.json({ error: 'Failed to respond to room invite' }, 500);
+	}
+});
+
+userRouter.get('/me/notifications', requireAuth, async (c) => {
+	try {
+		const db = drizzle(c.env.DB);
+		const auth = c.get('auth');
+		const uid = auth?.uid;
+
+		if (!uid) {
+			return c.json({ error: 'Unauthorized' }, 401);
+		}
+
+		const [pendingFriendRows, pendingRoomInviteRows] = await Promise.all([
+			db
+				.select({ id: friendRequests.id })
+				.from(friendRequests)
+				.where(
+					and(
+						eq(friendRequests.receiverId, uid),
+						eq(friendRequests.status, FRIEND_REQUEST_PENDING)
+					)
+				),
+			db
+				.select({ id: roomInvites.id })
+				.from(roomInvites)
+				.where(
+					and(
+						eq(roomInvites.inviteeId, uid),
+						eq(roomInvites.status, ROOM_INVITE_PENDING)
+					)
+				),
+		]);
+
+		return c.json({
+			pendingFriendRequests: pendingFriendRows.length,
+			pendingRoomInvites: pendingRoomInviteRows.length,
+			total: pendingFriendRows.length + pendingRoomInviteRows.length,
+		});
+	} catch (error) {
+		console.error('Failed to fetch notifications:', error);
+		return c.json({ error: 'Failed to fetch notifications' }, 500);
 	}
 });
 

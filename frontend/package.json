@@ -34,12 +34,15 @@
     "@visx/shape": "^4.0.1-alpha.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "cobe": "^2.0.1",
+    "d3": "^7.9.0",
     "d3-array": "^3.2.4",
     "firebase": "^11.9.1",
     "framer-motion": "^12.18.1",
     "hugeicons-react": "^0.4.0",
     "lucide-react": "^0.518.0",
     "motion": "^12.38.0",
+    "ogl": "^1.0.11",
     "radix-ui": "^1.4.3",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
@@ -48,6 +51,7 @@
     "recharts": "^2.15.4",
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.1.10",
+    "topojson-client": "^3.1.0",
     "web-haptics": "^0.0.6"
   },
   "devDependencies": {

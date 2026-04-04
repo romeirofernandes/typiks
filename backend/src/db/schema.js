@@ -13,6 +13,7 @@ export const users = sqliteTable('users', {
     email: text('email').notNull().unique(),
     country: text('country'),
     city: text('city'),
+    lastSeenAt: integer('last_seen_at', { mode: 'timestamp' }),
     gamesPlayed: integer('games_played').default(0),
     gamesWon: integer('games_won').default(0),
     gamesLost: integer('games_lost').default(0),
@@ -49,6 +50,30 @@ export const friendships = sqliteTable(
         pk: primaryKey({ columns: [table.userA, table.userB] }),
         userAIdx: index('friendships_user_a_idx').on(table.userA),
         userBIdx: index('friendships_user_b_idx').on(table.userB),
+    })
+);
+
+export const roomInvites = sqliteTable(
+    'room_invites',
+    {
+        id: text('id').primaryKey(),
+        roomCode: text('room_code').notNull(),
+        inviterId: text('inviter_id').notNull(),
+        inviteeId: text('invitee_id').notNull(),
+        status: text('status').notNull().default('pending'),
+        createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+        respondedAt: integer('responded_at', { mode: 'timestamp' }),
+    },
+    (table) => ({
+        inviteeStatusIdx: index('room_invites_invitee_status_idx').on(table.inviteeId, table.status),
+        roomCodeIdx: index('room_invites_room_code_idx').on(table.roomCode),
+        inviterIdx: index('room_invites_inviter_id_idx').on(table.inviterId),
+        uniquePendingInvite: uniqueIndex('room_invites_unique_pending').on(
+            table.roomCode,
+            table.inviterId,
+            table.inviteeId,
+            table.status
+        ),
     })
 );
 

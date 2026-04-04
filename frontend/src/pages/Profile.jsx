@@ -316,9 +316,6 @@ const Profile = () => {
             <ViewIcon size={20} />
             Profile
           </h1>
-          <p className="text-sm text-muted-foreground">
-            Account details from your sign in provider.
-          </p>
         </header>
 
         <section className="grid gap-4 sm:grid-cols-2">
