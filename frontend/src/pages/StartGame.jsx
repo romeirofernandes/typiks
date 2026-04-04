@@ -1,5 +1,6 @@
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { FiClock } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
@@ -17,9 +18,7 @@ export default function StartGame() {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
   const [loadingStats, setLoadingStats] = useState(true);
-  const [modeStats, setModeStats] = useState(
-    RANKED_MODES.map((modeSeconds) => defaultModeStats(modeSeconds))
-  );
+  const [modeStats, setModeStats] = useState([]);
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -67,7 +66,10 @@ export default function StartGame() {
 
   const featuredModes = useMemo(
     () =>
-      modeStats.map((mode) => ({
+      (modeStats.length
+        ? modeStats
+        : RANKED_MODES.map((modeSeconds) => defaultModeStats(modeSeconds))
+      ).map((mode) => ({
         ...mode,
         title: `${mode.modeSeconds}s Ranked`,
       })),
@@ -85,7 +87,44 @@ export default function StartGame() {
       </div>
 
       <div className="mt-4 grid min-h-0 flex-1 auto-rows-fr grid-cols-1 gap-3 lg:grid-cols-2">
-        {featuredModes.map((mode, index) => (
+        {loadingStats
+          ? RANKED_MODES.map((modeSeconds, index) => (
+              <article
+                key={`skeleton-${modeSeconds}`}
+                className="relative flex h-full min-h-[220px] flex-col rounded-md border border-border/70 bg-card/45 p-4"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                    Mode {index + 1}
+                  </p>
+                  <span className="rounded-full border border-border/60 px-2 py-1 text-xs tabular-nums">
+                    {modeSeconds}s
+                  </span>
+                </div>
+
+                <Skeleton className="mt-3 h-6 w-36" />
+
+                <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+                  <div className="rounded border border-border/60 bg-background/60 p-2.5">
+                    <Skeleton className="h-3 w-14" />
+                    <Skeleton className="mt-2 h-6 w-16" />
+                  </div>
+                  <div className="rounded border border-border/60 bg-background/60 p-2.5">
+                    <Skeleton className="h-3 w-16" />
+                    <Skeleton className="mt-2 h-6 w-14" />
+                  </div>
+                </div>
+
+                <div className="mt-auto pt-4">
+                  <Skeleton className="mb-3 h-3 w-24" />
+                  <Skeleton className="h-11 w-full" />
+                </div>
+              </article>
+            ))
+          : null}
+
+        {!loadingStats
+          ? featuredModes.map((mode, index) => (
           <article
             key={mode.modeSeconds}
             className="relative flex h-full min-h-[220px] flex-col rounded-md border border-border/70 bg-card/45 p-4"
@@ -134,13 +173,8 @@ export default function StartGame() {
               </Button>
             </div>
           </article>
-        ))}
-
-        {loadingStats ? (
-          <div className="col-span-full flex items-center justify-center py-4 text-muted-foreground">
-            <span className="font-mono text-sm">Loading stats...</span>
-          </div>
-        ) : null}
+        ))
+          : null}
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useNavigate } from "react-router-dom";
 import { TypeGraph } from "@/components/charts/TypeGraph";
 import { RatingGrowthChart } from "@/components/charts/RatingGrowthChart";
@@ -144,8 +145,49 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="flex h-full min-h-[60svh] items-center justify-center text-foreground">
-        <p className="font-mono text-sm text-muted-foreground">Loading dashboard...</p>
+      <div className="flex min-h-full flex-col gap-4">
+        <header className="border-b border-border/70 pb-4">
+          <Skeleton className="h-3 w-24" />
+          <Skeleton className="mt-2 h-8 w-64" />
+        </header>
+
+        <section className="grid gap-3 md:grid-cols-3">
+          <Skeleton className="h-14 sm:h-16" />
+          <Skeleton className="h-14 sm:h-16" />
+          <Skeleton className="h-14 sm:h-16" />
+        </section>
+
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, idx) => (
+            <div key={idx} className="rounded-md border border-border/70 bg-card/30 p-4 sm:p-5">
+              <Skeleton className="h-3 w-24" />
+              <Skeleton className="mt-2 h-8 w-20" />
+            </div>
+          ))}
+        </section>
+
+        <section className="grid gap-4 xl:grid-cols-[1.05fr_1.95fr]">
+          <div className="rounded-md border border-border/70 bg-card/30 p-4">
+            <Skeleton className="h-3 w-28" />
+            <div className="mt-3 space-y-2">
+              {Array.from({ length: 4 }).map((_, idx) => (
+                <Skeleton key={idx} className="h-12 w-full" />
+              ))}
+            </div>
+          </div>
+          <div className="rounded-md border border-border/70 bg-card/30 p-4">
+            <Skeleton className="h-4 w-28" />
+            <Skeleton className="mt-4 h-[240px] w-full" />
+          </div>
+        </section>
+
+        <section className="flex flex-1 flex-col rounded-md border border-border/70 bg-card/30 p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <Skeleton className="h-3 w-28" />
+            <Skeleton className="h-7 w-20" />
+          </div>
+          <Skeleton className="h-[260px] w-full" />
+        </section>
       </div>
     );
   }

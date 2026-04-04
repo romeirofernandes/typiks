@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { StarIcon } from "@radix-ui/react-icons";
 import { TbAward } from "react-icons/tb";
 
@@ -113,11 +114,47 @@ const Leaderboard = () => {
 
   if (loading) {
     return (
-      <div className="flex min-h-[60svh] items-center justify-center">
-        <div className="w-full max-w-3xl space-y-3">
-          <div className="h-10 animate-pulse rounded-md bg-muted" />
-          <div className="h-36 animate-pulse rounded-md bg-muted" />
-          <div className="h-72 animate-pulse rounded-md bg-muted" />
+      <div className="min-h-[78svh] text-foreground">
+        <div className="space-y-5">
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-end justify-between gap-3 border-b border-border/80 pb-4">
+              <div className="space-y-2">
+                <Skeleton className="h-3 w-28" />
+                <Skeleton className="h-8 w-44" />
+              </div>
+              <div className="flex gap-2">
+                <Skeleton className="h-7 w-24 rounded-full" />
+                <Skeleton className="h-7 w-20 rounded-full" />
+                <Skeleton className="h-7 w-24 rounded-full" />
+              </div>
+            </div>
+
+            <div className="grid gap-2 sm:grid-cols-3 sm:items-end">
+              <Skeleton className="h-[148px] rounded-md" />
+              <Skeleton className="h-[172px] rounded-md" />
+              <Skeleton className="h-[132px] rounded-md" />
+            </div>
+          </div>
+
+          <Card className="border-border/80 bg-card/85 backdrop-blur-[1px]">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <StarIcon className="h-5 w-5 text-primary" />
+                Rankings
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 p-4">
+              {Array.from({ length: 6 }).map((_, idx) => (
+                <Skeleton key={idx} className="h-10 w-full" />
+              ))}
+            </CardContent>
+          </Card>
+
+          <div className="flex flex-wrap gap-2">
+            {Array.from({ length: 5 }).map((_, idx) => (
+              <Skeleton key={idx} className="h-7 w-20 rounded-full" />
+            ))}
+          </div>
         </div>
       </div>
     );

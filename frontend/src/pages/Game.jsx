@@ -7,7 +7,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { DotLoader } from "@/components/ui/dot-loader";
+import { Spinner } from "@/components/ui/spinner";
 import {
   getSubmitKeyOptionById,
   loadPlayerPreferences,
@@ -719,7 +719,7 @@ const Game = () => {
                   <CardTitle className="font-sans">Finding Opponent</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-6 py-8 text-center">
-                  <DotLoader duration={100} className="mx-auto scale-150" />
+                  <Spinner className="mx-auto size-6 text-primary" />
                   <div className="space-y-2">
                     <p className="font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">
                       Searching for players...

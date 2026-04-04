@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { DotLoader } from "@/components/ui/dot-loader";
+import { Spinner } from "@/components/ui/spinner";
 import { FiCopy, FiCheck, FiUsers, FiClock, FiHash, FiUser, FiLogOut, FiPlay, FiSettings } from "react-icons/fi";
 
 function getServerBaseUrl() {
@@ -737,7 +737,7 @@ export default function CreateRoom() {
                       <Button onClick={createRoom} disabled={busy} className="w-full sm:w-auto">
                         {busy ? (
                           <span className="flex items-center gap-2">
-                            <DotLoader className="scale-75" duration={80} />
+                            <Spinner className="size-4 text-current" />
                             Creating...
                           </span>
                         ) : (
@@ -1098,7 +1098,7 @@ export default function CreateRoom() {
                 <Card className="border-primary/50 bg-primary/5">
                   <CardContent className="py-12 text-center">
                     <div className="mb-4 flex justify-center">
-                      <DotLoader duration={80} />
+                      <Spinner className="size-6 text-primary" />
                     </div>
                     <p className="mb-4 font-mono text-sm uppercase tracking-[0.2em] text-muted-foreground">
                       Game Starting In
