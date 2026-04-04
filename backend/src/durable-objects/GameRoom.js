@@ -55,8 +55,9 @@ export class GameRoom {
 		if (typeof userInfo.username === 'string' && userInfo.username.trim().length > 0) {
 			safe.username = userInfo.username.trim().slice(0, 32);
 		}
-		if (Number.isFinite(userInfo.rating)) {
-			safe.rating = Math.max(0, Math.min(3000, Math.floor(userInfo.rating)));
+		const parsedRating = Number(userInfo.rating);
+		if (Number.isFinite(parsedRating)) {
+			safe.rating = Math.max(0, Math.min(3000, Math.floor(parsedRating)));
 		}
 		return safe;
 	}

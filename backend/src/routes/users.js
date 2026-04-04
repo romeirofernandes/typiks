@@ -23,6 +23,14 @@ const FRIEND_REQUEST_REJECTED = 'rejected';
 const RANKED_MODE_SECONDS = [15, 30, 60, 120];
 const DEFAULT_RATING = 800;
 const GAME_STATUS_FINISHED = 'finished';
+const LOCATION_CACHE_TTL_MS = 1000 * 60 * 60 * 12;
+const locationCache = {
+	countries: {
+		data: null,
+		expiresAt: 0,
+	},
+	citiesByCountry: new Map(),
+};
 
 function generateEntityId(prefix) {
 	if (typeof crypto?.randomUUID === 'function') {
@@ -47,6 +55,79 @@ function normalizeModeSeconds(rawValue) {
 	}
 
 	return parsed;
+}
+
+function normalizeOptionalLocationValue(value, maxLength = 80) {
+	if (typeof value !== 'string') return null;
+	const normalized = value.trim().slice(0, maxLength);
+	return normalized.length > 0 ? normalized : null;
+}
+
+async function fetchLocationCountries() {
+	const now = Date.now();
+	if (
+		Array.isArray(locationCache.countries.data) &&
+		locationCache.countries.expiresAt > now
+	) {
+		return locationCache.countries.data;
+	}
+
+	const response = await fetch('https://restcountries.com/v3.1/all?fields=name');
+	if (!response.ok) {
+		throw new Error(`Countries API returned ${response.status}`);
+	}
+
+	const payload = await response.json();
+	const countries = Array.isArray(payload)
+		? payload
+				.map((country) => country?.name?.common)
+				.filter((value) => typeof value === 'string' && value.trim().length > 0)
+				.map((value) => value.trim())
+				.sort((a, b) => a.localeCompare(b))
+		: [];
+
+	locationCache.countries = {
+		data: countries,
+		expiresAt: now + LOCATION_CACHE_TTL_MS,
+	};
+
+	return countries;
+}
+
+async function fetchCitiesByCountry(country) {
+	const key = country.toLowerCase();
+	const now = Date.now();
+	const cached = locationCache.citiesByCountry.get(key);
+	if (cached && cached.expiresAt > now) {
+		return cached.data;
+	}
+
+	const response = await fetch('https://countriesnow.space/api/v0.1/countries/cities', {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+		},
+		body: JSON.stringify({ country }),
+	});
+
+	if (!response.ok) {
+		throw new Error(`Cities API returned ${response.status}`);
+	}
+
+	const payload = await response.json();
+	const cities = Array.isArray(payload?.data)
+		? payload.data
+				.filter((city) => typeof city === 'string' && city.trim().length > 0)
+				.map((city) => city.trim())
+				.sort((a, b) => a.localeCompare(b))
+		: [];
+
+	locationCache.citiesByCountry.set(key, {
+		data: cities,
+		expiresAt: now + LOCATION_CACHE_TTL_MS,
+	});
+
+	return cities;
 }
 
 function modeStatsRowToDto(row) {
@@ -169,6 +250,51 @@ userRouter.get('/leaderboard/top', async (c) => {
 		return c.json({ leaderboard });
 	} catch (error) {
 		return c.json({ error: 'Failed to fetch leaderboard' }, 500);
+	}
+});
+
+userRouter.get('/locations/countries', requireAuth, async (c) => {
+	try {
+		const query = String(c.req.query('query') || '').trim().toLowerCase();
+		const parsedLimit = Number.parseInt(String(c.req.query('limit') || '15'), 10);
+		const limit = Number.isFinite(parsedLimit)
+			? Math.min(50, Math.max(1, parsedLimit))
+			: 15;
+
+		const countries = await fetchLocationCountries();
+		const filtered = query
+			? countries.filter((country) => country.toLowerCase().includes(query))
+			: countries;
+
+		return c.json({ countries: filtered.slice(0, limit) });
+	} catch (error) {
+		console.error('Failed to fetch countries:', error);
+		return c.json({ error: 'Failed to fetch countries' }, 500);
+	}
+});
+
+userRouter.get('/locations/cities', requireAuth, async (c) => {
+	try {
+		const country = normalizeOptionalLocationValue(c.req.query('country'));
+		const query = String(c.req.query('query') || '').trim().toLowerCase();
+		const parsedLimit = Number.parseInt(String(c.req.query('limit') || '15'), 10);
+		const limit = Number.isFinite(parsedLimit)
+			? Math.min(50, Math.max(1, parsedLimit))
+			: 15;
+
+		if (!country) {
+			return c.json({ error: 'country query parameter is required' }, 400);
+		}
+
+		const cities = await fetchCitiesByCountry(country);
+		const filtered = query
+			? cities.filter((city) => city.toLowerCase().includes(query))
+			: cities;
+
+		return c.json({ country, cities: filtered.slice(0, limit) });
+	} catch (error) {
+		console.error('Failed to fetch cities:', error);
+		return c.json({ error: 'Failed to fetch cities' }, 500);
 	}
 });
 
@@ -307,6 +433,75 @@ userRouter.get('/:id', requireAuth, async (c) => {
 		return c.json({ user: user[0] });
 	} catch (error) {
 		return c.json({ error: 'Failed to fetch user' }, 500);
+	}
+});
+
+userRouter.get('/:id/location', requireAuth, async (c) => {
+	try {
+		const db = drizzle(c.env.DB);
+		const uid = c.req.param('id');
+		const auth = c.get('auth');
+		if (auth?.uid !== uid) {
+			return c.json({ error: 'Forbidden' }, 403);
+		}
+
+		const rows = await db
+			.select({ country: users.country, city: users.city })
+			.from(users)
+			.where(eq(users.id, uid))
+			.limit(1);
+
+		if (rows.length === 0) {
+			return c.json({ error: 'User not found' }, 404);
+		}
+
+		return c.json({
+			country: rows[0].country || null,
+			city: rows[0].city || null,
+		});
+	} catch (error) {
+		console.error('Failed to fetch user location:', error);
+		return c.json({ error: 'Failed to fetch user location' }, 500);
+	}
+});
+
+userRouter.patch('/:id/location', requireAuth, async (c) => {
+	try {
+		const db = drizzle(c.env.DB);
+		const uid = c.req.param('id');
+		const auth = c.get('auth');
+		if (auth?.uid !== uid) {
+			return c.json({ error: 'Forbidden' }, 403);
+		}
+
+		const body = await c.req.json().catch(() => ({}));
+		const country = normalizeOptionalLocationValue(body?.country);
+		const city = normalizeOptionalLocationValue(body?.city);
+
+		if (!country && city) {
+			return c.json({ error: 'country is required when city is provided' }, 400);
+		}
+
+		const rows = await db
+			.update(users)
+			.set({
+				country,
+				city,
+			})
+			.where(eq(users.id, uid))
+			.returning({ country: users.country, city: users.city });
+
+		if (rows.length === 0) {
+			return c.json({ error: 'User not found' }, 404);
+		}
+
+		return c.json({
+			country: rows[0].country || null,
+			city: rows[0].city || null,
+		});
+	} catch (error) {
+		console.error('Failed to update user location:', error);
+		return c.json({ error: 'Failed to update user location' }, 500);
 	}
 });
 

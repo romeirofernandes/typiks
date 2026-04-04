@@ -1,10 +1,19 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import {
+  motion,
+  AnimatePresence,
+} from "framer-motion";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { DotLoader } from "@/components/ui/dot-loader";
+import {
+  getSubmitKeyOptionById,
+  loadPlayerPreferences,
+  NEXT_WORD_CONDITIONS,
+  PLAYER_PREFERENCES_STORAGE_KEY,
+} from "@/lib/player-preferences";
 import { FiUser, FiClock, FiArrowLeft, FiZap, FiTrendingUp } from "react-icons/fi";
 
 const Game = () => {
@@ -28,6 +37,10 @@ const Game = () => {
   const [gameResults, setGameResults] = useState(null);
   const [modeSeconds, setModeSeconds] = useState(initialModeSeconds);
   const [activeGameId, setActiveGameId] = useState(null);
+  const [playerPreferences, setPlayerPreferences] = useState(() =>
+    loadPlayerPreferences()
+  );
+  const [userStatsLoaded, setUserStatsLoaded] = useState(false);
   const [userStats, setUserStats] = useState(() => ({
     username:
       currentUser?.displayName || currentUser?.email?.split("@")[0] || "Player",
@@ -46,6 +59,15 @@ const Game = () => {
     ? userStats.modeStats.find((mode) => Number(mode.modeSeconds) === Number(modeSeconds))
     : null;
   const queueRating = selectedModeStats?.rating ?? userStats.rating;
+  const currentWord = words[currentWordIndex] || "";
+  const isAutoAdvanceEnabled =
+    playerPreferences.nextWordCondition === NEXT_WORD_CONDITIONS.auto;
+  const activeSubmitKeyIds = Array.isArray(playerPreferences.submitKeyIds)
+    ? playerPreferences.submitKeyIds
+    : [playerPreferences.submitKeyId].filter(Boolean);
+  const activeSubmitKeys = activeSubmitKeyIds.map((id) => getSubmitKeyOptionById(id));
+  const activeSubmitKeySet = new Set(activeSubmitKeys.map((option) => option.key));
+  const activeSubmitLabel = activeSubmitKeys.map((option) => option.label).join(" / ");
   
 
   const cleanup = () => {
@@ -75,6 +97,63 @@ const Game = () => {
           : currentUser.displayName || currentUser.email?.split("@")[0] || "Player",
     }));
   }, [currentUser]);
+
+  useEffect(() => {
+    const syncPreferences = () => {
+      setPlayerPreferences(loadPlayerPreferences());
+    };
+
+    syncPreferences();
+    window.addEventListener("storage", syncPreferences);
+
+    return () => {
+      window.removeEventListener("storage", syncPreferences);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleFocus = () => {
+      const stored = window.localStorage.getItem(PLAYER_PREFERENCES_STORAGE_KEY);
+      if (stored) {
+        setPlayerPreferences(loadPlayerPreferences());
+      }
+    };
+
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, []);
+
+  const submitWordIfCorrect = useCallback(
+    (rawInput) => {
+      if (gameState !== "playing" || !wsRef.current) return false;
+      if (wsRef.current.readyState !== WebSocket.OPEN) return false;
+
+      const normalizedInput = String(rawInput || "").trim();
+      if (!normalizedInput || !currentWord) return false;
+
+      if (normalizedInput !== currentWord) {
+        return false;
+      }
+
+      try {
+        wsRef.current.send(
+          JSON.stringify({
+            type: "PLAYER_INPUT",
+            input: normalizedInput,
+          })
+        );
+      } catch (error) {
+        console.error("Failed to send player input:", error);
+        return false;
+      }
+
+      setInput("");
+      return true;
+    },
+    [currentWord, gameState]
+  );
 
   const fetchUserStats = useCallback(async () => {
     if (!currentUser) return;
@@ -114,6 +193,8 @@ const Game = () => {
         gamesPlayed: 0,
         gamesWon: 0,
       });
+    } finally {
+      setUserStatsLoaded(true);
     }
   }, [currentUser]);
 
@@ -170,7 +251,7 @@ const Game = () => {
             modeSeconds,
             userInfo: {
               username: userStats.username,
-              rating: queueRating,
+              rating: Number.isFinite(Number(queueRating)) ? Number(queueRating) : 800,
             },
           })
         );
@@ -240,10 +321,16 @@ const Game = () => {
   }, []); // Only run once on mount! fetchUserStats uses latest refs or is stable enough.
 
   useEffect(() => {
-    if (userStats && gameState === "waiting" && !wsRef.current && !isConnectingRef.current) {
+    if (
+      userStatsLoaded &&
+      userStats &&
+      gameState === "waiting" &&
+      !wsRef.current &&
+      !isConnectingRef.current
+    ) {
       connectWebSocket();
     }
-  }, [connectWebSocket, gameState, userStats]);
+  }, [connectWebSocket, gameState, userStats, userStatsLoaded]);
 
   const handleWebSocketMessage = (message) => {
     switch (message.type) {
@@ -251,6 +338,7 @@ const Game = () => {
         setActiveGameId(message.gameId || null);
         setModeSeconds(Number(message.modeSeconds) || modeSeconds);
         setOpponent(message.opponent);
+        setInput("");
         setGameState("countdown");
         break;
 
@@ -277,6 +365,7 @@ const Game = () => {
         setOpponentScore(0);
         setCurrentWordIndex(0);
         setOpponentWordIndex(0);
+        setInput("");
         setTimeout(() => inputRef.current?.focus(), 100);
         break;
       }
@@ -348,15 +437,6 @@ const Game = () => {
       }
 
       case "WRONG_WORD":
-        // Optional: Add visual feedback for wrong words
-        if (inputRef.current) {
-          inputRef.current.style.borderColor = "red";
-          setTimeout(() => {
-            if (inputRef.current) {
-              inputRef.current.style.borderColor = "";
-            }
-          }, 500);
-        }
         break;
 
       case "GAME_END":
@@ -364,6 +444,7 @@ const Game = () => {
         setActiveGameId(message.results?.gameId || activeGameId);
         setModeSeconds(Number(message.results?.modeSeconds) || modeSeconds);
         setGameResults(message.results);
+        setInput("");
         setGameState("finished");
         if (timerRef.current) {
           clearInterval(timerRef.current);
@@ -375,6 +456,7 @@ const Game = () => {
 
       case "OPPONENT_DISCONNECTED":
         gameEndedRef.current = true;
+        setInput("");
         setGameState("finished");
         {
           const fallbackResults = {
@@ -506,31 +588,31 @@ const Game = () => {
   };
 
   const handleInputChange = (e) => {
-    setInput(e.target.value);
+    const maxLength = currentWord.length;
+    const nextValue = String(e.target.value || "").slice(0, maxLength);
+    setInput(nextValue);
+
+    if (isAutoAdvanceEnabled) {
+      submitWordIfCorrect(nextValue);
+    }
   };
 
   const handleInputSubmit = (e) => {
-    if (e.key === "Enter" || e.key === " ") {
+    if (isAutoAdvanceEnabled) {
+      return;
+    }
+
+    if (activeSubmitKeySet.has(e.key)) {
       e.preventDefault();
-
-        if (gameState !== "playing" || !input.trim() || !wsRef.current) return;
-        if (wsRef.current.readyState !== WebSocket.OPEN) return;
-
-        try {
-          wsRef.current.send(
-            JSON.stringify({
-              type: "PLAYER_INPUT",
-              input: input.trim(),
-            })
-          );
-        } catch (error) {
-          console.error("Failed to send player input:", error);
-          return;
-        }
-
-      setInput("");
+      submitWordIfCorrect(input);
     }
   };
+
+  useEffect(() => {
+    if (gameState !== "playing") {
+      setInput("");
+    }
+  }, [gameState]);
 
   const handleBackToDashboard = () => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -759,10 +841,8 @@ const Game = () => {
                     <p className="mb-4 font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">
                       Type This Word
                     </p>
-                    <motion.div
+                    <div
                       key={words[currentWordIndex]}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
                       className="relative inline-block font-mono text-4xl font-medium tracking-wider leading-none sm:text-5xl"
                     >
                       {(words[currentWordIndex] || "").split("").map((char, charIndex) => {
@@ -777,7 +857,7 @@ const Game = () => {
                         return (
                           <span
                             key={charIndex}
-                            className={`relative inline-block min-w-[0.45em] align-baseline transition-colors duration-75 ${
+                            className={`relative inline-block min-w-[0.45em] align-baseline ${
                               isCorrect
                                 ? "text-primary"
                                 : isWrong
@@ -786,9 +866,7 @@ const Game = () => {
                             }`}
                           >
                             {isCurrentPosition && (
-                              <motion.span
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
+                              <span
                                 className="absolute -left-[2px] top-0 h-full w-[3px] bg-primary"
                                 style={{
                                   animation: "blink 1s ease-in-out infinite",
@@ -801,16 +879,14 @@ const Game = () => {
                       })}
                       {/* Cursor at end if all typed */}
                       {input.length === (words[currentWordIndex] || "").length && (
-                        <motion.span
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
+                        <span
                           className="absolute -right-[2px] top-0 h-full w-[3px] bg-primary"
                           style={{
                             animation: "blink 1s ease-in-out infinite",
                           }}
                         />
                       )}
-                    </motion.div>
+                    </div>
                   </div>
                   <input
                     ref={inputRef}
@@ -829,7 +905,9 @@ const Game = () => {
                       {input.length > 0 ? (
                         <span>Typing: <span className="text-foreground">{input}</span></span>
                       ) : (
-                        "Click here or start typing..."
+                        isAutoAdvanceEnabled
+                          ? "Type the full word correctly to auto-advance..."
+                          : `Type the word, then press ${activeSubmitLabel} to submit...`
                       )}
                     </p>
                   </div>

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import {
   Tooltip,
   TooltipContent,
@@ -16,6 +16,13 @@ function formatDateForTooltip(dateKey) {
   });
 }
 
+function toLocalDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function getContributionClass(count, maxDailyCount) {
   if (!maxDailyCount || count <= 0) return "bg-muted/40";
   const ratio = count / maxDailyCount;
@@ -31,6 +38,8 @@ export function TypeGraph({
   days = 364,
   title = "Type Graph",
 }) {
+  const scrollContainerRef = useRef(null);
+
   const activityByDate = useMemo(() => {
     const map = new Map();
     for (const day of activityData) {
@@ -49,7 +58,7 @@ export function TypeGraph({
     for (let i = 0; i < days; i++) {
       const date = new Date(start);
       date.setDate(start.getDate() + i);
-      const dateKey = date.toISOString().slice(0, 10);
+      const dateKey = toLocalDateKey(date);
       list.push({
         date: dateKey,
         count: activityByDate.get(dateKey) || 0,
@@ -77,6 +86,17 @@ export function TypeGraph({
     return graphDays.reduce((max, day) => Math.max(max, day.count), 0);
   }, [graphDays, maxDailyCount]);
 
+  useEffect(() => {
+    const node = scrollContainerRef.current;
+    if (!node) return;
+
+    const frameId = requestAnimationFrame(() => {
+      node.scrollLeft = node.scrollWidth;
+    });
+
+    return () => cancelAnimationFrame(frameId);
+  }, [weeks.length]);
+
   return (
     <div className="rounded-md border border-border/70 bg-card/30 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -87,7 +107,10 @@ export function TypeGraph({
       </div>
 
       <TooltipProvider delayDuration={100}>
-        <div className="mt-3 overflow-x-auto pb-1">
+        <div
+          ref={scrollContainerRef}
+          className="scroll-container mt-3 overflow-x-auto overscroll-x-contain pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+        >
           <div className="inline-flex min-w-max gap-1">
             {weeks.map((week, weekIndex) => (
               <div key={`week-${weekIndex}`} className="grid grid-rows-7 gap-1">

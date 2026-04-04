@@ -4,7 +4,6 @@ import { LineChart } from "@/components/charts/line-chart";
 import { Line } from "@/components/charts/line";
 import { XAxis } from "@/components/charts/x-axis";
 import { ChartTooltip } from "@/components/charts/tooltip";
-import { ChartMarkers } from "@/components/charts/chart-markers";
 
 function formatDateLabel(dateKey) {
   const date = new Date(`${dateKey}T00:00:00`);
@@ -44,20 +43,6 @@ export function RatingGrowthChart({ points }) {
     [points]
   );
 
-  const markers = useMemo(() => {
-    const list = [];
-    for (let i = 1; i < chartData.length; i += 1) {
-      const change = chartData[i].rating - chartData[i - 1].rating;
-      if (Math.abs(change) >= 18) {
-        list.push({
-          xValue: chartData[i].gameNumber,
-          title: "Rating shift",
-        });
-      }
-    }
-    return list;
-  }, [chartData]);
-
   if (!chartData.length) {
     return (
       <div className="flex min-h-56 items-center justify-center rounded-md border border-border/60 bg-background/50 text-sm text-muted-foreground">
@@ -71,7 +56,7 @@ export function RatingGrowthChart({ points }) {
 
   return (
     <div className="space-y-2">
-      <div className="h-60 w-full rounded-md border border-border/60 bg-background/50 p-2 sm:h-64">
+      <div className="h-[22rem] w-full rounded-md border border-border/60 bg-background/50 p-2 sm:h-[22rem]">
         <LineChart
           data={chartData}
           xDataKey="gameNumber"
@@ -82,7 +67,6 @@ export function RatingGrowthChart({ points }) {
         >
           <Grid horizontal />
           <Line dataKey="rating" stroke="var(--chart-line-primary)" strokeWidth={2.5} />
-          <ChartMarkers items={markers} showLines={false} />
           <XAxis numTicks={6} formatTick={(value) => `${Math.round(value)}`} />
           <ChartTooltip content={(ctx) => <CustomTooltip {...ctx} />} showDatePill={false} />
         </LineChart>

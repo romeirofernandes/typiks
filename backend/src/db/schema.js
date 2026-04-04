@@ -11,6 +11,8 @@ export const users = sqliteTable('users', {
     id: text('id').primaryKey(), // Firebase UID
     username: text('username').notNull().unique(),
     email: text('email').notNull().unique(),
+    country: text('country'),
+    city: text('city'),
     gamesPlayed: integer('games_played').default(0),
     gamesWon: integer('games_won').default(0),
     gamesLost: integer('games_lost').default(0),

@@ -201,7 +201,7 @@ export default function Dashboard() {
         />
       </section>
 
-      <section className="rounded-md border border-border/70 bg-card/30 p-4">
+      <section className="flex flex-1 flex-col rounded-md border border-border/70 bg-card/30 p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Rating Growth</p>
           <label className="flex items-center gap-2 text-xs uppercase tracking-[0.12em] text-muted-foreground">
