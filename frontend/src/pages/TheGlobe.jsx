@@ -26,22 +26,49 @@ function interpolateProjection(raw0, raw1) {
   });
 }
 
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function colorFromIndex(index) {
+  const colorVars = [
+    "var(--chart-1)",
+    "var(--chart-2)",
+    "var(--chart-3)",
+    "var(--chart-4)",
+    "var(--chart-5)",
+  ];
+  const base = colorVars[index % colorVars.length];
+  const tier = Math.floor(index / colorVars.length);
+  const alpha = clamp(0.9 - tier * 0.12, 0.38, 0.9);
+  return { base, alpha };
+}
+
 export function GlobeToMapTransform() {
   const { currentUser } = useAuth();
   const svgRef = useRef(null);
+
   const [isAnimating, setIsAnimating] = useState(false);
   const [progress, setProgress] = useState([0]);
   const [worldData, setWorldData] = useState([]);
   const [rotation, setRotation] = useState([0, 0]);
   const [translation, setTranslation] = useState([0, 0]);
-  const [isDragging, setIsDragging] = useState(false);
-  const [lastMouse, setLastMouse] = useState([0, 0]);
   const [isDark, setIsDark] = useState(() =>
     document.documentElement.classList.contains("dark")
   );
   const [countryMarkers, setCountryMarkers] = useState([]);
   const [projectedMarkers, setProjectedMarkers] = useState([]);
   const [hoveredMarkerId, setHoveredMarkerId] = useState(null);
+  const [zoom, setZoom] = useState(1);
+
+  const dragRef = useRef({
+    active: false,
+    moved: false,
+    startX: 0,
+    startY: 0,
+    lastX: 0,
+    lastY: 0,
+  });
 
   const width = 800;
   const height = 500;
@@ -53,6 +80,41 @@ export function GlobeToMapTransform() {
     });
     observer.observe(root, { attributes: true, attributeFilter: ["class"] });
     return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const loadWorldData = async () => {
+      try {
+        const response = await fetch(
+          "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json"
+        );
+        const world = await response.json();
+        const countries = feature(world, world.objects.countries).features;
+        setWorldData(countries);
+      } catch (error) {
+        console.log("[v0] Error loading world data:", error);
+        setWorldData([
+          {
+            type: "Feature",
+            geometry: {
+              type: "Polygon",
+              coordinates: [
+                [
+                  [-180, -90],
+                  [180, -90],
+                  [180, 90],
+                  [-180, 90],
+                  [-180, -90],
+                ],
+              ],
+            },
+            properties: {},
+          },
+        ]);
+      }
+    };
+
+    loadWorldData();
   }, []);
 
   useEffect(() => {
@@ -105,11 +167,15 @@ export function GlobeToMapTransform() {
                 mostPlayedMode: Number(item.mostPlayedMode || 0) || null,
                 userCount: Number(item.userCount || 0),
               }))
-              .sort((a, b) => b.userCount - a.userCount)
-              .slice(0, 16)
           : [];
 
-        setCountryMarkers(markers);
+        const shuffled = [...markers];
+        for (let i = shuffled.length - 1; i > 0; i -= 1) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+
+        setCountryMarkers(shuffled);
       } catch (error) {
         if (!cancelled) {
           console.error("Failed to fetch globe markers:", error);
@@ -124,68 +190,87 @@ export function GlobeToMapTransform() {
     };
   }, [currentUser]);
 
+  const markerById = useMemo(() => {
+    const next = new Map();
+    countryMarkers.forEach((marker) => {
+      next.set(marker.id, marker);
+    });
+    return next;
+  }, [countryMarkers]);
+
+  const markerColorMap = useMemo(() => {
+    const next = new Map();
+    countryMarkers.forEach((marker, index) => {
+      next.set(marker.id, colorFromIndex(index));
+    });
+    return next;
+  }, [countryMarkers]);
+
+  const worldCentroids = useMemo(
+    () => worldData.map((country) => d3.geoCentroid(country)),
+    [worldData]
+  );
+
   const hoveredMarker = useMemo(
     () => projectedMarkers.find((marker) => marker.id === hoveredMarkerId) || null,
     [projectedMarkers, hoveredMarkerId]
   );
-  const hoveredMarkerRaw = useMemo(
-    () => countryMarkers.find((marker) => marker.id === hoveredMarkerId) || null,
-    [countryMarkers, hoveredMarkerId]
-  );
 
-  useEffect(() => {
-    const loadWorldData = async () => {
-      try {
-        const response = await fetch(
-          "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json"
-        );
-        const world = await response.json();
-        const countries = feature(world, world.objects.countries).features;
-        setWorldData(countries);
-      } catch (error) {
-        console.log("[v0] Error loading world data:", error);
-        const fallbackData = [
-          {
-            type: "Feature",
-            geometry: {
-              type: "Polygon",
-              coordinates: [
-                [
-                  [-180, -90],
-                  [180, -90],
-                  [180, 90],
-                  [-180, 90],
-                  [-180, -90],
-                ],
-              ],
-            },
-            properties: {},
-          },
-        ];
-        setWorldData(fallbackData);
+  const activeMarkerSource = hoveredMarkerId
+    ? markerById.get(hoveredMarkerId) || null
+    : null;
+  const activeMarker = hoveredMarker;
+
+  const getNearestProjectedMarker = (x, y) => {
+    let nearest = null;
+    let nearestDistance = Infinity;
+
+    for (const marker of projectedMarkers) {
+      const dx = marker.x - x;
+      const dy = marker.y - y;
+      const distance = Math.hypot(dx, dy);
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearest = marker;
       }
-    };
-
-    loadWorldData();
-  }, []);
-
-  const handleMouseDown = (event) => {
-    setIsDragging(true);
-    const rect = svgRef.current?.getBoundingClientRect();
-    if (rect) {
-      setLastMouse([event.clientX - rect.left, event.clientY - rect.top]);
     }
+
+    if (!nearest || nearestDistance > 20) return null;
+    return nearest;
   };
 
-  const handleMouseMove = (event) => {
-    if (!isDragging) return;
-
+  const handleMouseDown = (event) => {
     const rect = svgRef.current?.getBoundingClientRect();
     if (!rect) return;
 
-    const currentMouse = [event.clientX - rect.left, event.clientY - rect.top];
-    const dx = currentMouse[0] - lastMouse[0];
-    const dy = currentMouse[1] - lastMouse[1];
+    dragRef.current.active = true;
+    dragRef.current.moved = false;
+    dragRef.current.startX = event.clientX - rect.left;
+    dragRef.current.startY = event.clientY - rect.top;
+    dragRef.current.lastX = dragRef.current.startX;
+    dragRef.current.lastY = dragRef.current.startY;
+  };
+
+  const handleMouseMove = (event) => {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+
+    const nearest = getNearestProjectedMarker(x, y);
+    setHoveredMarkerId(nearest?.id || null);
+
+    if (!dragRef.current.active) return;
+
+    const dx = x - dragRef.current.lastX;
+    const dy = y - dragRef.current.lastY;
+    const totalDx = x - dragRef.current.startX;
+    const totalDy = y - dragRef.current.startY;
+
+    if (Math.hypot(totalDx, totalDy) > 4) {
+      dragRef.current.moved = true;
+    }
 
     const t = progress[0] / 100;
 
@@ -203,11 +288,31 @@ export function GlobeToMapTransform() {
       ]);
     }
 
-    setLastMouse(currentMouse);
+    dragRef.current.lastX = x;
+    dragRef.current.lastY = y;
   };
 
-  const handleMouseUp = () => {
-    setIsDragging(false);
+  const handleMouseUp = (event) => {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) {
+      dragRef.current.active = false;
+      return;
+    }
+
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    const nearest = getNearestProjectedMarker(x, y);
+
+    if (!dragRef.current.moved) {
+      setHoveredMarkerId(nearest?.id || null);
+    }
+
+    dragRef.current.active = false;
+  };
+
+  const handleWheel = (event) => {
+    event.preventDefault();
+    setZoom((prev) => clamp(prev + (event.deltaY > 0 ? -0.08 : 0.08), 0.6, 2.5));
   };
 
   useEffect(() => {
@@ -226,7 +331,7 @@ export function GlobeToMapTransform() {
       d3.geoOrthographicRaw,
       d3.geoEquirectangularRaw
     )
-      .scale(scale(alpha))
+      .scale(scale(alpha) * zoom)
       .translate([width / 2 + translation[0], height / 2 + translation[1]])
       .rotate([baseRotate(alpha) + rotation[0], rotation[1]])
       .precision(0.1);
@@ -236,24 +341,71 @@ export function GlobeToMapTransform() {
     const path = d3.geoPath(projection);
     const gridColor = isDark ? "#9ca3af" : "#c4c4c4";
     const countryColor = isDark ? "#b7b7b7" : "#bbbbbb";
-    const highlightColor = isDark ? "#e5e7eb" : "#525252";
 
-    try {
-      const graticule = d3.geoGraticule();
-      const graticulePath = path(graticule());
-      if (graticulePath) {
-        svg
-          .append("path")
-          .datum(graticule())
-          .attr("d", graticulePath)
-          .attr("fill", "none")
-          .attr("stroke", gridColor)
-          .attr("stroke-width", 1)
-          .attr("opacity", 0.28);
+    const markerFeatureById = new Map();
+    const featureMarkerByIndex = new Map();
+
+    countryMarkers.forEach((marker) => {
+      let featureIndex = worldData.findIndex((country) =>
+        d3.geoContains(country, [marker.lng, marker.lat])
+      );
+
+      if (featureIndex < 0 && worldCentroids.length > 0) {
+        let nearestIndex = -1;
+        let nearestDistance = Infinity;
+
+        worldCentroids.forEach((centroid, index) => {
+          const distance = d3.geoDistance([marker.lng, marker.lat], centroid);
+          if (distance < nearestDistance) {
+            nearestDistance = distance;
+            nearestIndex = index;
+          }
+        });
+        featureIndex = nearestIndex;
       }
-    } catch (error) {
-      console.log("[v0] Error creating graticule:", error);
-    }
+
+      if (featureIndex >= 0) {
+        markerFeatureById.set(marker.id, featureIndex);
+        const current = featureMarkerByIndex.get(featureIndex);
+        if (!current || marker.userCount > current.userCount) {
+          featureMarkerByIndex.set(featureIndex, marker);
+        }
+      }
+    });
+
+    const activeFeatureIndex =
+      activeMarkerSource && markerFeatureById.has(activeMarkerSource.id)
+        ? markerFeatureById.get(activeMarkerSource.id)
+        : null;
+
+    const defs = svg.append("defs");
+    const hatch = defs
+      .append("pattern")
+      .attr("id", "country-hatch")
+      .attr("width", 8)
+      .attr("height", 8)
+      .attr("patternUnits", "userSpaceOnUse")
+      .attr("patternTransform", "rotate(30)");
+
+    hatch
+      .append("line")
+      .attr("x1", 0)
+      .attr("y1", 0)
+      .attr("x2", 0)
+      .attr("y2", 8)
+      .attr("stroke", "var(--primary)")
+      .attr("stroke-width", 2)
+      .attr("opacity", isDark ? 0.45 : 0.35);
+
+    const graticule = d3.geoGraticule();
+    svg
+      .append("path")
+      .datum(graticule())
+      .attr("d", path(graticule()))
+      .attr("fill", "none")
+      .attr("stroke", gridColor)
+      .attr("stroke-width", 1)
+      .attr("opacity", 0.28);
 
     const countriesSelection = svg
       .selectAll(".country")
@@ -261,33 +413,23 @@ export function GlobeToMapTransform() {
       .enter()
       .append("path")
       .attr("class", "country")
-      .attr("d", (d) => {
-        try {
-          const pathString = path(d);
-          if (!pathString) return "";
-          if (
-            typeof pathString === "string" &&
-            (pathString.includes("NaN") || pathString.includes("Infinity"))
-          ) {
-            return "";
-          }
-          return pathString;
-        } catch (error) {
-          console.log("[v0] Error generating path for country:", error);
-          return "";
-        }
+      .attr("d", (d) => path(d) || "")
+      .attr("fill", (_, index) =>
+        activeFeatureIndex === index ? "url(#country-hatch)" : "none"
+      )
+      .attr("stroke", (_, index) => {
+        const matchedMarker = featureMarkerByIndex.get(index);
+        if (!matchedMarker) return countryColor;
+        return markerColorMap.get(matchedMarker.id)?.base || countryColor;
       })
-      .attr("fill", "none")
-      .attr("stroke", (d) => {
-        if (!hoveredMarkerRaw) return countryColor;
-        return d3.geoContains(d, [hoveredMarkerRaw.lng, hoveredMarkerRaw.lat])
-          ? highlightColor
-          : countryColor;
+      .attr("stroke-opacity", (_, index) => {
+        const matchedMarker = featureMarkerByIndex.get(index);
+        if (!matchedMarker) return 0.95;
+        return markerColorMap.get(matchedMarker.id)?.alpha || 0.95;
       })
-      .attr("stroke-width", (d) => {
-        if (!hoveredMarkerRaw) return 1;
-        return d3.geoContains(d, [hoveredMarkerRaw.lng, hoveredMarkerRaw.lat]) ? 1.8 : 1;
-      })
+      .attr("stroke-width", (_, index) =>
+        activeFeatureIndex === index ? 1.9 : 1.15
+      )
       .attr("opacity", 1)
       .style("visibility", function () {
         const pathData = d3.select(this).attr("d");
@@ -296,27 +438,20 @@ export function GlobeToMapTransform() {
           : "hidden";
       });
 
-    if (hoveredMarkerRaw) {
+    if (activeFeatureIndex !== null) {
       countriesSelection
-        .filter((d) => d3.geoContains(d, [hoveredMarkerRaw.lng, hoveredMarkerRaw.lat]))
+        .filter((_, index) => index === activeFeatureIndex)
         .raise();
     }
 
-    try {
-      const sphereOutline = path({ type: "Sphere" });
-      if (sphereOutline) {
-        svg
-          .append("path")
-          .datum({ type: "Sphere" })
-          .attr("d", sphereOutline)
-          .attr("fill", "none")
-          .attr("stroke", gridColor)
-          .attr("stroke-width", 1)
-          .attr("opacity", 1);
-      }
-    } catch (error) {
-      console.log("[v0] Error creating sphere outline:", error);
-    }
+    svg
+      .append("path")
+      .datum({ type: "Sphere" })
+      .attr("d", path({ type: "Sphere" }))
+      .attr("fill", "none")
+      .attr("stroke", gridColor)
+      .attr("stroke-width", 1)
+      .attr("opacity", 1);
 
     const fitScale = Math.min(
       width > 0 ? svgRef.current.clientWidth / width : 1,
@@ -326,6 +461,7 @@ export function GlobeToMapTransform() {
     const renderHeight = height * fitScale;
     const offsetX = (svgRef.current.clientWidth - renderWidth) / 2;
     const offsetY = (svgRef.current.clientHeight - renderHeight) / 2;
+
     const projected = countryMarkers
       .map((marker) => {
         const point = projection([marker.lng, marker.lat]);
@@ -349,7 +485,18 @@ export function GlobeToMapTransform() {
       .filter(Boolean);
 
     setProjectedMarkers(projected);
-  }, [worldData, progress, rotation, translation, countryMarkers, isDark, hoveredMarkerRaw]);
+  }, [
+    worldData,
+    progress,
+    rotation,
+    translation,
+    countryMarkers,
+    worldCentroids,
+    isDark,
+    zoom,
+    markerColorMap,
+    activeMarkerSource,
+  ]);
 
   const handleAnimate = () => {
     if (isAnimating) return;
@@ -363,11 +510,8 @@ export function GlobeToMapTransform() {
     const animate = () => {
       const elapsed = Date.now() - startTime;
       const t = Math.min(elapsed / duration, 1);
-
       const eased = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
-      const currentProgress = startProgress + (endProgress - startProgress) * eased;
-
-      setProgress([currentProgress]);
+      setProgress([startProgress + (endProgress - startProgress) * eased]);
 
       if (t < 1) {
         requestAnimationFrame(animate);
@@ -382,6 +526,8 @@ export function GlobeToMapTransform() {
   const handleReset = () => {
     setRotation([0, 0]);
     setTranslation([0, 0]);
+    setZoom(1);
+    setHoveredMarkerId(null);
   };
 
   return (
@@ -394,48 +540,60 @@ export function GlobeToMapTransform() {
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
+        onMouseLeave={() => {
+          dragRef.current.active = false;
+          setHoveredMarkerId(null);
+        }}
+        onWheel={handleWheel}
       />
+
       <div className="pointer-events-none absolute inset-0 z-10">
-        {projectedMarkers.map((marker) => (
-          <button
-            key={marker.id}
-            type="button"
-            className="pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2"
-            style={{ left: marker.x, top: marker.y }}
-            onMouseEnter={() => setHoveredMarkerId(marker.id)}
-            onMouseLeave={() =>
-              setHoveredMarkerId((current) => (current === marker.id ? null : current))
-            }
-          >
-            <span className="block size-2 rounded-full bg-primary shadow-[0_0_6px_color-mix(in_oklch,var(--primary)_45%,transparent)]" />
-          </button>
-        ))}
+        {projectedMarkers.map((marker) => {
+          const colorToken = markerColorMap.get(marker.id);
+          return (
+            <div
+              key={marker.id}
+              className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
+              style={{ left: marker.x, top: marker.y }}
+            >
+              <span
+                className="block size-2.5 rotate-45 border border-background/60 shadow-sm"
+                style={{
+                  background: colorToken?.base || "var(--primary)",
+                  opacity: colorToken?.alpha || 0.85,
+                }}
+              />
+              <span
+                className="absolute left-1/2 top-1/2 size-5 -translate-x-1/2 -translate-y-1/2 rounded-full border"
+                style={{
+                  borderColor: colorToken?.base || "var(--primary)",
+                  opacity: 0.3,
+                }}
+              />
+            </div>
+          );
+        })}
       </div>
 
-      {hoveredMarker ? (
+      {activeMarker ? (
         <div
-          className="pointer-events-none absolute z-20 w-56 -translate-x-1/2 -translate-y-[calc(100%+10px)] rounded-md border border-border/70 bg-background/95 px-2.5 py-2 text-[11px] leading-tight text-foreground shadow-md backdrop-blur-sm"
-          style={{ left: hoveredMarker.x, top: hoveredMarker.y }}
+          className="pointer-events-none absolute z-20 w-64 -translate-x-1/2 -translate-y-[calc(100%+12px)] rounded-md border border-border/70 bg-background/95 px-3 py-2.5 text-xs leading-tight text-foreground shadow-md backdrop-blur-sm"
+          style={{ left: activeMarker.x, top: activeMarker.y }}
         >
-          <div className="mb-1 truncate text-xs font-semibold">{hoveredMarker.country}</div>
+          <div className="mb-1 truncate text-xs font-semibold">{activeMarker.country}</div>
           <div className="tabular-nums text-muted-foreground">
-            Average rating: {Math.round(hoveredMarker.avgRating)}
+            Average rating: {Math.round(activeMarker.avgRating)}
           </div>
           <div className="tabular-nums text-muted-foreground">
-            Average win rate:{" "}
-            {Number.isFinite(hoveredMarker.avgWinRate)
-              ? `${Math.round(hoveredMarker.avgWinRate)}%`
-              : "N/A"}
+            Average win rate: {Number.isFinite(activeMarker.avgWinRate) ? `${Math.round(activeMarker.avgWinRate)}%` : "N/A"}
           </div>
           <div className="tabular-nums text-muted-foreground">
-            Most played mode:{" "}
-            {hoveredMarker.mostPlayedMode ? `${hoveredMarker.mostPlayedMode}s` : "N/A"}
+            Most played mode: {activeMarker.mostPlayedMode ? `${activeMarker.mostPlayedMode}s` : "N/A"}
           </div>
         </div>
       ) : null}
 
-      <div className="absolute bottom-4 right-4 z-10 flex gap-2">
+      <div className="absolute bottom-4 right-4 z-20 flex gap-2">
         <Button
           onClick={handleAnimate}
           disabled={isAnimating}
@@ -446,6 +604,20 @@ export function GlobeToMapTransform() {
             : progress[0] === 0
               ? "Unroll Globe"
               : "Roll to Globe"}
+        </Button>
+        <Button
+          onClick={() => setZoom((prev) => clamp(prev + 0.12, 0.6, 2.5))}
+          variant="outline"
+          className="min-w-[42px] cursor-pointer rounded"
+        >
+          +
+        </Button>
+        <Button
+          onClick={() => setZoom((prev) => clamp(prev - 0.12, 0.6, 2.5))}
+          variant="outline"
+          className="min-w-[42px] cursor-pointer rounded"
+        >
+          -
         </Button>
         <Button
           onClick={handleReset}
