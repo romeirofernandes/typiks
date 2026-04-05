@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { flushSync } from "react-dom";
 import { Link } from "react-router-dom";
 import { Moon02Icon, Sun03Icon } from "hugeicons-react";
+import { useAuth } from "@/context/AuthContext";
 
 export default function Navbar() {
+  const { currentUser } = useAuth();
   const [theme, setTheme] = useState(
     () => localStorage.getItem("theme") || "light"
   );
@@ -95,10 +97,10 @@ export default function Navbar() {
 
             {/* Sign Up Button */}
             <Link
-              to="/signup"
+              to={currentUser ? "/dashboard" : "/signup"}
               className="bg-primary text-primary-foreground hover:bg-primary/90 normal-case flex items-center justify-center px-5 py-2 text-sm transition-colors"
             >
-              Sign Up
+              {currentUser ? "Dashboard" : "Sign Up"}
             </Link>
           </div>
         </nav>

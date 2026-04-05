@@ -91,6 +91,24 @@ export default function Friends() {
     fetchFriendsData();
   }, [fetchFriendsData]);
 
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const refresh = () => {
+      fetchFriendsData();
+    };
+
+    const timerId = window.setInterval(refresh, 8000);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+
+    return () => {
+      window.clearInterval(timerId);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [currentUser, fetchFriendsData]);
+
   const sendFriendRequest = useCallback(async (targetUsername = username) => {
     const normalizedUsername = targetUsername.trim();
     if (!currentUser || !normalizedUsername) return;

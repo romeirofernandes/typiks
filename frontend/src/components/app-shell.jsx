@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 
@@ -80,6 +80,9 @@ export default function AppShell() {
     pendingRoomInvites: 0,
     total: 0,
   });
+  const presenceSocketRef = useRef(null);
+  const presencePingTimerRef = useRef(null);
+  const presenceReconnectTimerRef = useRef(null);
 
   useEffect(() => {
     const fetchSidebarUsername = async () => {
@@ -115,20 +118,96 @@ export default function AppShell() {
     if (!currentUser) return;
 
     let isMounted = true;
-    let timerId = null;
+    let notificationTimerId = null;
+
+    const clearPresenceTimers = () => {
+      if (presencePingTimerRef.current) {
+        window.clearInterval(presencePingTimerRef.current);
+        presencePingTimerRef.current = null;
+      }
+      if (presenceReconnectTimerRef.current) {
+        window.clearTimeout(presenceReconnectTimerRef.current);
+        presenceReconnectTimerRef.current = null;
+      }
+    };
+
+    const sendPresenceMessage = (payload) => {
+      if (!presenceSocketRef.current || presenceSocketRef.current.readyState !== WebSocket.OPEN) {
+        return;
+      }
+
+      try {
+        presenceSocketRef.current.send(JSON.stringify(payload));
+      } catch (error) {
+        console.error("Failed to send presence message:", error);
+      }
+    };
+
+    const connectPresenceSocket = async () => {
+      try {
+        const idToken = await currentUser.getIdToken();
+        const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
+        const httpUrl = serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
+        const wsBaseUrl = httpUrl
+          .replace(/^http:/i, "ws:")
+          .replace(/^https:/i, "wss:")
+          .replace(/\/$/, "");
+
+        const socket = new WebSocket(new URL("/ws/presence", wsBaseUrl));
+        presenceSocketRef.current = socket;
+
+        socket.onopen = () => {
+          if (!isMounted || presenceSocketRef.current !== socket) return;
+          sendPresenceMessage({
+            type: "AUTH",
+            idToken,
+            visible: document.visibilityState === "visible",
+          });
+
+          clearPresenceTimers();
+          presencePingTimerRef.current = window.setInterval(() => {
+            sendPresenceMessage({ type: "PING" });
+          }, 15000);
+        };
+
+        socket.onclose = () => {
+          if (presenceSocketRef.current === socket) {
+            presenceSocketRef.current = null;
+          }
+          if (!isMounted) return;
+
+          clearPresenceTimers();
+          presenceReconnectTimerRef.current = window.setTimeout(() => {
+            if (!isMounted) return;
+            void connectPresenceSocket();
+          }, 2000);
+        };
+
+        socket.onerror = () => {
+          if (!isMounted) return;
+          try {
+            socket.close();
+          } catch {
+            // no-op
+          }
+        };
+      } catch (error) {
+        console.error("Failed to connect presence socket:", error);
+      }
+    };
+
+    const handleVisibility = () => {
+      sendPresenceMessage({
+        type: "VISIBILITY",
+        visible: document.visibilityState === "visible",
+      });
+    };
 
     const syncPresenceAndNotifications = async () => {
       try {
         const idToken = await currentUser.getIdToken();
         const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
         const fullUrl = serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
-
-        await fetch(`${fullUrl}/api/users/me/presence`, {
-          method: "PATCH",
-          headers: {
-            Authorization: `Bearer ${idToken}`,
-          },
-        });
 
         const notificationRes = await fetch(`${fullUrl}/api/users/me/notifications`, {
           headers: {
@@ -153,13 +232,25 @@ export default function AppShell() {
       }
     };
 
+    void connectPresenceSocket();
+    document.addEventListener("visibilitychange", handleVisibility);
     syncPresenceAndNotifications();
-    timerId = window.setInterval(syncPresenceAndNotifications, 25000);
+    notificationTimerId = window.setInterval(syncPresenceAndNotifications, 25000);
 
     return () => {
       isMounted = false;
-      if (timerId) {
-        window.clearInterval(timerId);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      if (notificationTimerId) {
+        window.clearInterval(notificationTimerId);
+      }
+      clearPresenceTimers();
+      if (presenceSocketRef.current) {
+        try {
+          presenceSocketRef.current.close();
+        } catch {
+          // no-op
+        }
+        presenceSocketRef.current = null;
       }
     };
   }, [currentUser]);

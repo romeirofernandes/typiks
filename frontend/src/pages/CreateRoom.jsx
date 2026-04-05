@@ -75,6 +75,20 @@ export default function CreateRoom() {
   const [invitingFriendIds, setInvitingFriendIds] = useState([]);
   const [pendingInviteFriendIds, setPendingInviteFriendIds] = useState([]);
   const [teamNameDrafts, setTeamNameDrafts] = useState({});
+  const [isCoarsePointer, setIsCoarsePointer] = useState(false);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(pointer: coarse)");
+    const updatePointerType = () => {
+      setIsCoarsePointer(mediaQuery.matches);
+    };
+
+    updatePointerType();
+    mediaQuery.addEventListener("change", updatePointerType);
+    return () => {
+      mediaQuery.removeEventListener("change", updatePointerType);
+    };
+  }, []);
 
   const fetchUserInfo = useCallback(async () => {
     if (!currentUser) return;
@@ -558,6 +572,12 @@ export default function CreateRoom() {
     setGameInput("");
   };
 
+  const submitCurrentWord = () => {
+    if (!isPlaying || !gameInput.trim()) return;
+    sendSocketMessage({ type: "PLAYER_INPUT", input: gameInput.trim() });
+    setGameInput("");
+  };
+
   const updateLeaderSettings = () => {
     if (!isLeader) return;
     sendSocketMessage({ type: "ROOM_UPDATE_SETTINGS", settings: settingsForm });
@@ -597,6 +617,24 @@ export default function CreateRoom() {
     if (!isInRoom || !isLeader || !isLobbyState) return;
     fetchFriendsForInvite();
   }, [fetchFriendsForInvite, isInRoom, isLeader, isLobbyState]);
+
+  useEffect(() => {
+    if (!isInRoom || !isLobbyState || !currentUser) return;
+
+    const refreshFriends = () => {
+      fetchFriendsForInvite();
+    };
+
+    const timerId = window.setInterval(refreshFriends, 8000);
+    window.addEventListener("focus", refreshFriends);
+    document.addEventListener("visibilitychange", refreshFriends);
+
+    return () => {
+      window.clearInterval(timerId);
+      window.removeEventListener("focus", refreshFriends);
+      document.removeEventListener("visibilitychange", refreshFriends);
+    };
+  }, [currentUser, fetchFriendsForInvite, isInRoom, isLobbyState]);
 
   useEffect(() => {
     if (!Array.isArray(coopTeams) || coopTeams.length === 0) {
@@ -1410,8 +1448,14 @@ export default function CreateRoom() {
                       value={gameInput}
                       onChange={(e) => setGameInput(e.target.value)}
                       onKeyDown={submitWord}
-                      className="absolute opacity-0"
-                      autoFocus
+                      className={isCoarsePointer ? "h-11 w-full rounded-md border border-border/70 bg-background px-3 text-base" : "pointer-events-none absolute opacity-0"}
+                      autoFocus={!isCoarsePointer}
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      autoComplete="off"
+                      spellCheck={false}
+                      inputMode="text"
+                      enterKeyHint="go"
                     />
 
                     <div
@@ -1428,6 +1472,16 @@ export default function CreateRoom() {
                         )}
                       </p>
                     </div>
+                    {isCoarsePointer ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="w-full"
+                        onClick={submitCurrentWord}
+                      >
+                        Submit Word
+                      </Button>
+                    ) : null}
                   </CardContent>
                 </Card>
 

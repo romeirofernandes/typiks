@@ -3,6 +3,7 @@ import {
   motion,
   AnimatePresence,
 } from "framer-motion";
+import Confetti from "react-confetti";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,7 +15,7 @@ import {
   NEXT_WORD_CONDITIONS,
   PLAYER_PREFERENCES_STORAGE_KEY,
 } from "@/lib/player-preferences";
-import { FiUser, FiClock, FiArrowLeft, FiZap, FiTrendingUp } from "react-icons/fi";
+import { FiUser, FiClock, FiArrowLeft, FiZap, FiTrendingUp, FiCheck, FiX } from "react-icons/fi";
 
 const Game = () => {
   const { currentUser } = useAuth();
@@ -37,6 +38,10 @@ const Game = () => {
   const [gameResults, setGameResults] = useState(null);
   const [modeSeconds, setModeSeconds] = useState(initialModeSeconds);
   const [activeGameId, setActiveGameId] = useState(null);
+  const [isCoarsePointer, setIsCoarsePointer] = useState(false);
+  const [rematchState, setRematchState] = useState("idle");
+  const [incomingRematch, setIncomingRematch] = useState(null);
+  const [viewport, setViewport] = useState({ width: 0, height: 0 });
   const [playerPreferences, setPlayerPreferences] = useState(() =>
     loadPlayerPreferences()
   );
@@ -97,6 +102,31 @@ const Game = () => {
           : currentUser.displayName || currentUser.email?.split("@")[0] || "Player",
     }));
   }, [currentUser]);
+
+  useEffect(() => {
+    const updateViewport = () => {
+      setViewport({ width: window.innerWidth, height: window.innerHeight });
+    };
+
+    updateViewport();
+    window.addEventListener("resize", updateViewport);
+    return () => {
+      window.removeEventListener("resize", updateViewport);
+    };
+  }, []);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(pointer: coarse)");
+    const updatePointerType = () => {
+      setIsCoarsePointer(mediaQuery.matches);
+    };
+
+    updatePointerType();
+    mediaQuery.addEventListener("change", updatePointerType);
+    return () => {
+      mediaQuery.removeEventListener("change", updatePointerType);
+    };
+  }, []);
 
   useEffect(() => {
     const syncPreferences = () => {
@@ -335,6 +365,8 @@ const Game = () => {
   const handleWebSocketMessage = (message) => {
     switch (message.type) {
       case "MATCH_FOUND":
+        setRematchState("idle");
+        setIncomingRematch(null);
         setActiveGameId(message.gameId || null);
         setModeSeconds(Number(message.modeSeconds) || modeSeconds);
         setOpponent(message.opponent);
@@ -441,6 +473,8 @@ const Game = () => {
 
       case "GAME_END":
         gameEndedRef.current = true;
+        setRematchState("idle");
+        setIncomingRematch(null);
         setActiveGameId(message.results?.gameId || activeGameId);
         setModeSeconds(Number(message.results?.modeSeconds) || modeSeconds);
         setGameResults(message.results);
@@ -456,6 +490,8 @@ const Game = () => {
 
       case "OPPONENT_DISCONNECTED":
         gameEndedRef.current = true;
+        setRematchState("idle");
+        setIncomingRematch(null);
         setInput("");
         setGameState("finished");
         {
@@ -484,6 +520,32 @@ const Game = () => {
           clearInterval(timerRef.current);
           timerRef.current = null;
         }
+        break;
+
+      case "REMATCH_PENDING":
+        setRematchState("pending");
+        break;
+
+      case "REMATCH_REQUESTED":
+        setIncomingRematch({
+          fromPlayerId: message.fromPlayerId,
+          fromUsername: message.fromUsername || "Opponent",
+        });
+        break;
+
+      case "REMATCH_DECLINED":
+        setRematchState("declined");
+        setIncomingRematch(null);
+        break;
+
+      case "REMATCH_TIMEOUT":
+        setRematchState("timeout");
+        setIncomingRematch(null);
+        break;
+
+      case "REMATCH_UNAVAILABLE":
+        setRematchState("unavailable");
+        setIncomingRematch(null);
         break;
 
       default:
@@ -608,6 +670,10 @@ const Game = () => {
     }
   };
 
+  const submitCurrentInput = () => {
+    submitWordIfCorrect(input);
+  };
+
   useEffect(() => {
     if (gameState !== "playing") {
       setInput("");
@@ -623,29 +689,24 @@ const Game = () => {
   };
 
   const handleRematch = () => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      try {
-        wsRef.current.send(JSON.stringify({ type: "LEAVE_QUEUE" }));
-      } catch {
-        // no-op
-      }
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    try {
+      wsRef.current.send(JSON.stringify({ type: "REMATCH_REQUEST" }));
+      setRematchState("pending");
+    } catch {
+      setRematchState("unavailable");
     }
+  };
 
-    cleanup();
-    gameEndedRef.current = false;
-    resultPersistedRef.current = false;
-    setConnectionError(null);
-    setOpponent(null);
-    setCountdown(null);
-    setWords([]);
-    setCurrentWordIndex(0);
-    setOpponentWordIndex(0);
-    setMyScore(0);
-    setOpponentScore(0);
-    setInput("");
-    setGameResults(null);
-    setActiveGameId(null);
-    setGameState("waiting");
+  const respondToRematch = (action) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    try {
+      wsRef.current.send(JSON.stringify({ type: "REMATCH_RESPONSE", action }));
+    } catch {
+      // no-op
+    } finally {
+      setIncomingRematch(null);
+    }
   };
 
   const formatTime = (seconds) => {
@@ -662,8 +723,24 @@ const Game = () => {
     return "text-muted-foreground";
   };
 
+  const isWinner = Boolean(
+    gameResults && (
+      (gameResults.player1?.id === currentUser?.uid && gameResults.player1?.won) ||
+      (gameResults.player2?.id === currentUser?.uid && gameResults.player2?.won)
+    )
+  );
+
   return (
     <div className="flex h-full flex-col gap-6">
+      {gameState === "finished" && isWinner && viewport.width > 0 && viewport.height > 0 ? (
+        <Confetti
+          width={viewport.width}
+          height={viewport.height}
+          numberOfPieces={220}
+          recycle={false}
+          gravity={0.2}
+        />
+      ) : null}
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}
@@ -919,8 +996,14 @@ const Game = () => {
                     value={input}
                     onChange={handleInputChange}
                     onKeyDown={handleInputSubmit}
-                    className="absolute opacity-0"
-                    autoFocus
+                    className={isCoarsePointer ? "h-11 w-full rounded-md border border-border/70 bg-background px-3 text-base" : "pointer-events-none absolute opacity-0"}
+                    autoFocus={!isCoarsePointer}
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    autoComplete="off"
+                    spellCheck={false}
+                    inputMode="text"
+                    enterKeyHint="go"
                   />
                   {/* Click area to refocus */}
                   <div
@@ -937,6 +1020,16 @@ const Game = () => {
                       )}
                     </p>
                   </div>
+                  {isCoarsePointer && !isAutoAdvanceEnabled ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="w-full"
+                      onClick={submitCurrentInput}
+                    >
+                      Submit Word
+                    </Button>
+                  ) : null}
                 </CardContent>
               </Card>
 
@@ -1050,13 +1143,51 @@ const Game = () => {
                     <FiArrowLeft className="h-4 w-4" />
                     Back to Dashboard
                   </Button>
-                  <Button variant="outline" onClick={handleRematch} className="w-full">
-                    Rematch
-                  </Button>
+                  {rematchState !== "declined" ? (
+                    <Button variant="outline" onClick={handleRematch} className="w-full" disabled={rematchState === "pending"}>
+                      {rematchState === "pending" ? "Rematch Requested..." : "Rematch"}
+                    </Button>
+                  ) : null}
+                  {rematchState === "declined" ? (
+                    <p className="text-center text-xs text-muted-foreground">Opponent declined the rematch.</p>
+                  ) : null}
+                  {rematchState === "timeout" ? (
+                    <p className="text-center text-xs text-muted-foreground">Rematch request timed out.</p>
+                  ) : null}
+                  {rematchState === "unavailable" ? (
+                    <p className="text-center text-xs text-muted-foreground">Opponent is unavailable for rematch.</p>
+                  ) : null}
                 </CardContent>
               </Card>
             </motion.div>
           )}
+
+          {gameState === "finished" && incomingRematch ? (
+            <motion.div
+              key="rematch-request"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="fixed bottom-4 right-4 z-50 w-[min(92vw,22rem)]"
+            >
+              <Card className="border-primary/40 bg-background/95 shadow-xl backdrop-blur">
+                <CardContent className="space-y-3 p-4">
+                  <p className="text-sm">
+                    <span className="font-semibold">{incomingRematch.fromUsername}</span> wants a rematch.
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button onClick={() => respondToRematch("accept")} size="sm" className="gap-1.5">
+                      <FiCheck className="h-3.5 w-3.5" />
+                      Accept
+                    </Button>
+                    <Button onClick={() => respondToRematch("reject")} size="sm" variant="outline" className="gap-1.5">
+                      <FiX className="h-3.5 w-3.5" />
+                      Decline
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          ) : null}
         </AnimatePresence>
     </div>
   );

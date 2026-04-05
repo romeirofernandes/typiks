@@ -4,6 +4,7 @@ import { generateSeed, generateWords, WORD_DIFFICULTIES } from '../utils/wordGen
 const MAX_PLAYER_INPUT_LENGTH = 32;
 const DEFAULT_MODE_SECONDS = 60;
 const ALLOWED_MODE_SECONDS = new Set([15, 30, 60, 120]);
+const REMATCH_RESPONSE_WINDOW_MS = 10_000;
 
 export class GameRoom {
 	constructor(controller, env) {
@@ -15,6 +16,8 @@ export class GameRoom {
 		this.activeGames = new Map(); // gameId -> game data
 		this.playerToGame = new Map(); // playerId -> gameId
 		this.playerToSession = new Map(); // playerId -> sessionId
+		this.rematchOffers = new Map(); // offerId -> rematch offer
+		this.playerToRematchOffer = new Map(); // playerId -> offerId
 		this.nextSessionOrder = 0;
 	}
 
@@ -118,6 +121,131 @@ export class GameRoom {
 
 		this.handlePlayerDisconnect(playerId);
 		this.playerToSession.delete(playerId);
+	}
+
+	clearPlayerRematchOffer(playerId, reason = 'unavailable') {
+		const offerId = this.playerToRematchOffer.get(playerId);
+		if (!offerId) return;
+
+		const offer = this.rematchOffers.get(offerId);
+		if (!offer) {
+			this.playerToRematchOffer.delete(playerId);
+			return;
+		}
+
+		this.clearRematchOffer(offerId, reason);
+	}
+
+	clearRematchOffer(offerId, reason = 'expired') {
+		const offer = this.rematchOffers.get(offerId);
+		if (!offer) return;
+
+		if (offer.responseTimer) {
+			clearTimeout(offer.responseTimer);
+		}
+
+		this.rematchOffers.delete(offerId);
+		this.playerToRematchOffer.delete(offer.player1.id);
+		this.playerToRematchOffer.delete(offer.player2.id);
+
+		if (offer.requesterId) {
+			this.sendToPlayer(this.playerToSession.get(offer.requesterId), {
+				type: reason === 'declined' ? 'REMATCH_DECLINED' : reason === 'timeout' ? 'REMATCH_TIMEOUT' : 'REMATCH_UNAVAILABLE',
+			});
+		}
+	}
+
+	createRematchOfferFromGame(game) {
+		const offerId = this.generateEntityId('rematch');
+		const offer = {
+			id: offerId,
+			modeSeconds: game.modeSeconds || DEFAULT_MODE_SECONDS,
+			player1: {
+				id: game.player1.id,
+				userInfo: game.player1.userInfo,
+			},
+			player2: {
+				id: game.player2.id,
+				userInfo: game.player2.userInfo,
+			},
+			requesterId: null,
+			responseTimer: null,
+		};
+
+		this.rematchOffers.set(offerId, offer);
+		this.playerToRematchOffer.set(game.player1.id, offerId);
+		this.playerToRematchOffer.set(game.player2.id, offerId);
+	}
+
+	handleRematchRequest(playerId) {
+		const offerId = this.playerToRematchOffer.get(playerId);
+		if (!offerId) return;
+
+		const offer = this.rematchOffers.get(offerId);
+		if (!offer || offer.requesterId) return;
+
+		const isPlayer1 = offer.player1.id === playerId;
+		const requester = isPlayer1 ? offer.player1 : offer.player2;
+		const responder = isPlayer1 ? offer.player2 : offer.player1;
+
+		offer.requesterId = requester.id;
+
+		this.sendToPlayer(this.playerToSession.get(requester.id), {
+			type: 'REMATCH_PENDING',
+			expiresInMs: REMATCH_RESPONSE_WINDOW_MS,
+		});
+
+		this.sendToPlayer(this.playerToSession.get(responder.id), {
+			type: 'REMATCH_REQUESTED',
+			fromPlayerId: requester.id,
+			fromUsername: requester.userInfo.username,
+			expiresInMs: REMATCH_RESPONSE_WINDOW_MS,
+		});
+
+		offer.responseTimer = setTimeout(() => {
+			this.clearRematchOffer(offerId, 'timeout');
+		}, REMATCH_RESPONSE_WINDOW_MS);
+	}
+
+	handleRematchResponse(playerId, action) {
+		const offerId = this.playerToRematchOffer.get(playerId);
+		if (!offerId) return;
+
+		const offer = this.rematchOffers.get(offerId);
+		if (!offer || !offer.requesterId) return;
+		if (action !== 'accept' && action !== 'reject') return;
+
+		const requester = offer.player1.id === offer.requesterId ? offer.player1 : offer.player2;
+		const responder = offer.player1.id === playerId ? offer.player1 : offer.player2;
+		if (!responder || responder.id === requester.id) return;
+
+		if (action === 'reject') {
+			this.clearRematchOffer(offerId, 'declined');
+			return;
+		}
+
+		const player1SessionId = this.playerToSession.get(offer.player1.id);
+		const player2SessionId = this.playerToSession.get(offer.player2.id);
+		if (!player1SessionId || !player2SessionId) {
+			this.clearRematchOffer(offerId, 'unavailable');
+			return;
+		}
+
+		if (offer.responseTimer) {
+			clearTimeout(offer.responseTimer);
+		}
+
+		this.rematchOffers.delete(offerId);
+		this.playerToRematchOffer.delete(offer.player1.id);
+		this.playerToRematchOffer.delete(offer.player2.id);
+
+		this.createGame(
+			offer.player1.id,
+			{ sessionId: player1SessionId, userInfo: offer.player1.userInfo, modeSeconds: offer.modeSeconds },
+			offer.player2.id,
+			{ sessionId: player2SessionId, userInfo: offer.player2.userInfo, modeSeconds: offer.modeSeconds },
+			offer.modeSeconds
+		);
 	}
 
 	closeSession(sessionId, code = 1000, reason = 'Session replaced') {
@@ -260,6 +388,18 @@ export class GameRoom {
 						}
 						break;
 
+					case 'REMATCH_REQUEST':
+						if (playerId) {
+							this.handleRematchRequest(playerId);
+						}
+						break;
+
+					case 'REMATCH_RESPONSE':
+						if (playerId) {
+							this.handleRematchResponse(playerId, message.action);
+						}
+						break;
+
 					default:
 						break;
 				}
@@ -283,6 +423,7 @@ export class GameRoom {
 	}
 
 	addWaitingPlayer(playerId, sessionId, userInfo, modeSeconds = DEFAULT_MODE_SECONDS) {
+		this.clearPlayerRematchOffer(playerId);
 		this.removeWaitingPlayer(playerId);
 
 		const queue = this.getQueueForMode(modeSeconds);
@@ -324,6 +465,9 @@ export class GameRoom {
 	}
 
 	createGame(player1Id, player1Data, player2Id, player2Data, modeSeconds = DEFAULT_MODE_SECONDS) {
+		this.clearPlayerRematchOffer(player1Id);
+		this.clearPlayerRematchOffer(player2Id);
+
 		const gameId = this.generateEntityId('game');
 		const wordSeed = generateSeed();
 		const difficulty = WORD_DIFFICULTIES.medium;
@@ -552,9 +696,14 @@ export class GameRoom {
 		this.playerToGame.delete(game.player1.id);
 		this.playerToGame.delete(game.player2.id);
 		this.activeGames.delete(gameId);
+
+		if (reason !== 'opponent_disconnected') {
+			this.createRematchOfferFromGame(game);
+		}
 	}
 
 	handlePlayerDisconnect(playerId) {
+		this.clearPlayerRematchOffer(playerId);
 		this.removeWaitingPlayer(playerId);
 
 		const gameId = this.playerToGame.get(playerId);

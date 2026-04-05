@@ -92,6 +92,11 @@ async function buildOnlineMap(db, userIds) {
 	const ids = Array.from(new Set((userIds || []).filter(Boolean)));
 	if (ids.length === 0) return new Map();
 
+	return buildOnlineMapFromLastSeen(db, ids);
+}
+
+async function buildOnlineMapFromLastSeen(db, ids) {
+
 	const rows = await db
 		.select({ id: users.id, lastSeenAt: users.lastSeenAt })
 		.from(users)
@@ -109,6 +114,49 @@ async function buildOnlineMap(db, userIds) {
 	}
 
 	return map;
+}
+
+async function buildOnlineMapFromPresenceHub(env, userIds) {
+	if (!env?.PRESENCE_HUB) return null;
+
+	const ids = Array.from(new Set((userIds || []).filter(Boolean)));
+	if (ids.length === 0) return new Map();
+
+	try {
+		const id = env.PRESENCE_HUB.idFromName('global-presence-hub');
+		const hub = env.PRESENCE_HUB.get(id);
+		const response = await hub.fetch('https://presence.internal/online', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({ userIds: ids }),
+		});
+
+		if (!response.ok) {
+			return null;
+		}
+
+		const payload = await response.json().catch(() => ({}));
+		const onlineMap = payload?.onlineMap && typeof payload.onlineMap === 'object'
+			? payload.onlineMap
+			: {};
+
+		const map = new Map();
+		for (const uid of ids) {
+			map.set(uid, Boolean(onlineMap[uid]));
+		}
+		return map;
+	} catch (error) {
+		console.error('Presence hub lookup failed:', error);
+		return null;
+	}
+}
+
+async function buildOnlineMapWithPresence(env, db, userIds) {
+	const presenceMap = await buildOnlineMapFromPresenceHub(env, userIds);
+	if (presenceMap) return presenceMap;
+	return buildOnlineMap(db, userIds);
 }
 
 async function fetchLocationCountries() {
@@ -1269,7 +1317,8 @@ userRouter.get('/me/friends', requireAuth, async (c) => {
 		]);
 
 		const mergedFriends = [...asUserA, ...asUserB];
-		const onlineMap = await buildOnlineMap(
+		const onlineMap = await buildOnlineMapWithPresence(
+			c.env,
 			db,
 			mergedFriends.map((friend) => friend.id)
 		);
@@ -1340,7 +1389,7 @@ userRouter.get('/me/friend-requests', requireAuth, async (c) => {
 				.orderBy(desc(friendRequests.createdAt)),
 		]);
 
-		const onlineMap = await buildOnlineMap(db, [
+		const onlineMap = await buildOnlineMapWithPresence(c.env, db, [
 			...incoming.map((row) => row.senderId),
 			...outgoing.map((row) => row.receiverId),
 		]);
@@ -1710,7 +1759,11 @@ userRouter.get('/me/room-invites', requireAuth, async (c) => {
 			.where(eq(roomInvites.inviteeId, uid))
 			.orderBy(desc(roomInvites.createdAt));
 
-		const onlineMap = await buildOnlineMap(db, invites.map((invite) => invite.inviterId));
+		const onlineMap = await buildOnlineMapWithPresence(
+			c.env,
+			db,
+			invites.map((invite) => invite.inviterId)
+		);
 
 		return c.json({
 			invites: invites.map((invite) => ({
@@ -1766,7 +1819,7 @@ userRouter.post('/me/room-invites', requireAuth, async (c) => {
 			return c.json({ error: 'You can only invite friends' }, 403);
 		}
 
-		const onlineMap = await buildOnlineMap(db, [inviteeId]);
+		const onlineMap = await buildOnlineMapWithPresence(c.env, db, [inviteeId]);
 		if (!onlineMap.get(inviteeId)) {
 			return c.json({ error: 'Friend is offline' }, 409);
 		}

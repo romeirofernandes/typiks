@@ -5,6 +5,7 @@ import { ArrowLeft01Icon, Moon02Icon, Sun03Icon } from "hugeicons-react";
 import { Button } from "@/components/ui/button";
 import { flushSync } from "react-dom";
 import BackgroundGrid from "@/components/landing/BackgroundGrid";
+import TestCredentialsDock from "@/components/auth/TestCredentialsDock";
 
 const SignUp = () => {
   const navigate = useNavigate();
@@ -73,6 +74,7 @@ const SignUp = () => {
           <SignUpForm />
         </div>
     </div>
+    <TestCredentialsDock />
     </div>
     </BackgroundGrid>
   );

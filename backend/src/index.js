@@ -80,7 +80,20 @@ app.get('/ws/room/:roomCode', async (c) => {
 	return privateRoom.fetch(c.req.raw);
 });
 
+app.get('/ws/presence', async (c) => {
+	const upgradeHeader = c.req.header('upgrade');
+	if (upgradeHeader !== 'websocket') {
+		return c.text('Expected websocket', 400);
+	}
+
+	const id = c.env.PRESENCE_HUB.idFromName('global-presence-hub');
+	const presenceHub = c.env.PRESENCE_HUB.get(id);
+
+	return presenceHub.fetch(c.req.raw);
+});
+
 export default app;
 
 export { GameRoom } from './durable-objects/GameRoom.js';
 export { PrivateRoom } from './durable-objects/PrivateRoom.js';
+export { PresenceHub } from './durable-objects/PresenceHub.js';

@@ -64,6 +64,10 @@
 			{
 				"name": "PRIVATE_ROOM",
 				"class_name": "PrivateRoom"
+			},
+			{
+				"name": "PRESENCE_HUB",
+				"class_name": "PresenceHub"
 			}
 		]
 	},
@@ -75,6 +79,10 @@
 		{
 			"tag": "v2",
 			"new_sqlite_classes": ["PrivateRoom"]
+		},
+		{
+			"tag": "v3",
+			"new_sqlite_classes": ["PresenceHub"]
 		}
 	]
 }

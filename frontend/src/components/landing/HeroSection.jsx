@@ -1,8 +1,10 @@
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Keyboard } from "@/components/ui/keyboard";
+import { useAuth } from "@/context/AuthContext";
 
 export default function HeroSection() {
+  const { currentUser } = useAuth();
   const scrollToTestimonials = (e) => {
     e?.preventDefault?.();
     const el = document.getElementById("testimonials");
@@ -25,7 +27,7 @@ export default function HeroSection() {
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4">
           <Button asChild variant="default" size="lg" className="w-full sm:w-auto">
-            <Link to="/signup">Play Now</Link>
+            <Link to={currentUser ? "/dashboard" : "/signup"}>Play Now</Link>
           </Button>
           <Button
             variant="secondary"
