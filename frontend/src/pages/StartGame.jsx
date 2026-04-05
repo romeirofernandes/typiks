@@ -86,12 +86,12 @@ export default function StartGame() {
         </p>
       </div>
 
-      <div className="mt-4 grid min-h-0 flex-1 auto-rows-fr grid-cols-1 gap-3 lg:grid-cols-2">
+      <div className="mt-4 grid min-h-0 flex-1 auto-rows-fr grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-2">
         {loadingStats
           ? RANKED_MODES.map((modeSeconds, index) => (
               <article
                 key={`skeleton-${modeSeconds}`}
-                className="relative flex h-full min-h-[220px] flex-col rounded-md border border-border/70 bg-card/45 p-4"
+                className="relative flex h-full min-h-[200px] flex-col rounded-md border border-border/70 bg-card/45 p-3 sm:min-h-[220px] sm:p-4"
               >
                 <div className="flex items-center justify-between">
                   <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
@@ -127,7 +127,7 @@ export default function StartGame() {
           ? featuredModes.map((mode, index) => (
           <article
             key={mode.modeSeconds}
-            className="relative flex h-full min-h-[220px] flex-col rounded-md border border-border/70 bg-card/45 p-4"
+            className="relative flex h-full min-h-[200px] flex-col rounded-md border border-border/70 bg-card/45 p-3 sm:min-h-[220px] sm:p-4"
           >
             <div className="flex items-center justify-between">
               <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
@@ -138,7 +138,7 @@ export default function StartGame() {
               </span>
             </div>
 
-            <h2 className="mt-3 text-lg font-semibold text-foreground">{mode.title}</h2>
+            <h2 className="mt-2 text-base font-semibold text-foreground sm:mt-3 sm:text-lg">{mode.title}</h2>
 
             <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
               <div className="rounded border border-border/60 bg-background/60 p-2.5">
@@ -158,7 +158,7 @@ export default function StartGame() {
 
               <Button
                 size="sm"
-                className="h-11 w-full gap-2 text-sm"
+                className="h-10 w-full gap-2 text-xs sm:h-11 sm:text-sm"
                 onClick={() =>
                   navigate("/game", {
                     state: {

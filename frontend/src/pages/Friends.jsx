@@ -94,6 +94,88 @@ export default function Friends() {
   useEffect(() => {
     if (!currentUser) return;
 
+    const knownIds = [
+      ...friends.map((friend) => friend.id),
+      ...incomingRequests.map((request) => request.senderId),
+      ...outgoingRequests.map((request) => request.receiverId),
+      ...roomInvites.map((invite) => invite.inviterId),
+    ].filter(Boolean);
+
+    if (knownIds.length > 0) {
+      window.dispatchEvent(
+        new CustomEvent("typiks:presence-subscribe", {
+          detail: { userIds: knownIds },
+        })
+      );
+    }
+
+    const handlePresenceUpdate = (event) => {
+      const userId = event?.detail?.userId;
+      const online = Boolean(event?.detail?.online);
+      if (!userId) return;
+
+      setFriends((prev) => prev.map((friend) => (friend.id === userId ? { ...friend, online } : friend)));
+      setIncomingRequests((prev) =>
+        prev.map((request) =>
+          request.senderId === userId ? { ...request, senderOnline: online } : request
+        )
+      );
+      setOutgoingRequests((prev) =>
+        prev.map((request) =>
+          request.receiverId === userId ? { ...request, receiverOnline: online } : request
+        )
+      );
+      setRoomInvites((prev) =>
+        prev.map((invite) =>
+          invite.inviterId === userId ? { ...invite, inviterOnline: online } : invite
+        )
+      );
+    };
+
+    const handlePresenceSnapshot = (event) => {
+      const onlineMap = event?.detail?.onlineMap;
+      if (!onlineMap || typeof onlineMap !== "object") return;
+
+      setFriends((prev) =>
+        prev.map((friend) =>
+          friend.id in onlineMap ? { ...friend, online: Boolean(onlineMap[friend.id]) } : friend
+        )
+      );
+      setIncomingRequests((prev) =>
+        prev.map((request) =>
+          request.senderId in onlineMap
+            ? { ...request, senderOnline: Boolean(onlineMap[request.senderId]) }
+            : request
+        )
+      );
+      setOutgoingRequests((prev) =>
+        prev.map((request) =>
+          request.receiverId in onlineMap
+            ? { ...request, receiverOnline: Boolean(onlineMap[request.receiverId]) }
+            : request
+        )
+      );
+      setRoomInvites((prev) =>
+        prev.map((invite) =>
+          invite.inviterId in onlineMap
+            ? { ...invite, inviterOnline: Boolean(onlineMap[invite.inviterId]) }
+            : invite
+        )
+      );
+    };
+
+    window.addEventListener("typiks:presence-update", handlePresenceUpdate);
+    window.addEventListener("typiks:presence-snapshot", handlePresenceSnapshot);
+
+    return () => {
+      window.removeEventListener("typiks:presence-update", handlePresenceUpdate);
+      window.removeEventListener("typiks:presence-snapshot", handlePresenceSnapshot);
+    };
+  }, [currentUser, friends, incomingRequests, outgoingRequests, roomInvites]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+
     const refresh = () => {
       fetchFriendsData();
     };
@@ -612,9 +694,6 @@ export default function Friends() {
         </CardContent>
       </Card>
 
-      {fetching ? (
-        <p className="text-right text-xs text-muted-foreground">Syncing...</p>
-      ) : null}
     </div>
   );
 }

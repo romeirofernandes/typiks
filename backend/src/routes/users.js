@@ -159,6 +159,24 @@ async function buildOnlineMapWithPresence(env, db, userIds) {
 	return buildOnlineMap(db, userIds);
 }
 
+async function notifyUser(env, userId, payload = {}) {
+	if (!env?.PRESENCE_HUB || !userId) return;
+
+	try {
+		const id = env.PRESENCE_HUB.idFromName('global-presence-hub');
+		const hub = env.PRESENCE_HUB.get(id);
+		await hub.fetch('https://presence.internal/notify', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({ userId, payload }),
+		});
+	} catch (error) {
+		console.error('Failed to push realtime notification:', error);
+	}
+}
+
 async function fetchLocationCountries() {
 	const now = Date.now();
 	if (
@@ -1650,6 +1668,8 @@ userRouter.post('/me/friend-requests', requireAuth, async (c) => {
 			respondedAt: null,
 		});
 
+		await notifyUser(c.env, receiverId, { kind: 'friend-request' });
+
 		return c.json({
 			message: 'Friend request sent',
 			request: {
@@ -1851,6 +1871,8 @@ userRouter.post('/me/room-invites', requireAuth, async (c) => {
 			createdAt: new Date(),
 			respondedAt: null,
 		});
+
+		await notifyUser(c.env, inviteeId, { kind: 'room-invite' });
 
 		return c.json({
 			message: 'Room invite sent',

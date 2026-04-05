@@ -23,7 +23,7 @@ import {
   UserIcon,
   DashboardSquare01Icon
 } from "hugeicons-react";
-import { DoorOpen, Users } from "lucide-react";
+import { Bot, DoorOpen, Users } from "lucide-react";
 
 function SidebarNavButton({ icon, label, active, expanded, onClick, badgeCount = 0 }) {
   const Icon = icon;
@@ -83,6 +83,7 @@ export default function AppShell() {
   const presenceSocketRef = useRef(null);
   const presencePingTimerRef = useRef(null);
   const presenceReconnectTimerRef = useRef(null);
+  const presenceSubscribersRef = useRef(new Set());
 
   useEffect(() => {
     const fetchSidebarUsername = async () => {
@@ -143,6 +144,47 @@ export default function AppShell() {
       }
     };
 
+    const broadcastPresenceUpdate = (userId, online) => {
+      if (!userId) return;
+      window.dispatchEvent(
+        new CustomEvent("typiks:presence-update", {
+          detail: { userId, online: Boolean(online) },
+        })
+      );
+    };
+
+    const broadcastPresenceSnapshot = (onlineMap) => {
+      if (!onlineMap || typeof onlineMap !== "object") return;
+      window.dispatchEvent(
+        new CustomEvent("typiks:presence-snapshot", {
+          detail: { onlineMap },
+        })
+      );
+    };
+
+    const pushPresenceSubscription = () => {
+      sendPresenceMessage({
+        type: "SUBSCRIBE",
+        userIds: Array.from(presenceSubscribersRef.current),
+      });
+    };
+
+    const handlePresenceSubscribeEvent = (event) => {
+      const ids = Array.isArray(event?.detail?.userIds) ? event.detail.userIds : [];
+      let changed = false;
+
+      for (const id of ids) {
+        if (typeof id !== "string" || !id) continue;
+        if (presenceSubscribersRef.current.has(id)) continue;
+        presenceSubscribersRef.current.add(id);
+        changed = true;
+      }
+
+      if (changed) {
+        pushPresenceSubscription();
+      }
+    };
+
     const connectPresenceSocket = async () => {
       try {
         const idToken = await currentUser.getIdToken();
@@ -163,6 +205,7 @@ export default function AppShell() {
             idToken,
             visible: document.visibilityState === "visible",
           });
+          pushPresenceSubscription();
 
           clearPresenceTimers();
           presencePingTimerRef.current = window.setInterval(() => {
@@ -187,6 +230,29 @@ export default function AppShell() {
           if (!isMounted) return;
           try {
             socket.close();
+          } catch {
+            // no-op
+          }
+        };
+
+        socket.onmessage = (event) => {
+          try {
+            const payload = JSON.parse(event.data);
+            if (!payload || typeof payload.type !== "string") return;
+
+            if (payload.type === "PRESENCE_UPDATE") {
+              broadcastPresenceUpdate(payload.userId, payload.online);
+              return;
+            }
+
+            if (payload.type === "PRESENCE_SNAPSHOT") {
+              broadcastPresenceSnapshot(payload.onlineMap);
+              return;
+            }
+
+            if (payload.type === "NOTIFICATION_POKE") {
+              void syncPresenceAndNotifications();
+            }
           } catch {
             // no-op
           }
@@ -234,12 +300,14 @@ export default function AppShell() {
 
     void connectPresenceSocket();
     document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("typiks:presence-subscribe", handlePresenceSubscribeEvent);
     syncPresenceAndNotifications();
     notificationTimerId = window.setInterval(syncPresenceAndNotifications, 25000);
 
     return () => {
       isMounted = false;
       document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("typiks:presence-subscribe", handlePresenceSubscribeEvent);
       if (notificationTimerId) {
         window.clearInterval(notificationTimerId);
       }
@@ -279,6 +347,13 @@ export default function AppShell() {
           location.pathname === "/game" ||
           location.pathname === "/game/waiting",
         onClick: () => navigate("/start-game"),
+      },
+      {
+        key: "bot-mode",
+        label: "Bot Mode",
+        icon: Bot,
+        active: location.pathname === "/bot-mode",
+        onClick: () => navigate("/bot-mode"),
       },
       {
         key: "create-room",

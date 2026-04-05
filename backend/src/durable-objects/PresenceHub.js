@@ -9,6 +9,8 @@ export class PresenceHub {
 		this.env = env;
 		this.sessions = new Map();
 		this.userSessions = new Map();
+		this.sessionSubscriptions = new Map();
+		this.onlineStateByUser = new Map();
 	}
 
 	async fetch(request) {
@@ -37,6 +39,34 @@ export class PresenceHub {
 			return Response.json({ onlineMap });
 		}
 
+		if (url.pathname === '/notify' && request.method === 'POST') {
+			const body = await request.json().catch(() => ({}));
+			const userId = typeof body?.userId === 'string' ? body.userId : '';
+			const payload = body?.payload && typeof body.payload === 'object' ? body.payload : {};
+
+			if (!userId) {
+				return Response.json({ ok: false, error: 'userId is required' }, { status: 400 });
+			}
+
+			const sessionIds = this.userSessions.get(userId);
+			if (!sessionIds || sessionIds.size === 0) {
+				return Response.json({ ok: true, delivered: 0 });
+			}
+
+			let delivered = 0;
+			for (const sessionId of sessionIds) {
+				const session = this.sessions.get(sessionId);
+				if (!session || !this.isSocketOpen(session.webSocket)) continue;
+				this.sendToSession(sessionId, {
+					type: 'NOTIFICATION_POKE',
+					...payload,
+				});
+				delivered += 1;
+			}
+
+			return Response.json({ ok: true, delivered });
+		}
+
 		return new Response('Not found', { status: 404 });
 	}
 
@@ -50,6 +80,7 @@ export class PresenceHub {
 			visible: false,
 			lastPingAt: Date.now(),
 		});
+		this.sessionSubscriptions.set(sessionId, new Set());
 
 		void this.ensureAlarm();
 
@@ -76,10 +107,12 @@ export class PresenceHub {
 						this.bindSessionToUser(sessionId, userId);
 						session.visible = Boolean(payload?.visible);
 						session.lastPingAt = Date.now();
+						this.updateAndBroadcastPresence(userId);
 
 						this.sendToSession(sessionId, {
 							type: 'PRESENCE_AUTH_OK',
 						});
+						this.sendSnapshotToSession(sessionId);
 					} catch (error) {
 						this.sendToSession(sessionId, {
 							type: 'PRESENCE_AUTH_ERROR',
@@ -93,11 +126,26 @@ export class PresenceHub {
 				case 'VISIBILITY': {
 					session.visible = Boolean(payload?.visible);
 					session.lastPingAt = Date.now();
+					if (session.userId) {
+						this.updateAndBroadcastPresence(session.userId);
+					}
 					break;
 				}
 
 				case 'PING': {
 					session.lastPingAt = Date.now();
+					if (session.userId) {
+						this.updateAndBroadcastPresence(session.userId);
+					}
+					break;
+				}
+
+				case 'SUBSCRIBE': {
+					const userIds = Array.isArray(payload?.userIds)
+						? payload.userIds.filter((id) => typeof id === 'string' && id.length > 0)
+						: [];
+					this.sessionSubscriptions.set(sessionId, new Set(userIds));
+					this.sendSnapshotToSession(sessionId);
 					break;
 				}
 
@@ -155,8 +203,47 @@ export class PresenceHub {
 		if (!session) return;
 
 		this.sessions.delete(sessionId);
+		this.sessionSubscriptions.delete(sessionId);
 		if (session.userId) {
 			this.detachSessionFromUser(sessionId, session.userId);
+			this.updateAndBroadcastPresence(session.userId);
+		}
+	}
+
+	sendSnapshotToSession(sessionId) {
+		const subscriptions = this.sessionSubscriptions.get(sessionId);
+		if (!subscriptions || subscriptions.size === 0) {
+			this.sendToSession(sessionId, { type: 'PRESENCE_SNAPSHOT', onlineMap: {} });
+			return;
+		}
+
+		const now = Date.now();
+		const onlineMap = {};
+		for (const userId of subscriptions) {
+			onlineMap[userId] = this.isUserOnline(userId, now);
+		}
+
+		this.sendToSession(sessionId, {
+			type: 'PRESENCE_SNAPSHOT',
+			onlineMap,
+		});
+	}
+
+	updateAndBroadcastPresence(userId) {
+		if (!userId) return;
+
+		const nextOnline = this.isUserOnline(userId, Date.now());
+		const previousOnline = this.onlineStateByUser.get(userId);
+		if (previousOnline === nextOnline) return;
+
+		this.onlineStateByUser.set(userId, nextOnline);
+		for (const [sessionId, subscriptions] of this.sessionSubscriptions.entries()) {
+			if (!subscriptions?.has(userId)) continue;
+			this.sendToSession(sessionId, {
+				type: 'PRESENCE_UPDATE',
+				userId,
+				online: nextOnline,
+			});
 		}
 	}
 
@@ -221,7 +308,11 @@ export class PresenceHub {
 		const now = Date.now();
 		for (const [sessionId, session] of this.sessions.entries()) {
 			if (now - session.lastPingAt > PRESENCE_TIMEOUT_MS) {
+				const userId = session.userId;
 				this.closeSession(sessionId, 1001, 'Presence timeout');
+				if (userId) {
+					this.updateAndBroadcastPresence(userId);
+				}
 			}
 		}
 

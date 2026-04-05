@@ -619,6 +619,48 @@ export default function CreateRoom() {
   }, [fetchFriendsForInvite, isInRoom, isLeader, isLobbyState]);
 
   useEffect(() => {
+    if (!isInRoom || !isLobbyState || friendsForInvite.length === 0) return;
+
+    const userIds = friendsForInvite.map((friend) => friend.id).filter(Boolean);
+    if (userIds.length > 0) {
+      window.dispatchEvent(
+        new CustomEvent("typiks:presence-subscribe", {
+          detail: { userIds },
+        })
+      );
+    }
+
+    const handlePresenceUpdate = (event) => {
+      const userId = event?.detail?.userId;
+      const online = Boolean(event?.detail?.online);
+      if (!userId) return;
+
+      setFriendsForInvite((prev) =>
+        prev.map((friend) => (friend.id === userId ? { ...friend, online } : friend))
+      );
+    };
+
+    const handlePresenceSnapshot = (event) => {
+      const onlineMap = event?.detail?.onlineMap;
+      if (!onlineMap || typeof onlineMap !== "object") return;
+
+      setFriendsForInvite((prev) =>
+        prev.map((friend) =>
+          friend.id in onlineMap ? { ...friend, online: Boolean(onlineMap[friend.id]) } : friend
+        )
+      );
+    };
+
+    window.addEventListener("typiks:presence-update", handlePresenceUpdate);
+    window.addEventListener("typiks:presence-snapshot", handlePresenceSnapshot);
+
+    return () => {
+      window.removeEventListener("typiks:presence-update", handlePresenceUpdate);
+      window.removeEventListener("typiks:presence-snapshot", handlePresenceSnapshot);
+    };
+  }, [friendsForInvite, isInRoom, isLobbyState]);
+
+  useEffect(() => {
     if (!isInRoom || !isLobbyState || !currentUser) return;
 
     const refreshFriends = () => {
