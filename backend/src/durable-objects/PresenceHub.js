@@ -254,7 +254,6 @@ export class PresenceHub {
 		for (const sessionId of sessionIds) {
 			const session = this.sessions.get(sessionId);
 			if (!session) continue;
-			if (!session.visible) continue;
 			if (now - session.lastPingAt > PRESENCE_TIMEOUT_MS) continue;
 			if (!this.isSocketOpen(session.webSocket)) continue;
 			return true;

@@ -97,6 +97,11 @@ const Leaderboard = () => {
     [topThree]
   );
 
+  const mobilePodium = useMemo(
+    () => [1, 2, 3].map((rank) => topThree.find((player) => player.rank === rank)).filter(Boolean),
+    [topThree]
+  );
+
   const summary = useMemo(() => {
     if (!leaderboard.length) {
       return { players: 0, averageRating: 0, topWinRate: 0 };
@@ -192,17 +197,46 @@ const Leaderboard = () => {
           </div>
 
           {podium.length > 0 ? (
-            <div className="grid gap-2 sm:grid-cols-3 sm:items-end">
-              {podium.map((player, index) => (
+            <>
+              <div className="grid gap-2 sm:hidden">
+                {mobilePodium.map((player, index) => (
+                  <motion.div
+                    key={`mobile-${player.username}`}
+                    initial={{ opacity: 0, y: reduceMotion ? 0 : 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.25, delay: index * 0.04 }}
+                    className="rounded-md border border-border/70 bg-card p-3"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        {getRankIcon(player.rank)}
+                        <p className="text-sm font-medium">#{player.rank}</p>
+                      </div>
+                      <span className="text-xs text-muted-foreground tabular-nums">{player.winRate}% WR</span>
+                    </div>
+                    <p className="mt-2 truncate text-lg font-semibold">{player.username}</p>
+                    <p className={`mt-1 text-sm font-medium tabular-nums ${getRatingColor(player.rating)}`}>
+                      {player.rating} rating
+                    </p>
+                  </motion.div>
+                ))}
+              </div>
+
+              <div className="hidden gap-2 sm:grid sm:grid-cols-3 sm:items-end">
+                {podium.map((player, index) => (
                 <motion.div
                   key={player.username}
                   initial={{ opacity: 0, y: reduceMotion ? 0 : 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.25, delay: index * 0.04 }}
-                  className={`rounded-md border border-border/70 bg-card p-3 ${
-                    player.rank === 1 ? "sm:min-h-[172px]" : player.rank === 2 ? "sm:min-h-[148px]" : "sm:min-h-[132px]"
+                  className={`relative overflow-hidden rounded-md border border-border/70 bg-card p-3 shadow-sm ${
+                    player.rank === 1 ? "sm:min-h-[176px]" : player.rank === 2 ? "sm:min-h-[150px]" : "sm:min-h-[136px]"
                   }`}
                 >
+                  <div className={`absolute inset-x-0 bottom-0 h-2 ${
+                    player.rank === 1 ? "bg-chart-1/75" : player.rank === 2 ? "bg-chart-2/70" : "bg-chart-3/70"
+                  }`} />
+                  <div className="absolute inset-x-3 bottom-2 h-1 rounded-full bg-foreground/5" />
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       {getRankIcon(player.rank)}
@@ -221,8 +255,9 @@ const Leaderboard = () => {
                     {player.rating} rating
                   </p>
                 </motion.div>
-              ))}
-            </div>
+                ))}
+              </div>
+            </>
           ) : null}
         </motion.div>
 

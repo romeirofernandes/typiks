@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FiClock } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 const RANKED_MODES = [15, 30, 60, 120];
 
@@ -19,6 +19,9 @@ export default function StartGame() {
   const navigate = useNavigate();
   const [loadingStats, setLoadingStats] = useState(true);
   const [modeStats, setModeStats] = useState([]);
+  const [isFastCardHovered, setIsFastCardHovered] = useState(false);
+  const lightFastVideoRef = useRef(null);
+  const darkFastVideoRef = useRef(null);
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -76,6 +79,34 @@ export default function StartGame() {
     [modeStats]
   );
 
+  useEffect(() => {
+    const lightVideo = lightFastVideoRef.current;
+    const darkVideo = darkFastVideoRef.current;
+    const isDarkTheme = document.documentElement.classList.contains("dark");
+    const activeVideo = isDarkTheme ? darkVideo : lightVideo;
+    const inactiveVideo = isDarkTheme ? lightVideo : darkVideo;
+
+    if (inactiveVideo) {
+      inactiveVideo.pause();
+    }
+
+    if (!activeVideo) return;
+
+    activeVideo.defaultPlaybackRate = 1.04;
+    activeVideo.playbackRate = 1.04;
+
+    if (isFastCardHovered) {
+      const playPromise = activeVideo.play();
+      if (playPromise && typeof playPromise.catch === "function") {
+        playPromise.catch(() => {
+          // ignore autoplay interruptions
+        });
+      }
+    } else {
+      activeVideo.pause();
+    }
+  }, [isFastCardHovered]);
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="border-b border-border/70 pb-4">
@@ -127,8 +158,39 @@ export default function StartGame() {
           ? featuredModes.map((mode, index) => (
           <article
             key={mode.modeSeconds}
-            className="relative flex h-full min-h-[200px] flex-col rounded-md border border-border/70 bg-card/45 p-3 sm:min-h-[220px] sm:p-4"
+            className={`relative flex h-full min-h-[200px] flex-col overflow-hidden rounded-md border border-border/70 p-3 sm:min-h-[220px] sm:p-4 ${
+              mode.modeSeconds === 15 ? "bg-card/20" : "bg-card/45"
+            }`}
+            onPointerEnter={mode.modeSeconds === 15 ? () => setIsFastCardHovered(true) : undefined}
+            onPointerLeave={mode.modeSeconds === 15 ? () => setIsFastCardHovered(false) : undefined}
           >
+            {mode.modeSeconds === 15 ? (
+              <>
+                <video
+                  ref={lightFastVideoRef}
+                  muted
+                  loop
+                  playsInline
+                  preload="auto"
+                  className="pointer-events-none absolute inset-0 h-full w-full object-cover dark:hidden"
+                >
+                  <source src="/light-15.mp4" type="video/mp4" />
+                </video>
+                <video
+                  ref={darkFastVideoRef}
+                  muted
+                  loop
+                  playsInline
+                  preload="auto"
+                  className="pointer-events-none absolute inset-0 hidden h-full w-full object-cover dark:block"
+                >
+                  <source src="/dark-15.mp4" type="video/mp4" />
+                </video>
+                <div className="pointer-events-none absolute inset-0 bg-background/55 backdrop-blur-[1px] dark:bg-background/62" />
+              </>
+            ) : null}
+
+            <div className="relative z-10 flex h-full min-h-0 flex-col">
             <div className="flex items-center justify-between">
               <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
                 Mode {index + 1}
@@ -171,6 +233,7 @@ export default function StartGame() {
                 <FiClock size={16} className="shrink-0" />
                 Queue {mode.modeSeconds}s
               </Button>
+            </div>
             </div>
           </article>
         ))

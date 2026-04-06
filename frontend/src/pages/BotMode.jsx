@@ -12,6 +12,7 @@ import {
   NEXT_WORD_CONDITIONS,
   PLAYER_PREFERENCES_STORAGE_KEY,
 } from "@/lib/player-preferences";
+import wordsJson from "../../../words.json";
 import { FiUser, FiClock, FiArrowLeft, FiZap, FiCpu } from "react-icons/fi";
 import { InfoIcon } from "lucide-react";
 
@@ -22,19 +23,43 @@ const BOT_DIFFICULTIES = {
 };
 
 const MODE_SECONDS = [15, 30, 60, 120];
-const WORD_BANK = [
-  "alpha", "rhythm", "focus", "typing", "battle", "keyboard", "vector", "signal", "pixel", "velocity",
-  "clarity", "syntax", "socket", "worker", "status", "fusion", "rocket", "anchor", "canvas", "module",
-  "urgent", "friend", "invite", "ranked", "motion", "stream", "logic", "timing", "tensor", "random",
-  "fusion", "border", "cursor", "prompt", "cloud", "thread", "format", "engine", "native", "winner",
-];
+const WORD_BANK = Array.from(
+  new Set(
+    (Array.isArray(wordsJson) ? wordsJson : [])
+      .filter((word) => typeof word === "string")
+      .map((word) => word.trim().toLowerCase())
+      .filter((word) => word.length >= 3 && word.length <= 12)
+  )
+);
 
 function randomRange(min, max) {
   return Math.random() * (max - min) + min;
 }
 
 function pickWords(count) {
-  return Array.from({ length: count }, () => WORD_BANK[Math.floor(Math.random() * WORD_BANK.length)]);
+  if (WORD_BANK.length === 0) return [];
+
+  const shuffled = [...WORD_BANK];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+
+  if (count <= shuffled.length) {
+    return shuffled.slice(0, count);
+  }
+
+  const output = [...shuffled];
+  while (output.length < count) {
+    const nextBatch = [...WORD_BANK];
+    for (let i = nextBatch.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [nextBatch[i], nextBatch[j]] = [nextBatch[j], nextBatch[i]];
+    }
+    output.push(...nextBatch);
+  }
+
+  return output.slice(0, count);
 }
 
 export default function BotMode() {
