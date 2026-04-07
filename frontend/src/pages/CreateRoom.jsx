@@ -7,6 +7,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
+import Confetti from "react-confetti";
+import {
+  getSubmitKeyOptionById,
+  loadPlayerPreferences,
+  NEXT_WORD_CONDITIONS,
+  PLAYER_PREFERENCES_STORAGE_KEY,
+} from "@/lib/player-preferences";
 import { FiCopy, FiCheck, FiUsers, FiClock, FiHash, FiUser, FiLogOut, FiPlay, FiSettings, FiPlus, FiTrash2, FiSend } from "react-icons/fi";
 
 function getServerBaseUrl() {
@@ -76,6 +83,20 @@ export default function CreateRoom() {
   const [pendingInviteFriendIds, setPendingInviteFriendIds] = useState([]);
   const [teamNameDrafts, setTeamNameDrafts] = useState({});
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
+  const [viewport, setViewport] = useState({ width: 0, height: 0 });
+  const [playerPreferences, setPlayerPreferences] = useState(() => loadPlayerPreferences());
+
+  useEffect(() => {
+    const updateViewport = () => {
+      setViewport({ width: window.innerWidth, height: window.innerHeight });
+    };
+
+    updateViewport();
+    window.addEventListener("resize", updateViewport);
+    return () => {
+      window.removeEventListener("resize", updateViewport);
+    };
+  }, []);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(pointer: coarse)");
@@ -87,6 +108,33 @@ export default function CreateRoom() {
     mediaQuery.addEventListener("change", updatePointerType);
     return () => {
       mediaQuery.removeEventListener("change", updatePointerType);
+    };
+  }, []);
+
+  useEffect(() => {
+    const syncPreferences = () => {
+      setPlayerPreferences(loadPlayerPreferences());
+    };
+
+    syncPreferences();
+    window.addEventListener("storage", syncPreferences);
+
+    return () => {
+      window.removeEventListener("storage", syncPreferences);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleFocus = () => {
+      const stored = window.localStorage.getItem(PLAYER_PREFERENCES_STORAGE_KEY);
+      if (stored) {
+        setPlayerPreferences(loadPlayerPreferences());
+      }
+    };
+
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
     };
   }, []);
 
@@ -538,6 +586,14 @@ export default function CreateRoom() {
     isPlaying && Array.isArray(game?.words)
       ? game.words[myProgress.currentWordIndex] || ""
       : "";
+  const isAutoAdvanceEnabled =
+    playerPreferences.nextWordCondition === NEXT_WORD_CONDITIONS.auto;
+  const activeSubmitKeyIds = Array.isArray(playerPreferences.submitKeyIds)
+    ? playerPreferences.submitKeyIds
+    : [playerPreferences.submitKeyId].filter(Boolean);
+  const activeSubmitKeys = activeSubmitKeyIds.map((id) => getSubmitKeyOptionById(id));
+  const activeSubmitKeySet = new Set(activeSubmitKeys.map((option) => option.key));
+  const activeSubmitLabel = activeSubmitKeys.map((option) => option.label).join(" / ");
 
   const rivalProgress = useMemo(() => {
     if (!game?.progress || !currentUser) {
@@ -562,20 +618,61 @@ export default function CreateRoom() {
       gameResult.teamResults.find((team) => team.teamId === gameResult.winningTeamId) || null
     );
   }, [isCoopResult, gameResult?.teamResults, gameResult?.winningTeamId]);
+  const shouldCelebrate = Boolean(
+    gameResult && (
+      (!isCoopResult && gameResult.winnerId === currentUser?.uid) ||
+      (isCoopResult && myTeamId && gameResult.winningTeamId === myTeamId)
+    )
+  );
+
+  const submitWordIfCorrect = useCallback((rawInput) => {
+    if (!isPlaying) return;
+
+    const normalizedInput = String(rawInput || "").trim();
+    if (!normalizedInput || !currentWord) return;
+    if (normalizedInput !== currentWord) return;
+
+    if (currentUser?.uid) {
+      setGame((prev) => {
+        if (!prev || !Array.isArray(prev.progress)) return prev;
+
+        return {
+          ...prev,
+          progress: prev.progress.map((entry) => {
+            if (entry.playerId !== currentUser.uid) return entry;
+            return {
+              ...entry,
+              score: Number(entry.score || 0) + 1,
+              currentWordIndex: Number(entry.currentWordIndex || 0) + 1,
+            };
+          }),
+        };
+      });
+    }
+
+    sendSocketMessage({ type: "PLAYER_INPUT", input: normalizedInput });
+    setGameInput("");
+  }, [currentUser?.uid, currentWord, isPlaying]);
 
   const submitWord = (event) => {
-    if (event.key !== "Enter" && event.key !== " ") return;
+    if (isAutoAdvanceEnabled) return;
+    if (!activeSubmitKeySet.has(event.key)) return;
     event.preventDefault();
+    submitWordIfCorrect(gameInput);
+  };
 
-    if (!isPlaying || !gameInput.trim()) return;
-    sendSocketMessage({ type: "PLAYER_INPUT", input: gameInput.trim() });
-    setGameInput("");
+  const handleGameInputChange = (event) => {
+    const maxLength = currentWord.length;
+    const nextValue = String(event.target.value || "").slice(0, maxLength);
+    setGameInput(nextValue);
+
+    if (isAutoAdvanceEnabled) {
+      submitWordIfCorrect(nextValue);
+    }
   };
 
   const submitCurrentWord = () => {
-    if (!isPlaying || !gameInput.trim()) return;
-    sendSocketMessage({ type: "PLAYER_INPUT", input: gameInput.trim() });
-    setGameInput("");
+    submitWordIfCorrect(gameInput);
   };
 
   const updateLeaderSettings = () => {
@@ -725,6 +822,9 @@ export default function CreateRoom() {
 
   return (
     <div className="flex h-full flex-col gap-6">
+      {shouldCelebrate && viewport.width > 0 && viewport.height > 0 ? (
+        <Confetti width={viewport.width} height={viewport.height} recycle={false} numberOfPieces={160} gravity={0.2} tweenDuration={1800} />
+      ) : null}
       {/* Header */}
       <motion.div 
         initial={{ opacity: 0, y: -10 }}
@@ -1488,7 +1588,7 @@ export default function CreateRoom() {
                     <input
                       ref={inputRef}
                       value={gameInput}
-                      onChange={(e) => setGameInput(e.target.value)}
+                      onChange={handleGameInputChange}
                       onKeyDown={submitWord}
                       className={isCoarsePointer ? "h-11 w-full rounded-md border border-border/70 bg-background px-3 text-base" : "pointer-events-none absolute opacity-0"}
                       autoFocus={!isCoarsePointer}
@@ -1510,11 +1610,13 @@ export default function CreateRoom() {
                             Typing: <span className="text-foreground">{gameInput}</span>
                           </span>
                         ) : (
-                          "Click here or start typing..."
+                          isAutoAdvanceEnabled
+                            ? "Type the full word correctly to auto-advance..."
+                            : `Type the word, then press ${activeSubmitLabel} to submit...`
                         )}
                       </p>
                     </div>
-                    {isCoarsePointer ? (
+                    {isCoarsePointer && !isAutoAdvanceEnabled ? (
                       <Button
                         type="button"
                         variant="secondary"
@@ -1586,7 +1688,7 @@ export default function CreateRoom() {
                         ? `${winningTeam.name} Wins!`
                         : gameResult.winnerId === currentUser?.uid
                         ? "🎉 You Won!"
-                        : "Match Complete"}
+                        : "Better Luck Next Time!"}
                     </CardTitle>
                     <p className="text-sm text-muted-foreground">
                       This was a private game - no rating changes.

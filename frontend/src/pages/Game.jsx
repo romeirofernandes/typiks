@@ -179,10 +179,12 @@ const Game = () => {
         return false;
       }
 
+      setMyScore((prev) => prev + 1);
+      setCurrentWordIndex((prev) => Math.min(prev + 1, words.length));
       setInput("");
       return true;
     },
-    [currentWord, gameState]
+    [currentWord, gameState, words.length]
   );
 
   const fetchUserStats = useCallback(async () => {
