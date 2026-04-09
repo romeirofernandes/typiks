@@ -301,7 +301,7 @@ export default function BotMode() {
 
   const handleInputChange = (event) => {
     const maxLength = currentWord.length;
-    const nextValue = String(event.target.value || "").slice(0, maxLength);
+    const nextValue = String(event.target.value || "").replace(/\s/g, "").slice(0, maxLength);
     setInput(nextValue);
 
     if (isAutoAdvanceEnabled) {
@@ -310,6 +310,11 @@ export default function BotMode() {
   };
 
   const handleInputSubmit = (event) => {
+    if (event.key === " ") {
+      event.preventDefault();
+      return;
+    }
+
     if (isAutoAdvanceEnabled) return;
     if (activeSubmitKeySet.has(event.key)) {
       event.preventDefault();
@@ -609,7 +614,7 @@ export default function BotMode() {
                       const isCorrect = isTyped && typedChar === char;
                       const isWrong = isTyped && typedChar !== char;
                       const renderedChar = char === " " ? "\u00A0" : char;
-                      const renderedTypedChar = isWrong && typedChar === " " ? "\u00A0" : typedChar;
+                      const renderedTypedChar = isWrong && typedChar === " " ? "_" : typedChar;
 
                       return (
                         <span

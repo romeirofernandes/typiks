@@ -653,7 +653,7 @@ const Game = () => {
 
   const handleInputChange = (e) => {
     const maxLength = currentWord.length;
-    const nextValue = String(e.target.value || "").slice(0, maxLength);
+    const nextValue = String(e.target.value || "").replace(/\s/g, "").slice(0, maxLength);
     setInput(nextValue);
 
     if (isAutoAdvanceEnabled) {
@@ -662,11 +662,12 @@ const Game = () => {
   };
 
   const handleInputSubmit = (e) => {
-    if (isAutoAdvanceEnabled) {
+    if (e.key === " ") {
+      e.preventDefault();
       return;
     }
 
-    if (e.key === " ") {
+    if (isAutoAdvanceEnabled) {
       return;
     }
 
@@ -958,7 +959,7 @@ const Game = () => {
                         const isCorrect = isTyped && typedChar === char;
                         const isWrong = isTyped && typedChar !== char;
                         const renderedChar = char === " " ? "\u00A0" : char;
-                        const renderedTypedChar = isWrong && typedChar === " " ? "\u00A0" : typedChar;
+                        const renderedTypedChar = isWrong && typedChar === " " ? "_" : typedChar;
 
                         return (
                           <span
