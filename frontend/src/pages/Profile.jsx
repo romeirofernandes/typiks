@@ -29,11 +29,8 @@ const Profile = () => {
   const [activityData, setActivityData] = useState([]);
   const [maxCount, setMaxCount] = useState(0);
   const [countryOptions, setCountryOptions] = useState([]);
-  const [cityOptions, setCityOptions] = useState([]);
   const [countryQuery, setCountryQuery] = useState("");
-  const [cityQuery, setCityQuery] = useState("");
   const [countryIsTyping, setCountryIsTyping] = useState(false);
-  const [cityIsTyping, setCityIsTyping] = useState(false);
   const [isLocationEditing, setIsLocationEditing] = useState(false);
   const [isSavingLocation, setIsSavingLocation] = useState(false);
   const [locationApiReady, setLocationApiReady] = useState(false);
@@ -45,11 +42,10 @@ const Profile = () => {
     currentUser?.displayName ||
     currentUser?.email?.split("@")[0] ||
     "Player";
-  const selectedCountry = playerPreferences.country;
   const submitKeyIds = Array.isArray(playerPreferences.submitKeyIds)
     ? playerPreferences.submitKeyIds
     : [playerPreferences.submitKeyId].filter(Boolean);
-  const submitKeyOne = submitKeyIds[0] || "space";
+  const submitKeyOne = submitKeyIds[0] || "enter";
   const submitKeyTwo = submitKeyIds[1] || UNSET_OPTION_VALUE;
 
   useEffect(() => {
@@ -95,11 +91,9 @@ const Profile = () => {
             savePlayerPreferences({
               ...prev,
               country: payload.country || "",
-              city: payload.city || "",
             })
           );
           setCountryQuery(payload.country || "");
-          setCityQuery(payload.city || "");
         }
 
         setLocationApiReady(true);
@@ -154,52 +148,7 @@ const Profile = () => {
     return () => clearTimeout(timeoutId);
   }, [countryIsTyping, countryQuery, currentUser, locationApiReady]);
 
-  useEffect(() => {
-    if (!currentUser || !selectedCountry || !locationApiReady || !cityIsTyping) {
-      setCityOptions([]);
-      return;
-    }
-
-    const query = cityQuery.trim();
-    if (query.length === 0) {
-      setCityOptions([]);
-      return;
-    }
-
-    const timeoutId = setTimeout(async () => {
-      try {
-        const idToken = await currentUser.getIdToken();
-        const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
-        const fullUrl = serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
-
-        const response = await fetch(
-          `${fullUrl}/api/users/locations/cities?country=${encodeURIComponent(
-            selectedCountry
-          )}&query=${encodeURIComponent(query)}&limit=12`,
-          {
-            headers: {
-              Authorization: `Bearer ${idToken}`,
-            },
-          }
-        );
-
-        if (!response.ok) {
-          setCityOptions([]);
-          return;
-        }
-
-        const payload = await response.json();
-        setCityOptions(Array.isArray(payload.cities) ? payload.cities : []);
-      } catch (error) {
-        console.error("Failed to fetch cities:", error);
-        setCityOptions([]);
-      }
-    }, SEARCH_DEBOUNCE_MS);
-
-    return () => clearTimeout(timeoutId);
-  }, [cityIsTyping, cityQuery, currentUser, locationApiReady, selectedCountry]);
-
-  const persistLocation = async (country, city) => {
+  const persistLocation = async (country) => {
     if (!currentUser || !locationApiReady) return false;
 
     try {
@@ -215,7 +164,6 @@ const Profile = () => {
         },
         body: JSON.stringify({
           country: country || null,
-          city: city || null,
         }),
       });
       return true;
@@ -244,10 +192,10 @@ const Profile = () => {
         ? prev.submitKeyIds
         : [prev.submitKeyId].filter(Boolean);
 
-      const draft = [currentIds[0] || "space", currentIds[1] || null];
+      const draft = [currentIds[0] || "enter", currentIds[1] || null];
 
       if (index === 0) {
-        draft[0] = normalizedValue || "space";
+        draft[0] = normalizedValue || "enter";
         if (draft[1] === draft[0]) {
           draft[1] = null;
         }
@@ -274,38 +222,20 @@ const Profile = () => {
       const next = savePlayerPreferences({
         ...prev,
         country: normalizedCountry,
-        city: "",
       });
       return next;
     });
 
     setCountryQuery(normalizedCountry);
-    setCityQuery("");
     setCountryIsTyping(false);
-    setCityIsTyping(false);
-  };
-
-  const handleCityChange = (value) => {
-    setPlayerPreferences((prev) => {
-      const normalizedValue = value === UNSET_OPTION_VALUE ? "" : value;
-      const next = savePlayerPreferences({
-        ...prev,
-        city: normalizedValue,
-      });
-      return next;
-    });
-
-    setCityQuery(value === UNSET_OPTION_VALUE ? "" : value);
-    setCityIsTyping(false);
   };
 
   const handleSaveLocation = async () => {
     setIsSavingLocation(true);
-    await persistLocation(playerPreferences.country, playerPreferences.city);
+    await persistLocation(playerPreferences.country);
     setIsSavingLocation(false);
     setIsLocationEditing(false);
     setCountryIsTyping(false);
-    setCityIsTyping(false);
   };
 
   return (
@@ -371,39 +301,6 @@ const Profile = () => {
                         className="hover:bg-accent hover:text-accent-foreground w-full rounded-sm px-2 py-1 text-left text-sm"
                       >
                         {country}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="city-select">City</Label>
-                <Input
-                  id="city-select"
-                  value={cityQuery}
-                  placeholder={selectedCountry ? "Type city" : "Select country first"}
-                  onChange={(event) => {
-                    if (!isLocationEditing) return;
-                    setCityQuery(event.target.value);
-                    setCityIsTyping(true);
-                  }}
-                  onBlur={() => {
-                    setTimeout(() => setCityIsTyping(false), 120);
-                  }}
-                  disabled={!selectedCountry || !isLocationEditing}
-                />
-                {isLocationEditing && cityIsTyping && cityQuery.trim().length > 0 && cityOptions.length > 0 && (
-                  <div className="max-h-36 overflow-y-auto rounded-md border border-border/70 bg-background/90 p-1">
-                    {cityOptions.map((city) => (
-                      <button
-                        key={city}
-                        type="button"
-                        onMouseDown={(event) => event.preventDefault()}
-                        onClick={() => handleCityChange(city)}
-                        className="hover:bg-accent hover:text-accent-foreground w-full rounded-sm px-2 py-1 text-left text-sm"
-                      >
-                        {city}
                       </button>
                     ))}
                   </div>

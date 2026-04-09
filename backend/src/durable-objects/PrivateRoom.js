@@ -5,7 +5,7 @@ const MAX_PLAYER_INPUT_LENGTH = 32;
 
 export const PRIVATE_ROOM_LIMITS = {
 	minPlayers: 2,
-	maxPlayers: 6,
+	maxPlayers: 8,
 	minRoundTimeSeconds: 20,
 	maxRoundTimeSeconds: 300,
 	minWordCount: 10,
@@ -13,7 +13,7 @@ export const PRIVATE_ROOM_LIMITS = {
 };
 
 const DEFAULT_ROOM_SETTINGS = {
-	maxPlayers: 6,
+	maxPlayers: 8,
 	roundTimeSeconds: 60,
 	wordCount: 30,
 	gameMode: 'ffa', // 'ffa' or 'coop'

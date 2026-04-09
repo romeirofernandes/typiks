@@ -306,6 +306,16 @@ function modeStatsRowToDto(row) {
 	};
 }
 
+async function getHighestModeRating(db, userId) {
+	const rows = await db
+		.select({ rating: userModeStats.rating })
+		.from(userModeStats)
+		.where(eq(userModeStats.userId, userId));
+
+	if (!rows.length) return DEFAULT_RATING;
+	return rows.reduce((max, row) => Math.max(max, Number(row.rating || DEFAULT_RATING)), DEFAULT_RATING);
+}
+
 function resolveFriendshipPair(userOne, userTwo) {
 	if (!userOne || !userTwo || userOne === userTwo) {
 		return null;
@@ -730,6 +740,7 @@ userRouter.post('/', requireAuth, async (c) => {
 						gamesWon: 0,
 						gamesLost: 0,
 						rating: 800,
+						nextWordCondition: 'auto',
 						createdAt: new Date(),
 					})
 					.returning();
@@ -795,7 +806,7 @@ userRouter.get('/:id/location', requireAuth, async (c) => {
 		}
 
 		const rows = await db
-			.select({ country: users.country, city: users.city })
+			.select({ country: users.country })
 			.from(users)
 			.where(eq(users.id, uid))
 			.limit(1);
@@ -806,7 +817,6 @@ userRouter.get('/:id/location', requireAuth, async (c) => {
 
 		return c.json({
 			country: rows[0].country || null,
-			city: rows[0].city || null,
 		});
 	} catch (error) {
 		console.error('Failed to fetch user location:', error);
@@ -825,20 +835,14 @@ userRouter.patch('/:id/location', requireAuth, async (c) => {
 
 		const body = await c.req.json().catch(() => ({}));
 		const country = normalizeOptionalLocationValue(body?.country);
-		const city = normalizeOptionalLocationValue(body?.city);
-
-		if (!country && city) {
-			return c.json({ error: 'country is required when city is provided' }, 400);
-		}
 
 		const rows = await db
 			.update(users)
 			.set({
 				country,
-				city,
 			})
 			.where(eq(users.id, uid))
-			.returning({ country: users.country, city: users.city });
+			.returning({ country: users.country });
 
 		if (rows.length === 0) {
 			return c.json({ error: 'User not found' }, 404);
@@ -846,7 +850,6 @@ userRouter.patch('/:id/location', requireAuth, async (c) => {
 
 		return c.json({
 			country: rows[0].country || null,
-			city: rows[0].city || null,
 		});
 	} catch (error) {
 		console.error('Failed to update user location:', error);
@@ -1037,31 +1040,38 @@ userRouter.patch('/:id/game-result', requireAuth, async (c) => {
 			.returning();
 
 		// Update both players
-		const [updatedPlayer, updatedOpponent, updatedPlayerModeStats, updatedOpponentModeStats] =
+		const [updatedPlayerModeStats, updatedOpponentModeStats] =
 			await Promise.all([
+			updatedPlayerModeStatsPromise,
+			updatedOpponentModeStatsPromise,
+		]);
+
+		const [nextPlayerRating, nextOpponentRating] = await Promise.all([
+			getHighestModeRating(db, uid),
+			getHighestModeRating(db, opponentId),
+		]);
+
+		const [updatedPlayer, updatedOpponent] = await Promise.all([
 			db
 				.update(users)
 				.set({
 					gamesPlayed: playerData.gamesPlayed + 1,
 					gamesWon: playerWon ? playerData.gamesWon + 1 : playerData.gamesWon,
 					gamesLost: !isGameDraw && !playerWon ? playerData.gamesLost + 1 : playerData.gamesLost,
-					rating: newPlayerRating,
+					rating: nextPlayerRating,
 				})
 				.where(eq(users.id, uid))
 				.returning(),
-
 			db
 				.update(users)
 				.set({
 					gamesPlayed: opponentData.gamesPlayed + 1,
 					gamesWon: !isGameDraw && !playerWon ? opponentData.gamesWon + 1 : opponentData.gamesWon,
 					gamesLost: playerWon ? opponentData.gamesLost + 1 : opponentData.gamesLost,
-					rating: newOpponentRating,
+					rating: nextOpponentRating,
 				})
 				.where(eq(users.id, opponentId))
 				.returning(),
-			updatedPlayerModeStatsPromise,
-			updatedOpponentModeStatsPromise,
 		]);
 
 		await Promise.all([

@@ -666,6 +666,10 @@ const Game = () => {
       return;
     }
 
+    if (e.key === " ") {
+      return;
+    }
+
     if (activeSubmitKeySet.has(e.key)) {
       e.preventDefault();
       submitWordIfCorrect(input);
@@ -946,10 +950,7 @@ const Game = () => {
                     <p className="mb-4 font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">
                       Type This Word
                     </p>
-                    <div
-                      key={words[currentWordIndex]}
-                      className="relative inline-block font-mono text-4xl font-medium tracking-wider leading-none sm:text-5xl"
-                    >
+                    <div className="relative inline-block font-mono text-4xl font-medium tracking-wider leading-none sm:text-5xl">
                       {(words[currentWordIndex] || "").split("").map((char, charIndex) => {
                         const typedChar = input[charIndex];
                         const isCurrentPosition = charIndex === input.length;

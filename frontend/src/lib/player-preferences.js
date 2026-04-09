@@ -6,7 +6,6 @@ const NEXT_WORD_CONDITIONS = {
 };
 
 const SUBMIT_KEY_OPTIONS = [
-  { id: "space", label: "Space", key: " " },
   { id: "enter", label: "Enter", key: "Enter" },
   { id: "tab", label: "Tab", key: "Tab" },
   { id: "comma", label: "Comma (,)", key: "," },
@@ -16,10 +15,9 @@ const SUBMIT_KEY_OPTIONS = [
 ];
 
 const DEFAULT_PLAYER_PREFERENCES = {
-  city: "",
   country: "",
-  nextWordCondition: NEXT_WORD_CONDITIONS.manual,
-  submitKeyIds: ["space", "enter"],
+  nextWordCondition: NEXT_WORD_CONDITIONS.auto,
+  submitKeyIds: ["enter", "tab"],
 };
 
 function normalizeTextValue(value, maxLength = 64) {
@@ -65,7 +63,6 @@ export function normalizePlayerPreferences(rawValue) {
   const submitKeyIds = normalizeSubmitKeyIds(raw.submitKeyIds, raw.submitKeyId);
 
   return {
-    city: normalizeTextValue(raw.city),
     country: normalizeTextValue(raw.country),
     nextWordCondition,
     submitKeyIds,

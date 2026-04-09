@@ -656,6 +656,7 @@ export default function CreateRoom() {
 
   const submitWord = (event) => {
     if (isAutoAdvanceEnabled) return;
+    if (event.key === " ") return;
     if (!activeSubmitKeySet.has(event.key)) return;
     event.preventDefault();
     submitWordIfCorrect(gameInput);
@@ -822,7 +823,7 @@ export default function CreateRoom() {
 
   return (
     <div className="flex h-full flex-col gap-6">
-      {shouldCelebrate && viewport.width > 0 && viewport.height > 0 ? (
+      {gameResult && shouldCelebrate && viewport.width > 0 && viewport.height > 0 ? (
         <Confetti width={viewport.width} height={viewport.height} recycle={false} numberOfPieces={160} gravity={0.2} tweenDuration={1800} />
       ) : null}
       {/* Header */}
@@ -1536,10 +1537,7 @@ export default function CreateRoom() {
                       <p className="mb-2 font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">
                         Type This Word
                       </p>
-                      <motion.div
-                        key={currentWord}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
+                      <div
                         className="relative inline-block font-mono text-4xl font-medium tracking-wider leading-none sm:text-5xl"
                       >
                         {(currentWord || "").split("").map((char, charIndex) => {
@@ -1582,7 +1580,7 @@ export default function CreateRoom() {
                             style={{ animation: "blink 1s ease-in-out infinite" }}
                           />
                         ) : null}
-                      </motion.div>
+                      </div>
                     </div>
 
                     <input

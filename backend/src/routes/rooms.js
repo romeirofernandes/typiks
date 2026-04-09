@@ -10,7 +10,7 @@ const ROOM_CODE_LENGTH = 6;
 
 const ROOM_LIMITS = {
 	minPlayers: 2,
-	maxPlayers: 6,
+	maxPlayers: 8,
 	minRoundTimeSeconds: 20,
 	maxRoundTimeSeconds: 300,
 	minWordCount: 10,

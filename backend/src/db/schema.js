@@ -12,12 +12,12 @@ export const users = sqliteTable('users', {
     username: text('username').notNull().unique(),
     email: text('email').notNull().unique(),
     country: text('country'),
-    city: text('city'),
     lastSeenAt: integer('last_seen_at', { mode: 'timestamp' }),
     gamesPlayed: integer('games_played').default(0),
     gamesWon: integer('games_won').default(0),
     gamesLost: integer('games_lost').default(0),
-    rating: integer('rating').default(800), 
+    rating: integer('rating').default(800),
+    nextWordCondition: text('next_word_condition').notNull().default('auto'),
     createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 });
 
