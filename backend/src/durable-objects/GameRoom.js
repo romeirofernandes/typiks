@@ -53,6 +53,7 @@ export class GameRoom {
 		const safe = {
 			username: 'player',
 			rating: 800,
+			avatarId: 'avatar1',
 		};
 		if (!userInfo || typeof userInfo !== 'object') return safe;
 		if (typeof userInfo.username === 'string' && userInfo.username.trim().length > 0) {
@@ -61,6 +62,9 @@ export class GameRoom {
 		const parsedRating = Number(userInfo.rating);
 		if (Number.isFinite(parsedRating)) {
 			safe.rating = Math.max(0, Math.min(3000, Math.floor(parsedRating)));
+		}
+		if (typeof userInfo.avatarId === 'string' && /^avatar([1-9]|10)$/.test(userInfo.avatarId.trim().toLowerCase())) {
+			safe.avatarId = userInfo.avatarId.trim().toLowerCase();
 		}
 		return safe;
 	}
@@ -307,6 +311,7 @@ export class GameRoom {
 				id: opponent.id,
 				username: opponent.userInfo.username,
 				rating: opponent.userInfo.rating,
+				avatarId: opponent.userInfo.avatarId,
 			},
 			words: game.words,
 			duration: game.endTime ? Math.max(0, game.endTime - Date.now()) : 0,
@@ -515,6 +520,7 @@ export class GameRoom {
 				id: player2Id,
 				username: player2Data.userInfo.username,
 				rating: player2Data.userInfo.rating,
+				avatarId: player2Data.userInfo.avatarId,
 			},
 		});
 
@@ -526,6 +532,7 @@ export class GameRoom {
 				id: player1Id,
 				username: player1Data.userInfo.username,
 				rating: player1Data.userInfo.rating,
+				avatarId: player1Data.userInfo.avatarId,
 			},
 		});
 
@@ -677,6 +684,7 @@ export class GameRoom {
 				player1: {
 					id: game.player1.id,
 					username: game.player1.userInfo.username,
+					avatarId: game.player1.userInfo.avatarId,
 					score: game.player1.score,
 					progress: game.player1.currentWordIndex,
 					won: player1Won,
@@ -684,6 +692,7 @@ export class GameRoom {
 				player2: {
 					id: game.player2.id,
 					username: game.player2.userInfo.username,
+					avatarId: game.player2.userInfo.avatarId,
 					score: game.player2.score,
 					progress: game.player2.currentWordIndex,
 					won: player2Won,

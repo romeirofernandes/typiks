@@ -26,6 +26,19 @@ const ROOM_INVITE_ACCEPTED = 'accepted';
 const ROOM_INVITE_REJECTED = 'rejected';
 const RANKED_MODE_SECONDS = [15, 30, 60, 120];
 const DEFAULT_RATING = 800;
+const AVATAR_IDS = [
+	'avatar1',
+	'avatar2',
+	'avatar3',
+	'avatar4',
+	'avatar5',
+	'avatar6',
+	'avatar7',
+	'avatar8',
+	'avatar9',
+	'avatar10',
+];
+const DEFAULT_AVATAR_ID = 'avatar1';
 const GAME_STATUS_FINISHED = 'finished';
 const ONLINE_WINDOW_MS = 60 * 1000;
 const LOCATION_CACHE_TTL_MS = 1000 * 60 * 60 * 12;
@@ -58,6 +71,17 @@ function normalizeUsername(value) {
 	if (username.length < 3 || username.length > 24) return null;
 	if (!/^[a-z0-9._-]+$/.test(username)) return null;
 	return username;
+}
+
+function normalizeAvatarId(value) {
+	if (typeof value !== 'string') return null;
+	const normalized = value.trim().toLowerCase();
+	return AVATAR_IDS.includes(normalized) ? normalized : null;
+}
+
+function getRandomDefaultAvatarId() {
+	const index = Math.floor(Math.random() * AVATAR_IDS.length);
+	return AVATAR_IDS[index] || DEFAULT_AVATAR_ID;
 }
 
 function normalizeModeSeconds(rawValue) {
@@ -398,6 +422,7 @@ userRouter.get('/leaderboard/top', async (c) => {
 		const topPlayers = await db
 			.select({
 				username: users.username,
+				avatarId: users.avatarId,
 				rating: users.rating,
 				gamesPlayed: users.gamesPlayed,
 				gamesWon: users.gamesWon,
@@ -663,6 +688,7 @@ userRouter.post('/', requireAuth, async (c) => {
 		const db = drizzle(c.env.DB);
 		const body = await c.req.json().catch(() => ({}));
 		const requestedUsername = body?.username;
+		const requestedAvatarId = normalizeAvatarId(body?.avatarId);
 		const auth = c.get('auth');
 		const uid = auth?.uid;
 		const email = auth?.email;
@@ -736,6 +762,7 @@ userRouter.post('/', requireAuth, async (c) => {
 						id: uid,
 						username: chosenUsername,
 						email,
+						avatarId: requestedAvatarId || getRandomDefaultAvatarId(),
 						gamesPlayed: 0,
 						gamesWon: 0,
 						gamesLost: 0,
@@ -793,6 +820,63 @@ userRouter.get('/:id', requireAuth, async (c) => {
 		return c.json({ user: user[0] });
 	} catch (error) {
 		return c.json({ error: 'Failed to fetch user' }, 500);
+	}
+});
+
+userRouter.patch('/:id/preferences', requireAuth, async (c) => {
+	try {
+		const db = drizzle(c.env.DB);
+		const uid = c.req.param('id');
+		const auth = c.get('auth');
+		if (auth?.uid !== uid) {
+			return c.json({ error: 'Forbidden' }, 403);
+		}
+
+		const body = await c.req.json().catch(() => ({}));
+		const hasCondition = typeof body?.nextWordCondition === 'string';
+		const rawCondition = hasCondition ? String(body.nextWordCondition).trim().toLowerCase() : '';
+		const nextWordCondition =
+			rawCondition === 'manual' ? 'manual' : rawCondition === 'auto' ? 'auto' : null;
+		const hasAvatarId = typeof body?.avatarId === 'string';
+		const avatarId = hasAvatarId ? normalizeAvatarId(body.avatarId) : null;
+
+		if (!hasCondition && !hasAvatarId) {
+			return c.json({ error: 'No updatable preferences provided' }, 400);
+		}
+
+		if (hasCondition && !nextWordCondition) {
+			return c.json({ error: 'nextWordCondition must be auto or manual' }, 400);
+		}
+
+		if (hasAvatarId && !avatarId) {
+			return c.json({ error: 'avatarId is invalid' }, 400);
+		}
+
+		const updateData = {};
+		if (hasCondition) {
+			updateData.nextWordCondition = nextWordCondition;
+		}
+		if (hasAvatarId) {
+			updateData.avatarId = avatarId;
+		}
+
+		const rows = await db
+			.update(users)
+			.set(updateData)
+			.where(eq(users.id, uid))
+			.returning({ nextWordCondition: users.nextWordCondition, avatarId: users.avatarId });
+
+		if (rows.length === 0) {
+			return c.json({ error: 'User not found' }, 404);
+		}
+
+		return c.json({
+			nextWordCondition: rows[0].nextWordCondition,
+			avatarId: rows[0].avatarId,
+		});
+	} catch (error) {
+		console.error('Failed to update user preferences:', error);
+		return c.json({ error: 'Failed to update user preferences' }, 500);
 	}
 });
 
@@ -1131,6 +1215,7 @@ userRouter.get('/:id/stats', requireAuth, async (c) => {
 		const user = await db
 			.select({
 				username: users.username,
+				avatarId: users.avatarId,
 				rating: users.rating,
 			})
 			.from(users)
@@ -1183,6 +1268,7 @@ userRouter.get('/:id/stats', requireAuth, async (c) => {
 
 		return c.json({
 			username: stats.username,
+			avatarId: stats.avatarId,
 			gamesPlayed: aggregate.gamesPlayed,
 			gamesWon: aggregate.gamesWon,
 			gamesLost: aggregate.gamesLost,
@@ -1320,6 +1406,7 @@ userRouter.get('/me/friends', requireAuth, async (c) => {
 				.select({
 					id: friendUser.id,
 					username: friendUser.username,
+					avatarId: friendUser.avatarId,
 					rating: friendUser.rating,
 					gamesPlayed: friendUser.gamesPlayed,
 					gamesWon: friendUser.gamesWon,
@@ -1333,6 +1420,7 @@ userRouter.get('/me/friends', requireAuth, async (c) => {
 				.select({
 					id: friendUser.id,
 					username: friendUser.username,
+					avatarId: friendUser.avatarId,
 					rating: friendUser.rating,
 					gamesPlayed: friendUser.gamesPlayed,
 					gamesWon: friendUser.gamesWon,
@@ -1386,6 +1474,7 @@ userRouter.get('/me/friend-requests', requireAuth, async (c) => {
 					id: friendRequests.id,
 					senderId: friendRequests.senderId,
 					senderUsername: senderUser.username,
+					senderAvatarId: senderUser.avatarId,
 					senderRating: senderUser.rating,
 					createdAt: friendRequests.createdAt,
 				})
@@ -1403,6 +1492,7 @@ userRouter.get('/me/friend-requests', requireAuth, async (c) => {
 					id: friendRequests.id,
 					receiverId: friendRequests.receiverId,
 					receiverUsername: receiverUser.username,
+					receiverAvatarId: receiverUser.avatarId,
 					receiverRating: receiverUser.rating,
 					createdAt: friendRequests.createdAt,
 				})
@@ -1483,6 +1573,7 @@ userRouter.get('/me/search', requireAuth, async (c) => {
 			.select({
 				id: users.id,
 				username: users.username,
+				avatarId: users.avatarId,
 				rating: users.rating,
 			})
 			.from(users)
@@ -1783,6 +1874,7 @@ userRouter.get('/me/room-invites', requireAuth, async (c) => {
 				createdAt: roomInvites.createdAt,
 				inviterId: roomInvites.inviterId,
 				inviterUsername: inviterUser.username,
+				inviterAvatarId: inviterUser.avatarId,
 			})
 			.from(roomInvites)
 			.innerJoin(inviterUser, eq(roomInvites.inviterId, inviterUser.id))

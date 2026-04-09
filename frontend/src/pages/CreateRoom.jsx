@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
+import { UserAvatar } from "@/components/ui/user-avatar";
+import { toast } from "sonner";
 import Confetti from "react-confetti";
 import {
   getSubmitKeyOptionById,
@@ -14,7 +16,7 @@ import {
   NEXT_WORD_CONDITIONS,
   PLAYER_PREFERENCES_STORAGE_KEY,
 } from "@/lib/player-preferences";
-import { FiCopy, FiCheck, FiUsers, FiClock, FiHash, FiUser, FiLogOut, FiPlay, FiSettings, FiPlus, FiTrash2, FiSend } from "react-icons/fi";
+import { FiCopy, FiCheck, FiUsers, FiClock, FiHash, FiLogOut, FiPlay, FiSettings, FiPlus, FiTrash2, FiSend } from "react-icons/fi";
 
 function getServerBaseUrl() {
   const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
@@ -32,6 +34,7 @@ function defaultSettings() {
     roundTimeSeconds: 60,
     wordCount: 30,
     gameMode: "ffa",
+    coopMode: "normal",
   };
 }
 
@@ -44,6 +47,11 @@ const ROOM_SETTING_LIMITS = {
 const GAME_MODES = [
   { id: "ffa", label: "Free For All", description: "Everyone competes individually" },
   { id: "coop", label: "Coop", description: "Team vs Team - join a team, set names, then ready up" },
+];
+
+const COOP_MODES = [
+  { id: "normal", label: "Normal", description: "All teammates type in parallel" },
+  { id: "switcher", label: "Switcher", description: "Turns rotate by word in each team" },
 ];
 
 function clampSettingValue(rawValue, min, max, fallback) {
@@ -61,20 +69,21 @@ export default function CreateRoom() {
   const timerRef = useRef(null);
   const inputRef = useRef(null);
   const autoJoinHandledRef = useRef(false);
+  const userInfoRef = useRef({ username: "Player", rating: 800, avatarId: "avatar1" });
 
   const [wsStatus, setWsStatus] = useState("idle");
   const [roomState, setRoomState] = useState(null);
   const [roomCode, setRoomCode] = useState("");
   const [joinCode, setJoinCode] = useState("");
   const [settingsForm, setSettingsForm] = useState(defaultSettings());
-  const [userInfo, setUserInfo] = useState({ username: "Player", rating: 800 });
-  const [roomError, setRoomError] = useState("");
+  const [userInfo, setUserInfo] = useState({ username: "Player", rating: 800, avatarId: "avatar1" });
   const [busy, setBusy] = useState(false);
   const [entryMode, setEntryMode] = useState("create");
   const [countdown, setCountdown] = useState(null);
   const [game, setGame] = useState(null);
   const [timeLeft, setTimeLeft] = useState(0);
   const [gameInput, setGameInput] = useState("");
+  const [teamTypingInput, setTeamTypingInput] = useState("");
   const [gameResult, setGameResult] = useState(null);
   const [copied, setCopied] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -163,12 +172,14 @@ export default function CreateRoom() {
           currentUser.email?.split("@")[0] ||
           "Player",
         rating: Number.isFinite(payload.rating) ? payload.rating : 800,
+        avatarId: payload.avatarId || "avatar1",
       });
     } catch {
       setUserInfo({
         username:
           currentUser.displayName || currentUser.email?.split("@")[0] || "Player",
         rating: 800,
+        avatarId: "avatar1",
       });
     } finally {
       setIsLoading(false);
@@ -178,6 +189,10 @@ export default function CreateRoom() {
   useEffect(() => {
     fetchUserInfo();
   }, [fetchUserInfo]);
+
+  useEffect(() => {
+    userInfoRef.current = userInfo;
+  }, [userInfo]);
 
   const fetchFriendsForInvite = useCallback(async () => {
     if (!currentUser) return;
@@ -232,18 +247,23 @@ export default function CreateRoom() {
         setSettingsForm((prev) => ({
           ...prev,
           ...message.settings,
+          coopMode: message.settings?.coopMode === "switcher" ? "switcher" : "normal",
         }));
 
         if (message.state === "lobby") {
           setCountdown(null);
           setGame(null);
           setTimeLeft(0);
+          setGameInput("");
+          setTeamTypingInput("");
         }
 
         if (message.state === "playing" && message.game) {
           setGame({
             words: message.game.words || [],
             progress: message.game.progress || [],
+            teamTurnState: message.game.teamTurnState || {},
+            coopMode: message.game.coopMode || "normal",
             endTime: message.game.endTime || null,
           });
           if (Number.isFinite(message.game.durationMs)) {
@@ -261,10 +281,14 @@ export default function CreateRoom() {
         setGame({
           words: Array.isArray(message.words) ? message.words : [],
           progress: [],
+          teamTurnState: message.teamTurnState || {},
+          coopMode: message.coopMode || "normal",
           endTime: message.endTime || null,
         });
         setCountdown(null);
         setGameResult(null);
+        setGameInput("");
+        setTeamTypingInput("");
         setTimeLeft(
           Number.isFinite(message.duration)
             ? Math.max(0, Math.ceil(message.duration / 1000))
@@ -278,18 +302,24 @@ export default function CreateRoom() {
           return {
             ...prev,
             progress: Array.isArray(message.progress) ? message.progress : [],
+            teamTurnState: message.teamTurnState || prev.teamTurnState || {},
           };
         });
+        break;
+
+      case "ROOM_TEAM_TYPING":
+        setTeamTypingInput(String(message.currentInput || ""));
         break;
 
       case "ROOM_GAME_END":
         setGameResult(message.results || null);
         setCountdown(null);
         setGameInput("");
+        setTeamTypingInput("");
         break;
 
       case "ROOM_ERROR":
-        setRoomError(message.error || "Room operation failed");
+        toast.error(message.error || "Room operation failed");
         break;
 
       default:
@@ -303,7 +333,7 @@ export default function CreateRoom() {
 
       const cleanCode = sanitizeRoomCode(targetCode);
       if (cleanCode.length !== 6) {
-        setRoomError("Room code must be 6 characters.");
+        toast.error("Room code must be 6 characters.");
         return;
       }
 
@@ -317,7 +347,6 @@ export default function CreateRoom() {
       manualDisconnectRef.current = true;
       cleanupSocket();
       manualDisconnectRef.current = false;
-      setRoomError("");
       setWsStatus("connecting");
 
       const ws = new WebSocket(new URL(`/ws/room/${cleanCode}`, wsBaseUrl));
@@ -332,7 +361,7 @@ export default function CreateRoom() {
             idToken,
             roomCode: cleanCode,
             settings: initialSettings,
-            userInfo,
+            userInfo: userInfoRef.current,
           })
         );
       };
@@ -344,27 +373,29 @@ export default function CreateRoom() {
           const message = JSON.parse(event.data);
           handleRoomMessage(message);
         } catch {
-          setRoomError("Received malformed room message.");
+          toast.error("Received malformed room message.");
         }
       };
 
       ws.onclose = () => {
-        if (wsRef.current === ws) {
-          wsRef.current = null;
+        if (wsRef.current !== ws) {
+          return;
         }
+
+        wsRef.current = null;
 
         if (!manualDisconnectRef.current) {
           setWsStatus("disconnected");
-          setRoomError("Disconnected from room.");
+          toast.error("Disconnected from room.");
         }
       };
 
       ws.onerror = () => {
         if (wsRef.current !== ws) return;
-        setRoomError("Could not connect to room server.");
+        toast.error("Could not connect to room server.");
       };
     },
-    [cleanupSocket, currentUser, handleRoomMessage, userInfo]
+    [cleanupSocket, currentUser, handleRoomMessage]
   );
 
   useEffect(() => {
@@ -397,7 +428,6 @@ export default function CreateRoom() {
 
     try {
       setBusy(true);
-      setRoomError("");
       const normalizedSettings = {
         maxPlayers: clampSettingValue(
           settingsForm.maxPlayers,
@@ -418,6 +448,7 @@ export default function CreateRoom() {
           defaultSettings().wordCount
         ),
         gameMode: settingsForm.gameMode === "coop" ? "coop" : "ffa",
+        coopMode: settingsForm.coopMode === "switcher" ? "switcher" : "normal",
       };
       setSettingsForm(normalizedSettings);
 
@@ -441,7 +472,7 @@ export default function CreateRoom() {
       setGameResult(null);
       await connectToRoom(payload.roomCode, payload.settings);
     } catch (error) {
-      setRoomError(error.message || "Could not create room.");
+      toast.error(error.message || "Could not create room.");
     } finally {
       setBusy(false);
     }
@@ -449,8 +480,10 @@ export default function CreateRoom() {
 
   const joinRoom = async () => {
     const code = sanitizeRoomCode(joinCode);
+    setJoinCode("");
+
     if (code.length !== 6) {
-      setRoomError("Enter a valid 6-character room code.");
+      toast.error("Enter a valid 6-character room code.");
       return;
     }
 
@@ -460,7 +493,7 @@ export default function CreateRoom() {
 
   const sendSocketMessage = (payload) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      setRoomError("Room connection is not open.");
+      toast.error("Room connection is not open.");
       return;
     }
 
@@ -480,7 +513,9 @@ export default function CreateRoom() {
     setGameResult(null);
     setCountdown(null);
     setTimeLeft(0);
-    setRoomError("");
+    setGameInput("");
+    setTeamTypingInput("");
+    setJoinCode("");
   };
 
   const copyRoomCode = async () => {
@@ -491,7 +526,7 @@ export default function CreateRoom() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      setRoomError("Could not copy room code automatically.");
+      toast.error("Could not copy room code automatically.");
     }
   };
 
@@ -582,9 +617,37 @@ export default function CreateRoom() {
     );
   }, [currentUser, game?.progress]);
 
+  const myTeamTurnState = useMemo(() => {
+    if (!game?.teamTurnState || !myTeamId) return null;
+    return game.teamTurnState[myTeamId] || null;
+  }, [game?.teamTurnState, myTeamId]);
+  const myTeamMembers = useMemo(() => {
+    if (!myTeamId || !Array.isArray(roomState?.members)) return [];
+    return roomState.members.filter((member) => member.teamId === myTeamId);
+  }, [myTeamId, roomState?.members]);
+  const isSwitcherCoopActive =
+    settingsForm.gameMode === "coop" && (game?.coopMode || settingsForm.coopMode) === "switcher";
+  const isMyTurnInSwitcher = Boolean(myTeamTurnState?.activePlayerId === currentUser?.uid);
+  const activeTeammate = useMemo(() => {
+    if (!isSwitcherCoopActive || !myTeamTurnState?.activePlayerId) return null;
+    return myTeamMembers.find((member) => member.id === myTeamTurnState.activePlayerId) || null;
+  }, [isSwitcherCoopActive, myTeamMembers, myTeamTurnState?.activePlayerId]);
+  const nextTeammate = useMemo(() => {
+    if (!isSwitcherCoopActive || !myTeamTurnState?.activePlayerId || myTeamMembers.length < 2) {
+      return null;
+    }
+    const currentIndex = myTeamMembers.findIndex(
+      (member) => member.id === myTeamTurnState.activePlayerId
+    );
+    if (currentIndex < 0) return null;
+    return myTeamMembers[(currentIndex + 1) % myTeamMembers.length] || null;
+  }, [isSwitcherCoopActive, myTeamMembers, myTeamTurnState?.activePlayerId]);
+  const nextTeammateLabel =
+    nextTeammate?.id === currentUser?.uid ? "You're next" : nextTeammate?.username || "";
+
   const currentWord =
     isPlaying && Array.isArray(game?.words)
-      ? game.words[myProgress.currentWordIndex] || ""
+      ? game.words[(isSwitcherCoopActive ? myTeamTurnState?.currentWordIndex : myProgress.currentWordIndex) || 0] || ""
       : "";
   const isAutoAdvanceEnabled =
     playerPreferences.nextWordCondition === NEXT_WORD_CONDITIONS.auto;
@@ -597,19 +660,94 @@ export default function CreateRoom() {
 
   const rivalProgress = useMemo(() => {
     if (!game?.progress || !currentUser) {
-      return { username: "Opponent", score: 0, currentWordIndex: 0 };
+      return { username: "Opponent", score: 0, currentWordIndex: 0, avatarId: "avatar1" };
     }
 
     const others = game.progress.filter((entry) => entry.playerId !== currentUser.uid);
-    if (others.length === 0) {
-      return { username: "Opponent", score: 0, currentWordIndex: 0 };
+    const filteredOthers =
+      settingsForm.gameMode === "coop" && myTeamId && Array.isArray(roomState?.members)
+        ? others.filter((entry) => {
+            const member = roomState.members.find((item) => item.id === entry.playerId);
+            return member?.teamId && member.teamId !== myTeamId;
+          })
+        : others;
+
+    const candidateProgress = filteredOthers.length > 0 ? filteredOthers : others;
+    if (candidateProgress.length === 0) {
+      return { username: "Opponent", score: 0, currentWordIndex: 0, avatarId: "avatar1" };
     }
 
-    return [...others].sort((a, b) => {
+    return [...candidateProgress].sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
       return b.currentWordIndex - a.currentWordIndex;
     })[0];
-  }, [game?.progress, currentUser]);
+  }, [currentUser, game?.progress, myTeamId, roomState?.members, settingsForm.gameMode]);
+
+  const coopProgress = useMemo(() => {
+    if (settingsForm.gameMode !== "coop" || !Array.isArray(game?.progress) || !Array.isArray(roomState?.members)) {
+      return null;
+    }
+
+    const teamByPlayerId = new Map(
+      roomState.members.map((member) => [member.id, member.teamId || null])
+    );
+
+    const aggregates = new Map();
+    for (const entry of game.progress) {
+      const teamId = teamByPlayerId.get(entry.playerId);
+      if (!teamId) continue;
+
+      if (!aggregates.has(teamId)) {
+        aggregates.set(teamId, {
+          teamId,
+          score: 0,
+          correctChars: 0,
+          currentWordIndex: 0,
+        });
+      }
+
+      const bucket = aggregates.get(teamId);
+      bucket.score += Number(entry.score || 0);
+      bucket.correctChars += Number(entry.correctChars || 0);
+      bucket.currentWordIndex = Math.max(
+        bucket.currentWordIndex,
+        Number(entry.currentWordIndex || 0)
+      );
+    }
+
+    const myTeam = myTeamId ? aggregates.get(myTeamId) || null : null;
+    let rivalTeam = null;
+    for (const bucket of aggregates.values()) {
+      if (bucket.teamId === myTeamId) continue;
+      if (!rivalTeam) {
+        rivalTeam = bucket;
+        continue;
+      }
+      if (bucket.currentWordIndex > rivalTeam.currentWordIndex) {
+        rivalTeam = bucket;
+      }
+    }
+
+    return { myTeam, rivalTeam };
+  }, [game?.progress, myTeamId, roomState?.members, settingsForm.gameMode]);
+
+  const myTeamName =
+    settingsForm.gameMode === "coop"
+      ? coopTeams.find((team) => team.id === myTeamId)?.name || "Your Team"
+      : "Your Progress";
+  const rivalTeamName =
+    settingsForm.gameMode === "coop"
+      ? coopTeams.find((team) => team.id === coopProgress?.rivalTeam?.teamId)?.name || "Rival Team"
+      : "Opponent Progress";
+
+  const myProgressValue =
+    settingsForm.gameMode === "coop"
+      ? Number(coopProgress?.myTeam?.currentWordIndex || 0)
+      : Number(myProgress.currentWordIndex || 0);
+  const rivalProgressValue =
+    settingsForm.gameMode === "coop"
+      ? Number(coopProgress?.rivalTeam?.currentWordIndex || 0)
+      : Number(rivalProgress.currentWordIndex || 0);
 
   const isCoopResult = gameResult?.mode === "coop";
   const winningTeam = useMemo(() => {
@@ -618,15 +756,26 @@ export default function CreateRoom() {
       gameResult.teamResults.find((team) => team.teamId === gameResult.winningTeamId) || null
     );
   }, [isCoopResult, gameResult?.teamResults, gameResult?.winningTeamId]);
+  const myResultTeamId = useMemo(() => {
+    if (!isCoopResult || !Array.isArray(gameResult?.rankings) || !currentUser?.uid) return null;
+    const mine = gameResult.rankings.find((entry) => entry.playerId === currentUser.uid);
+    return mine?.teamId || null;
+  }, [currentUser?.uid, gameResult?.rankings, isCoopResult]);
   const shouldCelebrate = Boolean(
     gameResult && (
       (!isCoopResult && gameResult.winnerId === currentUser?.uid) ||
-      (isCoopResult && myTeamId && gameResult.winningTeamId === myTeamId)
+      (isCoopResult && myResultTeamId && gameResult.winningTeamId === myResultTeamId)
     )
   );
 
+  const liveSwitcherInput =
+    isSwitcherCoopActive && !isMyTurnInSwitcher
+      ? String(teamTypingInput !== "" ? teamTypingInput : myTeamTurnState?.currentInput ?? "")
+      : gameInput;
+
   const submitWordIfCorrect = useCallback((rawInput) => {
     if (!isPlaying) return;
+    if (isSwitcherCoopActive && !isMyTurnInSwitcher) return;
 
     const normalizedInput = String(rawInput || "").trim();
     if (!normalizedInput || !currentWord) return;
@@ -652,7 +801,8 @@ export default function CreateRoom() {
 
     sendSocketMessage({ type: "PLAYER_INPUT", input: normalizedInput });
     setGameInput("");
-  }, [currentUser?.uid, currentWord, isPlaying]);
+    setTeamTypingInput("");
+  }, [currentUser?.uid, currentWord, isMyTurnInSwitcher, isPlaying, isSwitcherCoopActive]);
 
   const submitWord = (event) => {
     if (event.key === " ") {
@@ -667,9 +817,18 @@ export default function CreateRoom() {
   };
 
   const handleGameInputChange = (event) => {
+    if (isSwitcherCoopActive && !isMyTurnInSwitcher) {
+      return;
+    }
+
     const maxLength = currentWord.length;
     const nextValue = String(event.target.value || "").replace(/\s/g, "").slice(0, maxLength);
     setGameInput(nextValue);
+
+    if (isSwitcherCoopActive) {
+      setTeamTypingInput(nextValue);
+      sendSocketMessage({ type: "PLAYER_TYPING", input: nextValue });
+    }
 
     if (isAutoAdvanceEnabled) {
       submitWordIfCorrect(nextValue);
@@ -679,6 +838,40 @@ export default function CreateRoom() {
   const submitCurrentWord = () => {
     submitWordIfCorrect(gameInput);
   };
+
+  useEffect(() => {
+    if (!isPlaying || !isSwitcherCoopActive) return;
+
+    if (!isMyTurnInSwitcher) {
+      setGameInput("");
+      return;
+    }
+
+    setGameInput(String(myTeamTurnState?.currentInput || ""));
+  }, [isMyTurnInSwitcher, isPlaying, isSwitcherCoopActive, myTeamTurnState?.currentInput]);
+
+  useEffect(() => {
+    if (!isPlaying || !isSwitcherCoopActive || isMyTurnInSwitcher) return;
+    setTeamTypingInput("");
+  }, [
+    isMyTurnInSwitcher,
+    isPlaying,
+    isSwitcherCoopActive,
+    myTeamTurnState?.currentWordIndex,
+    myTeamTurnState?.activePlayerId,
+  ]);
+
+  useEffect(() => {
+    if (!isPlaying) return;
+    if (isCoarsePointer) return;
+    if (isSwitcherCoopActive && !isMyTurnInSwitcher) return;
+
+    const timer = setTimeout(() => {
+      inputRef.current?.focus();
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [isCoarsePointer, isMyTurnInSwitcher, isPlaying, isSwitcherCoopActive]);
 
   const updateLeaderSettings = () => {
     if (!isLeader) return;
@@ -709,7 +902,7 @@ export default function CreateRoom() {
 
       setPendingInviteFriendIds((prev) => Array.from(new Set([...prev, friendId])));
     } catch (error) {
-      setRoomError(error.message || "Failed to send invite");
+      toast.error(error.message || "Failed to send invite");
     } finally {
       setInvitingFriendIds((prev) => prev.filter((id) => id !== friendId));
     }
@@ -796,7 +989,7 @@ export default function CreateRoom() {
   }, [coopTeams]);
 
   useEffect(() => {
-    if (autoJoinHandledRef.current || !currentUser || isInRoom) return;
+    if (autoJoinHandledRef.current || !currentUser || isInRoom || isLoading) return;
 
     const inviteCode = sanitizeRoomCode(location.state?.joinRoomCode || "");
     if (inviteCode.length !== 6) return;
@@ -805,7 +998,7 @@ export default function CreateRoom() {
     setEntryMode("join");
     setJoinCode(inviteCode);
     connectToRoom(inviteCode, settingsForm);
-  }, [connectToRoom, currentUser, isInRoom, location.state?.joinRoomCode, settingsForm]);
+  }, [connectToRoom, currentUser, isInRoom, isLoading, location.state?.joinRoomCode, settingsForm]);
 
   // Skeleton loading state
   if (isLoading) {
@@ -830,8 +1023,300 @@ export default function CreateRoom() {
       {gameResult && shouldCelebrate && viewport.width > 0 && viewport.height > 0 ? (
         <Confetti width={viewport.width} height={viewport.height} recycle={false} numberOfPieces={160} gravity={0.2} tweenDuration={1800} />
       ) : null}
+
+      {isPlaying ? (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -20 }}
+          className="space-y-6"
+        >
+          <div className="grid grid-cols-2 gap-4">
+            <Card className="border-primary/30 bg-primary/5">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
+                  <UserAvatar avatarId={userInfo.avatarId} username={userInfo.username} size="sm" />
+                  {userInfo.username} (You)
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="font-sans text-3xl font-bold text-primary">{myProgress.score}</div>
+                <div className="font-mono text-xs text-muted-foreground">
+                  Word {(isSwitcherCoopActive ? myTeamTurnState?.currentWordIndex : myProgress.currentWordIndex) + 1} / {game?.words?.length || 0}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
+                  <UserAvatar avatarId={rivalProgress.avatarId} username={rivalProgress.username} size="sm" />
+                  {rivalProgress.username}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="font-sans text-3xl font-bold">{rivalProgress.score}</div>
+                <div className="font-mono text-xs text-muted-foreground">
+                  Word {rivalProgress.currentWordIndex + 1} / {game?.words?.length || 0}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className={isSwitcherCoopActive && isMyTurnInSwitcher ? "border-primary/60 ring-1 ring-primary/20" : ""}>
+            <CardHeader className="pb-4">
+              <div className="flex items-center justify-between">
+                <CardTitle className="font-sans">In Match</CardTitle>
+                <div className="flex items-center gap-2 rounded-full bg-primary/10 px-4 py-2 font-mono text-lg font-bold tabular-nums text-primary">
+                  <FiClock className="h-4 w-4" />
+                  {timeLeft}s
+                </div>
+              </div>
+              {isSwitcherCoopActive ? (
+                <div className="mt-2 flex items-center justify-between">
+                  <span className={`inline-flex items-center rounded-full px-2 py-1 text-[11px] font-mono uppercase tracking-[0.08em] ${
+                    isMyTurnInSwitcher
+                      ? "bg-primary/15 text-primary"
+                      : "bg-muted text-muted-foreground"
+                  }`}>
+                    {isMyTurnInSwitcher ? "Your Turn" : "Teammate Turn"}
+                  </span>
+                  {!isMyTurnInSwitcher && activeTeammate ? (
+                    <span className="text-xs text-muted-foreground">
+                      Next: {nextTeammateLabel || "-"}
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="text-center">
+                <p className="mb-2 font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                  Type This Word
+                </p>
+                <div className="relative inline-block font-mono text-4xl font-medium tracking-wider leading-none sm:text-5xl">
+                  {(currentWord || "").split("").map((char, charIndex) => {
+                    const typedChar = liveSwitcherInput[charIndex];
+                    const isCurrentPosition = charIndex === liveSwitcherInput.length;
+                    const isTyped = charIndex < liveSwitcherInput.length;
+                    const isCorrect = isTyped && typedChar === char;
+                    const isWrong = isTyped && typedChar !== char;
+                    const renderedChar = char === " " ? "\u00A0" : char;
+                    const renderedTypedChar = isWrong && typedChar === " " ? "_" : typedChar;
+
+                    return (
+                      <span
+                        key={charIndex}
+                        className={`relative inline-block min-w-[0.45em] align-baseline transition-colors duration-75 ${
+                          isCorrect
+                            ? "text-primary"
+                            : isWrong
+                            ? "text-destructive"
+                            : "text-muted-foreground/50"
+                        }`}
+                      >
+                        {isCurrentPosition && (
+                          <motion.span
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            className="absolute -left-[2px] top-0 h-full w-[3px] bg-primary"
+                            style={{ animation: "blink 1s ease-in-out infinite" }}
+                          />
+                        )}
+                        {isWrong ? renderedTypedChar : renderedChar}
+                      </span>
+                    );
+                  })}
+                  {liveSwitcherInput.length === (currentWord || "").length && currentWord ? (
+                    <motion.span
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="absolute -right-[2px] top-0 h-full w-[3px] bg-primary"
+                      style={{ animation: "blink 1s ease-in-out infinite" }}
+                    />
+                  ) : null}
+                </div>
+              </div>
+              {isSwitcherCoopActive ? (
+                <p className="-mt-2 text-center text-xs text-muted-foreground">
+                  {isMyTurnInSwitcher
+                    ? `Your turn${nextTeammateLabel ? ` • ${nextTeammateLabel} next` : ""}`
+                    : `${activeTeammate?.username || "Teammate"} typing${nextTeammateLabel ? ` • ${nextTeammateLabel} next` : ""}`}
+                </p>
+              ) : null}
+
+              <input
+                ref={inputRef}
+                value={gameInput}
+                onChange={handleGameInputChange}
+                onKeyDown={submitWord}
+                className={isCoarsePointer ? "h-11 w-full rounded-md border border-border/70 bg-background px-3 text-base" : "pointer-events-none absolute opacity-0"}
+                disabled={isSwitcherCoopActive && !isMyTurnInSwitcher}
+                autoFocus={!isCoarsePointer}
+                autoCapitalize="none"
+                autoCorrect="off"
+                autoComplete="off"
+                spellCheck={false}
+                inputMode="text"
+                enterKeyHint="go"
+              />
+
+              <div
+                onClick={() => inputRef.current?.focus()}
+                className="cursor-text rounded-md border border-border/50 bg-muted/30 p-4 text-center"
+              >
+                <p className="font-mono text-sm text-muted-foreground">
+                  {liveSwitcherInput.length > 0 ? (
+                    <span>
+                      Typing: <span className="text-foreground">{liveSwitcherInput}</span>
+                    </span>
+                  ) : (
+                    isAutoAdvanceEnabled
+                      ? "Type the full word correctly to auto-advance..."
+                      : `Type the word, then press ${activeSubmitLabel} to submit...`
+                  )}
+                </p>
+              </div>
+              {isCoarsePointer && !isAutoAdvanceEnabled ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="w-full"
+                  onClick={submitCurrentWord}
+                  disabled={isSwitcherCoopActive && !isMyTurnInSwitcher}
+                >
+                  Submit Word
+                </Button>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
+                  {myTeamName}
+                </span>
+                <span className="font-mono text-xs text-primary">
+                  {Math.round((myProgressValue / (game?.words?.length || 1)) * 100)}%
+                </span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+                <motion.div
+                  className="h-full rounded-full bg-primary"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${(myProgressValue / (game?.words?.length || 1)) * 100}%` }}
+                  transition={{ duration: 0.3 }}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
+                  {rivalTeamName}
+                </span>
+                <span className="font-mono text-xs text-destructive">
+                  {Math.round((rivalProgressValue / (game?.words?.length || 1)) * 100)}%
+                </span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+                <motion.div
+                  className="h-full rounded-full bg-destructive"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${(rivalProgressValue / (game?.words?.length || 1)) * 100}%` }}
+                  transition={{ duration: 0.3 }}
+                />
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      ) : null}
+
+      {gameResult ? (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+          <Card className="border-primary/30 bg-card/80">
+            <CardHeader className="text-center">
+              <CardTitle className="font-sans text-2xl">
+                {gameResult.isDraw
+                  ? "It's a Draw!"
+                  : isCoopResult && winningTeam
+                  ? `${winningTeam.name} Wins!`
+                  : gameResult.winnerId === currentUser?.uid
+                  ? "You Won"
+                  : "Better Luck Next Time!"}
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">Private match summary</p>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {isCoopResult ? (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {(gameResult.teamResults || []).map((team) => {
+                    const isWinningTeam = team.teamId === gameResult.winningTeamId && !gameResult.isDraw;
+                    return (
+                      <div
+                        key={team.teamId}
+                        className={`rounded-md border ${
+                          isWinningTeam ? "border-primary/60 bg-primary/5" : "border-border/60 bg-card/40"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between border-b border-border/50 px-3 py-2">
+                          <p className="font-semibold">{team.name}</p>
+                          <div className="text-right">
+                            <p className="font-mono text-sm font-bold">{team.score} pts</p>
+                            <p className="font-mono text-[11px] text-muted-foreground">{team.correctChars} chars</p>
+                          </div>
+                        </div>
+                        <div className="space-y-1 p-2">
+                          {(team.members || []).map((member) => (
+                            <div
+                              key={member.playerId}
+                              className="grid grid-cols-[minmax(0,1fr)_64px_70px] items-center gap-2 rounded border border-border/40 px-2 py-1.5"
+                            >
+                              <span className="inline-flex items-center gap-2 truncate text-sm font-medium">
+                                <UserAvatar avatarId={member.avatarId} username={member.username} size="sm" />
+                                <span className="truncate">{member.username}</span>
+                              </span>
+                              <span className="text-right font-mono text-xs text-muted-foreground">
+                                {member.score} pts
+                              </span>
+                              <span className="text-right font-mono text-xs text-muted-foreground">
+                                {member.correctChars} ch
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                (gameResult.rankings || []).map((entry, index) => (
+                  <div
+                    key={entry.playerId}
+                    className={`flex items-center justify-between rounded-md border px-3 py-2 ${
+                      index === 0 ? "border-primary/50 bg-primary/5" : "border-border/60"
+                    }`}
+                  >
+                    <div>
+                      <p className="inline-flex items-center gap-2 font-semibold">
+                        <UserAvatar avatarId={entry.avatarId} username={entry.username} size="sm" />
+                        <span>#{index + 1} {entry.username}</span>
+                      </p>
+                      <p className="text-xs text-muted-foreground">{entry.correctChars ?? 0} chars</p>
+                    </div>
+                    <p className="font-mono text-lg font-bold">{entry.score}</p>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </motion.div>
+      ) : null}
+
+      {!isPlaying ? (
+      <>
       {/* Header */}
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
         className="border-b border-border/50 pb-6"
@@ -846,20 +1331,6 @@ export default function CreateRoom() {
           Create a room, invite friends, and compete without affecting ratings.
         </p>
       </motion.div>
-
-      {/* Error Messages */}
-      <AnimatePresence>
-        {roomError && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-          >
-            {roomError}
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {!isInRoom ? (
         <motion.div 
@@ -1016,6 +1487,36 @@ export default function CreateRoom() {
                       </label>
                     </div>
 
+                    {settingsForm.gameMode === "coop" ? (
+                      <div className="space-y-3">
+                        <p className="font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                          Coop Mode
+                        </p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {COOP_MODES.map((mode) => (
+                            <button
+                              key={mode.id}
+                              type="button"
+                              onClick={() =>
+                                setSettingsForm((prev) => ({
+                                  ...prev,
+                                  coopMode: mode.id,
+                                }))
+                              }
+                              className={`rounded-md border px-3 py-2 text-left text-sm transition-all ${
+                                settingsForm.coopMode === mode.id
+                                  ? "border-primary bg-primary/10 text-foreground dark:text-primary"
+                                  : "border-border/50 hover:border-border hover:bg-muted/50"
+                              }`}
+                            >
+                              <p className="font-semibold">{mode.label}</p>
+                              <p className="mt-1 text-xs text-muted-foreground">{mode.description}</p>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
                     <div className="flex flex-col gap-3 border-t border-border/50 pt-4 sm:flex-row sm:items-center sm:justify-between">
                       <p className="text-xs text-muted-foreground">
                         Private games don't affect your rating.
@@ -1047,13 +1548,16 @@ export default function CreateRoom() {
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="flex flex-col gap-3 sm:flex-row">
-                      <Input
-                        value={joinCode}
-                        onChange={(e) => setJoinCode(sanitizeRoomCode(e.target.value))}
-                        placeholder="ABC123"
-                        maxLength={6}
-                        className="flex-1 text-center font-mono text-xl uppercase tracking-[0.3em]"
-                      />
+                    <Input
+                      value={joinCode}
+                      onChange={(e) => setJoinCode(sanitizeRoomCode(e.target.value))}
+                      placeholder="ABC123"
+                      maxLength={6}
+                      autoComplete="off"
+                      spellCheck={false}
+                      autoCapitalize="characters"
+                      className="flex-1 text-center font-mono text-xl uppercase tracking-[0.3em]"
+                    />
                       <Button onClick={joinRoom} className="sm:w-auto">
                         Join Room
                       </Button>
@@ -1187,7 +1691,10 @@ export default function CreateRoom() {
                           className="flex items-center justify-between rounded-md border border-border/60 bg-card/40 px-3 py-2"
                         >
                           <div>
-                            <p className="font-semibold">{friend.username}</p>
+                            <p className="inline-flex items-center gap-2 font-semibold">
+                              <UserAvatar avatarId={friend.avatarId} username={friend.username} size="sm" />
+                              <span>{friend.username}</span>
+                            </p>
                             <p className="text-xs text-muted-foreground">
                               {friend.rating} rating • {isOnline ? "Online" : "Offline"}
                             </p>
@@ -1240,7 +1747,7 @@ export default function CreateRoom() {
                         <div className={`flex h-8 w-8 items-center justify-center rounded-full ${
                           member.isLeader ? "bg-primary/20 text-primary" : "bg-muted"
                         }`}>
-                          <FiUser className="h-4 w-4" />
+                          <UserAvatar avatarId={member.avatarId} username={member.username} size="sm" />
                         </div>
                         <div>
                           <p className="font-semibold">
@@ -1354,7 +1861,10 @@ export default function CreateRoom() {
                               players.map((member) => (
                                 <div key={member.id} className="flex items-center justify-between rounded bg-muted/40 px-2 py-1.5">
                                   <div className="flex items-center gap-2">
-                                    <span className="text-sm font-medium">{member.username}</span>
+                                    <span className="inline-flex items-center gap-2 text-sm font-medium">
+                                      <UserAvatar avatarId={member.avatarId} username={member.username} size="sm" />
+                                      <span>{member.username}</span>
+                                    </span>
                                     {member.isLeader && (
                                       <span className="font-mono text-xs text-primary">LEADER</span>
                                     )}
@@ -1444,6 +1954,28 @@ export default function CreateRoom() {
                       onChange={(e) => updateSettingsField("wordCount", e.target.value)}
                     />
                   </label>
+
+                  {settingsForm.gameMode === "coop" ? (
+                    <label className="space-y-2">
+                      <span className="font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
+                        Coop Mode
+                      </span>
+                      <select
+                        className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+                        value={settingsForm.coopMode}
+                        disabled={settingsLocked}
+                        onChange={(event) =>
+                          setSettingsForm((prev) => ({
+                            ...prev,
+                            coopMode: event.target.value === "switcher" ? "switcher" : "normal",
+                          }))
+                        }
+                      >
+                        <option value="normal">Normal</option>
+                        <option value="switcher">Switcher</option>
+                      </select>
+                    </label>
+                  ) : null}
                 </div>
                 {isLeader && !settingsLocked && (
                   <Button variant="outline" className="w-full" onClick={updateLeaderSettings}>
@@ -1497,15 +2029,15 @@ export default function CreateRoom() {
                 <div className="grid grid-cols-2 gap-4">
                   <Card className="border-primary/30 bg-primary/5">
                     <CardHeader className="pb-2">
-                      <CardTitle className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
-                        <FiUser className="h-3 w-3" />
+                <CardTitle className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
+                        <UserAvatar avatarId={userInfo.avatarId} username={userInfo.username} size="sm" />
                         {userInfo.username} (You)
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="font-sans text-3xl font-bold text-primary">{myProgress.score}</div>
                       <div className="font-mono text-xs text-muted-foreground">
-                        Word {myProgress.currentWordIndex + 1} / {game?.words?.length || 0}
+                        Word {(isSwitcherCoopActive ? myTeamTurnState?.currentWordIndex : myProgress.currentWordIndex) + 1} / {game?.words?.length || 0}
                       </div>
                     </CardContent>
                   </Card>
@@ -1513,7 +2045,7 @@ export default function CreateRoom() {
                   <Card>
                     <CardHeader className="pb-2">
                       <CardTitle className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
-                        <FiUser className="h-3 w-3" />
+                        <UserAvatar avatarId={rivalProgress.avatarId} username={rivalProgress.username} size="sm" />
                         {rivalProgress.username}
                       </CardTitle>
                     </CardHeader>
@@ -1526,7 +2058,7 @@ export default function CreateRoom() {
                   </Card>
                 </div>
 
-                <Card>
+                <Card className={isSwitcherCoopActive && isMyTurnInSwitcher ? "border-primary/60 ring-1 ring-primary/20" : ""}>
                   <CardHeader className="pb-4">
                     <div className="flex items-center justify-between">
                       <CardTitle className="font-sans">In Match</CardTitle>
@@ -1535,6 +2067,22 @@ export default function CreateRoom() {
                         {timeLeft}s
                       </div>
                     </div>
+                    {isSwitcherCoopActive ? (
+                      <div className="mt-2 flex items-center justify-between">
+                        <span className={`inline-flex items-center rounded-full px-2 py-1 text-[11px] font-mono uppercase tracking-[0.08em] ${
+                          isMyTurnInSwitcher
+                            ? "bg-primary/15 text-primary"
+                            : "bg-muted text-muted-foreground"
+                        }`}>
+                          {isMyTurnInSwitcher ? "Your Turn" : "Teammate Turn"}
+                        </span>
+                        {!isMyTurnInSwitcher && activeTeammate ? (
+                          <span className="text-xs text-muted-foreground">
+                            Next: {nextTeammateLabel || "-"}
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </CardHeader>
                   <CardContent className="space-y-6">
                     <div className="text-center">
@@ -1545,9 +2093,9 @@ export default function CreateRoom() {
                         className="relative inline-block font-mono text-4xl font-medium tracking-wider leading-none sm:text-5xl"
                       >
                         {(currentWord || "").split("").map((char, charIndex) => {
-                          const typedChar = gameInput[charIndex];
-                          const isCurrentPosition = charIndex === gameInput.length;
-                          const isTyped = charIndex < gameInput.length;
+                          const typedChar = liveSwitcherInput[charIndex];
+                          const isCurrentPosition = charIndex === liveSwitcherInput.length;
+                          const isTyped = charIndex < liveSwitcherInput.length;
                           const isCorrect = isTyped && typedChar === char;
                           const isWrong = isTyped && typedChar !== char;
                           const renderedChar = char === " " ? "\u00A0" : char;
@@ -1576,7 +2124,7 @@ export default function CreateRoom() {
                             </span>
                           );
                         })}
-                        {gameInput.length === (currentWord || "").length && currentWord ? (
+                        {liveSwitcherInput.length === (currentWord || "").length && currentWord ? (
                           <motion.span
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
@@ -1586,6 +2134,13 @@ export default function CreateRoom() {
                         ) : null}
                       </div>
                     </div>
+                    {isSwitcherCoopActive ? (
+                      <p className="-mt-2 text-center text-xs text-muted-foreground">
+                        {isMyTurnInSwitcher
+                          ? `Your turn${nextTeammateLabel ? ` • ${nextTeammateLabel} next` : ""}`
+                          : `${activeTeammate?.username || "Teammate"} typing${nextTeammateLabel ? ` • ${nextTeammateLabel} next` : ""}`}
+                      </p>
+                    ) : null}
 
                     <input
                       ref={inputRef}
@@ -1593,6 +2148,7 @@ export default function CreateRoom() {
                       onChange={handleGameInputChange}
                       onKeyDown={submitWord}
                       className={isCoarsePointer ? "h-11 w-full rounded-md border border-border/70 bg-background px-3 text-base" : "pointer-events-none absolute opacity-0"}
+                      disabled={isSwitcherCoopActive && !isMyTurnInSwitcher}
                       autoFocus={!isCoarsePointer}
                       autoCapitalize="none"
                       autoCorrect="off"
@@ -1607,9 +2163,9 @@ export default function CreateRoom() {
                       className="cursor-text rounded-md border border-border/50 bg-muted/30 p-4 text-center"
                     >
                       <p className="font-mono text-sm text-muted-foreground">
-                        {gameInput.length > 0 ? (
+                        {liveSwitcherInput.length > 0 ? (
                           <span>
-                            Typing: <span className="text-foreground">{gameInput}</span>
+                            Typing: <span className="text-foreground">{liveSwitcherInput}</span>
                           </span>
                         ) : (
                           isAutoAdvanceEnabled
@@ -1624,6 +2180,7 @@ export default function CreateRoom() {
                         variant="secondary"
                         className="w-full"
                         onClick={submitCurrentWord}
+                        disabled={isSwitcherCoopActive && !isMyTurnInSwitcher}
                       >
                         Submit Word
                       </Button>
@@ -1635,17 +2192,17 @@ export default function CreateRoom() {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
-                        Your Progress
+                        {myTeamName}
                       </span>
                       <span className="font-mono text-xs text-primary">
-                        {Math.round(((myProgress.currentWordIndex || 0) / (game?.words?.length || 1)) * 100)}%
+                        {Math.round((myProgressValue / (game?.words?.length || 1)) * 100)}%
                       </span>
                     </div>
                     <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
                       <motion.div
                         className="h-full rounded-full bg-primary"
                         initial={{ width: 0 }}
-                        animate={{ width: `${((myProgress.currentWordIndex || 0) / (game?.words?.length || 1)) * 100}%` }}
+                        animate={{ width: `${(myProgressValue / (game?.words?.length || 1)) * 100}%` }}
                         transition={{ duration: 0.3 }}
                       />
                     </div>
@@ -1653,17 +2210,17 @@ export default function CreateRoom() {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
-                        Opponent Progress
+                        {rivalTeamName}
                       </span>
                       <span className="font-mono text-xs text-destructive">
-                        {Math.round(((rivalProgress.currentWordIndex || 0) / (game?.words?.length || 1)) * 100)}%
+                        {Math.round((rivalProgressValue / (game?.words?.length || 1)) * 100)}%
                       </span>
                     </div>
                     <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
                       <motion.div
                         className="h-full rounded-full bg-destructive"
                         initial={{ width: 0 }}
-                        animate={{ width: `${((rivalProgress.currentWordIndex || 0) / (game?.words?.length || 1)) * 100}%` }}
+                        animate={{ width: `${(rivalProgressValue / (game?.words?.length || 1)) * 100}%` }}
                         transition={{ duration: 0.3 }}
                       />
                     </div>
@@ -1673,85 +2230,10 @@ export default function CreateRoom() {
             )}
           </AnimatePresence>
 
-          {/* Game Result */}
-          <AnimatePresence>
-            {gameResult && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-              >
-                <Card className="overflow-hidden">
-                  <CardHeader className="text-center">
-                    <CardTitle className="font-sans text-2xl">
-                      {gameResult.isDraw
-                        ? "It's a Draw!"
-                        : isCoopResult && winningTeam
-                        ? `${winningTeam.name} Wins!`
-                        : gameResult.winnerId === currentUser?.uid
-                        ? "🎉 You Won!"
-                        : "Better Luck Next Time!"}
-                    </CardTitle>
-                    <p className="text-sm text-muted-foreground">
-                      This was a private game - no rating changes.
-                    </p>
-                  </CardHeader>
-                  <CardContent className="space-y-3 py-6">
-                    {isCoopResult && Array.isArray(gameResult.teamResults) && gameResult.teamResults.length > 0 && (
-                      <div className="space-y-2">
-                        {gameResult.teamResults.map((team) => (
-                          <div
-                            key={team.teamId}
-                            className={`rounded-md border px-3 py-2 ${
-                              team.teamId === gameResult.winningTeamId
-                                ? "border-primary/50 bg-primary/5"
-                                : "border-border/50"
-                            }`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <p className="font-semibold">{team.name}</p>
-                              <p className="font-mono text-sm text-muted-foreground">
-                                {team.correctChars} chars matched
-                              </p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {(gameResult.rankings || []).map((entry, index) => (
-                      <motion.div
-                        key={entry.playerId}
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: index * 0.1 }}
-                        className={`flex items-center justify-between rounded-md border p-4 ${
-                          index === 0 ? "border-primary/50 bg-primary/5" : "border-border/50"
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <span className={`font-mono text-lg font-bold ${
-                            index === 0 ? "text-primary" : "text-muted-foreground"
-                          }`}>
-                            #{index + 1}
-                          </span>
-                          <span className="font-semibold">{entry.username}</span>
-                        </div>
-                        <div className="text-right font-mono">
-                          <span className="text-lg font-bold">{entry.score}</span>
-                          <span className="text-muted-foreground"> pts</span>
-                          <p className="text-xs text-muted-foreground">
-                            {entry.correctChars ?? 0} chars | {entry.progress} words
-                          </p>
-                        </div>
-                      </motion.div>
-                    ))}
-                  </CardContent>
-                </Card>
-              </motion.div>
-            )}
-          </AnimatePresence>
         </motion.div>
       )}
+      </>
+      ) : null}
     </div>
   );
 }

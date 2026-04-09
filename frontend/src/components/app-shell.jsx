@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { auth } from "@/firebase";
+import { UserAvatar } from "@/components/ui/user-avatar";
 import {
   ArrowLeft01Icon,
   GlobeIcon,
@@ -25,7 +26,16 @@ import {
 } from "hugeicons-react";
 import { Bot, DoorOpen, Users } from "lucide-react";
 
-function SidebarNavButton({ icon, label, active, expanded, onClick, badgeCount = 0 }) {
+function SidebarNavButton({
+  icon,
+  label,
+  active,
+  expanded,
+  onClick,
+  badgeCount = 0,
+  avatarId = null,
+  muted = false,
+}) {
   const Icon = icon;
 
   return (
@@ -38,10 +48,20 @@ function SidebarNavButton({ icon, label, active, expanded, onClick, badgeCount =
         className={cn(
           "h-11 border border-transparent transition-colors",
           expanded ? "w-full justify-start px-3" : "size-11 justify-center",
-          !active && "hover:border-border/70"
+          !active && "hover:border-border/70",
+          muted && "pointer-events-none opacity-55 saturate-0"
         )}
       >
-        <Icon size={18} className="shrink-0" />
+        {avatarId ? (
+          <UserAvatar
+            avatarId={avatarId}
+            username={label}
+            size={expanded ? "md" : "sm"}
+            plain={expanded}
+          />
+        ) : (
+          <Icon size={18} className="shrink-0" />
+        )}
         {expanded ? (
           <>
             <span className="ml-3 truncate">{label}</span>
@@ -74,7 +94,9 @@ export default function AppShell() {
 
   const [expanded, setExpanded] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [isAvatarPreviewOpen, setIsAvatarPreviewOpen] = useState(false);
   const [statsUsername, setStatsUsername] = useState(null);
+  const [statsAvatarId, setStatsAvatarId] = useState("avatar1");
   const [notificationCounts, setNotificationCounts] = useState({
     pendingFriendRequests: 0,
     pendingRoomInvites: 0,
@@ -107,6 +129,7 @@ export default function AppShell() {
 
         const payload = await response.json();
         setStatsUsername(payload?.username || null);
+        setStatsAvatarId(payload?.avatarId || "avatar1");
       } catch (error) {
         console.error("Failed to fetch sidebar username:", error);
       }
@@ -114,6 +137,17 @@ export default function AppShell() {
 
     fetchSidebarUsername();
   }, [currentUser]);
+
+  useEffect(() => {
+    const handleAvatarPreviewState = (event) => {
+      setIsAvatarPreviewOpen(Boolean(event?.detail?.open));
+    };
+
+    window.addEventListener("typiks:avatar-preview-state", handleAvatarPreviewState);
+    return () => {
+      window.removeEventListener("typiks:avatar-preview-state", handleAvatarPreviewState);
+    };
+  }, []);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -447,10 +481,15 @@ export default function AppShell() {
                 </nav>
               </div>
 
-              <div className="flex flex-col gap-2 border-t border-border/80 px-2 pt-3">
+              <div
+                className={cn(
+                  "flex flex-col gap-2 border-t border-border/80 px-2 pt-3 transition-opacity",
+                  isAvatarPreviewOpen && "pointer-events-none opacity-55 saturate-0"
+                )}
+              >
                 <div className={cn("group relative flex", !expanded && "justify-center")}>
                   <ThemeToggleButton
-                    variant="secondary"
+                    variant={isAvatarPreviewOpen ? "outline" : "secondary"}
                     title="Toggle theme"
                     className={cn(expanded ? "h-11 w-full justify-center" : "size-11")}
                   />
@@ -462,13 +501,32 @@ export default function AppShell() {
                   ) : null}
                 </div>
 
-                <SidebarNavButton
-                  icon={UserIcon}
-                  label={expanded ? username : "Profile"}
-                  active={location.pathname === "/profile"}
-                  expanded={expanded}
-                  onClick={handleProfile}
-                />
+                {expanded ? (
+                  <Button
+                    type="button"
+                    variant={
+                      isAvatarPreviewOpen
+                        ? "ghost"
+                        : location.pathname === "/profile"
+                        ? "secondary"
+                        : "ghost"
+                    }
+                    onClick={handleProfile}
+                    className="h-11 w-full justify-start px-2.5"
+                  >
+                    <UserAvatar avatarId={statsAvatarId} username={username} size="md" plain />
+                      <span className="ml-1 truncate text-sm font-medium">{username}</span>
+                  </Button>
+                ) : (
+                  <SidebarNavButton
+                    icon={UserIcon}
+                    label="Profile"
+                    active={location.pathname === "/profile"}
+                    expanded={expanded}
+                    onClick={handleProfile}
+                    muted={isAvatarPreviewOpen}
+                  />
+                )}
 
                 <div className={cn("group relative flex", !expanded && "justify-center")}>
                   <Button
@@ -477,7 +535,8 @@ export default function AppShell() {
                     onClick={handleSignOut}
                     aria-label="Logout"
                     className={cn(
-                      expanded ? "w-full justify-start px-3" : "size-11 justify-center"
+                      expanded ? "w-full justify-start px-3" : "size-11 justify-center",
+                      isAvatarPreviewOpen && "bg-muted text-muted-foreground hover:bg-muted"
                     )}
                   >
                     <ArrowLeft01Icon size={18} className="rotate-180" />
@@ -537,8 +596,8 @@ export default function AppShell() {
                           }}
                           className="h-11 w-full justify-start px-3"
                         >
-                          <UserIcon size={18} />
-                          <span className="truncate">{username}</span>
+                          <UserAvatar avatarId={statsAvatarId} username={username} size="md" plain />
+                          <span className="ml-2 truncate text-sm font-medium">{username}</span>
                         </Button>
 
                         <Button

@@ -15,6 +15,7 @@ import { signInWithEmailAndPassword, signInWithPopup } from "firebase/auth";
 import { auth, googleProvider } from "@/firebase";
 import { ViewIcon, ViewOffIcon } from "hugeicons-react";
 import GoogleLogo from "@/components/icons/GoogleLogo";
+import { getRandomDefaultAvatarId } from "@/lib/player-meta";
 
 export function LoginForm({ className, ...props }) {
   const navigate = useNavigate();
@@ -36,7 +37,7 @@ export function LoginForm({ className, ...props }) {
             "Content-Type": "application/json",
             Authorization: `Bearer ${idToken}`,
           },
-          body: JSON.stringify({ username }),
+          body: JSON.stringify({ username, avatarId: getRandomDefaultAvatarId() }),
         }
       );
 

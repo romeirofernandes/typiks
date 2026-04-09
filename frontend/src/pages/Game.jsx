@@ -9,13 +9,14 @@ import { useAuth } from "@/context/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { DotLoader } from "@/components/ui/dot-loader";
+import { UserAvatar } from "@/components/ui/user-avatar";
 import {
   getSubmitKeyOptionById,
   loadPlayerPreferences,
   NEXT_WORD_CONDITIONS,
   PLAYER_PREFERENCES_STORAGE_KEY,
 } from "@/lib/player-preferences";
-import { FiUser, FiClock, FiArrowLeft, FiZap, FiTrendingUp, FiCheck, FiX } from "react-icons/fi";
+import { FiClock, FiArrowLeft, FiZap, FiTrendingUp, FiCheck, FiX } from "react-icons/fi";
 
 const Game = () => {
   const { currentUser } = useAuth();
@@ -50,6 +51,7 @@ const Game = () => {
   const [userStats, setUserStats] = useState(() => ({
     username:
       currentUser?.displayName || currentUser?.email?.split("@")[0] || "Player",
+    avatarId: "avatar1",
     rating: 800,
     gamesPlayed: 0,
     gamesWon: 0,
@@ -285,6 +287,7 @@ const Game = () => {
             userInfo: {
               username: userStats.username,
               rating: Number.isFinite(Number(queueRating)) ? Number(queueRating) : 800,
+              avatarId: userStats.avatarId || "avatar1",
             },
           })
         );
@@ -500,18 +503,20 @@ const Game = () => {
         setInput("");
         setGameState("finished");
         {
-          const fallbackResults = {
+      const fallbackResults = {
           gameId: activeGameId,
           modeSeconds,
           player1: {
             id: currentUser.uid,
             username: userStats.username,
+            avatarId: userStats.avatarId,
             score: myScore,
             won: true,
           },
           player2: {
             id: opponent?.id || "disconnected",
             username: opponent?.username || "Opponent",
+            avatarId: opponent?.avatarId || "avatar1",
             score: opponentScore,
             won: false,
           },
@@ -890,7 +895,10 @@ const Game = () => {
                   {/* VS Display */}
                   <div className="flex items-center justify-center gap-4">
                     <div className="text-right">
-                      <p className="font-semibold">{userStats.username}</p>
+                      <p className="inline-flex items-center gap-2 font-semibold">
+                        <UserAvatar avatarId={userStats.avatarId} username={userStats.username} size="sm" />
+                        <span>{userStats.username}</span>
+                      </p>
                       <p className={`font-mono text-sm ${getRatingColor(userStats.rating)}`}>
                         {userStats.rating}
                       </p>
@@ -899,7 +907,10 @@ const Game = () => {
                       VS
                     </div>
                     <div className="text-left">
-                      <p className="font-semibold">{opponent?.username}</p>
+                      <p className="inline-flex items-center gap-2 font-semibold">
+                        <UserAvatar avatarId={opponent?.avatarId} username={opponent?.username || "Opponent"} size="sm" />
+                        <span>{opponent?.username}</span>
+                      </p>
                       <p className={`font-mono text-sm ${getRatingColor(opponent?.rating)}`}>
                         {opponent?.rating}
                       </p>
@@ -933,7 +944,7 @@ const Game = () => {
                 <Card className="border-primary/30 bg-primary/5">
                   <CardHeader className="pb-2">
                     <CardTitle className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
-                      <FiUser className="h-3 w-3" />
+                      <UserAvatar avatarId={userStats.avatarId} username={userStats.username} size="sm" />
                       {userStats.username} (You)
                     </CardTitle>
                   </CardHeader>
@@ -948,7 +959,7 @@ const Game = () => {
                 <Card>
                   <CardHeader className="pb-2">
                     <CardTitle className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
-                      <FiUser className="h-3 w-3" />
+                      <UserAvatar avatarId={opponent?.avatarId} username={opponent?.username || "Opponent"} size="sm" />
                       {opponent?.username}
                     </CardTitle>
                   </CardHeader>
@@ -1126,7 +1137,10 @@ const Game = () => {
                     <div className={`rounded-md p-4 text-center ${
                       gameResults.player1.won ? "bg-primary/10" : "bg-muted/50"
                     }`}>
-                      <p className="font-semibold">{gameResults.player1.username}</p>
+                      <p className="inline-flex items-center gap-2 font-semibold">
+                        <UserAvatar avatarId={gameResults.player1.avatarId} username={gameResults.player1.username} size="sm" />
+                        <span>{gameResults.player1.username}</span>
+                      </p>
                       <p className="font-sans text-3xl font-bold">
                         {gameResults.player1.score}
                       </p>
@@ -1137,7 +1151,10 @@ const Game = () => {
                     <div className={`rounded-md p-4 text-center ${
                       gameResults.player2.won ? "bg-primary/10" : "bg-muted/50"
                     }`}>
-                      <p className="font-semibold">{gameResults.player2.username}</p>
+                      <p className="inline-flex items-center gap-2 font-semibold">
+                        <UserAvatar avatarId={gameResults.player2.avatarId} username={gameResults.player2.username} size="sm" />
+                        <span>{gameResults.player2.username}</span>
+                      </p>
                       <p className="font-sans text-3xl font-bold">
                         {gameResults.player2.score}
                       </p>

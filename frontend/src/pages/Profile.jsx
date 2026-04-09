@@ -3,6 +3,23 @@ import { TypeGraph } from "@/components/charts/TypeGraph";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { UserAvatar } from "@/components/ui/user-avatar";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   Select,
   SelectContent,
@@ -19,10 +36,24 @@ import {
 } from "@/lib/player-preferences";
 import { ViewIcon } from "hugeicons-react";
 import { useEffect, useState } from "react";
+import {
+  FEMALE_AVATAR_IDS,
+  MALE_AVATAR_IDS,
+  RATING_TIERS,
+  getTierByRating,
+} from "@/lib/player-meta";
 
 const PROFILE_GRAPH_DAYS = 364;
 const UNSET_OPTION_VALUE = "__unset__";
 const SEARCH_DEBOUNCE_MS = 250;
+const DEFAULT_PROFILE_STATS = {
+  username: "",
+  rating: 800,
+  gamesPlayed: 0,
+  gamesWon: 0,
+  winRate: 0,
+  avatarId: "avatar1",
+};
 
 const Profile = () => {
   const { currentUser } = useAuth();
@@ -34,11 +65,16 @@ const Profile = () => {
   const [isLocationEditing, setIsLocationEditing] = useState(false);
   const [isSavingLocation, setIsSavingLocation] = useState(false);
   const [locationApiReady, setLocationApiReady] = useState(false);
+  const [profileStats, setProfileStats] = useState(DEFAULT_PROFILE_STATS);
+  const [isAvatarDialogOpen, setIsAvatarDialogOpen] = useState(false);
+  const [pendingAvatarId, setPendingAvatarId] = useState("avatar1");
+  const [isSavingAvatar, setIsSavingAvatar] = useState(false);
   const [playerPreferences, setPlayerPreferences] = useState(() =>
     loadPlayerPreferences()
   );
 
   const username =
+    profileStats.username ||
     currentUser?.displayName ||
     currentUser?.email?.split("@")[0] ||
     "Player";
@@ -47,6 +83,22 @@ const Profile = () => {
     : [playerPreferences.submitKeyId].filter(Boolean);
   const submitKeyOne = submitKeyIds[0] || "enter";
   const submitKeyTwo = submitKeyIds[1] || UNSET_OPTION_VALUE;
+  const currentTier = getTierByRating(profileStats.rating);
+  const currentTierIndex = RATING_TIERS.findIndex((tier) => tier.label === currentTier.label);
+  const nextTier = currentTierIndex > 0 ? RATING_TIERS[currentTierIndex - 1] : null;
+  const tierProgressPercent = nextTier
+    ? Math.max(
+        0,
+        Math.min(
+          100,
+          Math.round(
+            ((Number(profileStats.rating) - currentTier.min) /
+              (nextTier.min - currentTier.min)) *
+              100
+          )
+        )
+      )
+    : 100;
 
   useEffect(() => {
     const fetchProfileData = async () => {
@@ -57,7 +109,7 @@ const Profile = () => {
         const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
         const fullUrl = serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
 
-        const [statsResponse, activityResponse, locationResponse] = await Promise.all([
+        const [statsResponse, activityResponse, locationResponse, userResponse] = await Promise.all([
           fetch(`${fullUrl}/api/users/${currentUser.uid}/stats`, {
             headers: {
               Authorization: `Bearer ${idToken}`,
@@ -73,10 +125,32 @@ const Profile = () => {
               Authorization: `Bearer ${idToken}`,
             },
           }),
+          fetch(`${fullUrl}/api/users/${currentUser.uid}`, {
+            headers: {
+              Authorization: `Bearer ${idToken}`,
+            },
+          }),
         ]);
 
         if (statsResponse.ok) {
-          await statsResponse.json();
+          const payload = await statsResponse.json();
+          setProfileStats((prev) => ({
+            ...prev,
+            username: payload?.username || prev.username,
+            rating: Number.isFinite(Number(payload?.rating))
+              ? Number(payload.rating)
+              : prev.rating,
+            gamesPlayed: Number.isFinite(Number(payload?.gamesPlayed))
+              ? Number(payload.gamesPlayed)
+              : prev.gamesPlayed,
+            gamesWon: Number.isFinite(Number(payload?.gamesWon))
+              ? Number(payload.gamesWon)
+              : prev.gamesWon,
+            winRate: Number.isFinite(Number(payload?.winRate))
+              ? Number(payload.winRate)
+              : prev.winRate,
+            avatarId: payload?.avatarId || prev.avatarId,
+          }));
         }
 
         if (activityResponse.ok) {
@@ -94,6 +168,26 @@ const Profile = () => {
             })
           );
           setCountryQuery(payload.country || "");
+        }
+
+        if (userResponse?.ok) {
+          const payload = await userResponse.json();
+          const apiCondition = payload?.user?.nextWordCondition;
+          if (apiCondition === NEXT_WORD_CONDITIONS.auto || apiCondition === NEXT_WORD_CONDITIONS.manual) {
+            setPlayerPreferences((prev) =>
+              savePlayerPreferences({
+                ...prev,
+                nextWordCondition: apiCondition,
+              })
+            );
+          }
+
+          if (payload?.user?.avatarId) {
+            setProfileStats((prev) => ({
+              ...prev,
+              avatarId: payload.user.avatarId,
+            }));
+          }
         }
 
         setLocationApiReady(true);
@@ -148,6 +242,10 @@ const Profile = () => {
     return () => clearTimeout(timeoutId);
   }, [countryIsTyping, countryQuery, currentUser, locationApiReady]);
 
+  useEffect(() => {
+    setPendingAvatarId(profileStats.avatarId || "avatar1");
+  }, [profileStats.avatarId]);
+
   const persistLocation = async (country) => {
     if (!currentUser || !locationApiReady) return false;
 
@@ -182,6 +280,27 @@ const Profile = () => {
       });
       return next;
     });
+
+    if (field === "nextWordCondition" && currentUser) {
+      void (async () => {
+        try {
+          const idToken = await currentUser.getIdToken();
+          const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
+          const fullUrl = serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
+
+          await fetch(`${fullUrl}/api/users/${currentUser.uid}/preferences`, {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${idToken}`,
+            },
+            body: JSON.stringify({ nextWordCondition: value }),
+          });
+        } catch (error) {
+          console.error("Failed to persist next word condition:", error);
+        }
+      })();
+    }
   };
 
   const updateSubmitKey = (index, value) => {
@@ -238,8 +357,43 @@ const Profile = () => {
     setCountryIsTyping(false);
   };
 
+  const handleSaveAvatar = async () => {
+    if (!currentUser || !pendingAvatarId) return;
+
+    const previousAvatar = profileStats.avatarId;
+    setIsSavingAvatar(true);
+    setProfileStats((prev) => ({ ...prev, avatarId: pendingAvatarId }));
+
+    try {
+      const idToken = await currentUser.getIdToken();
+      const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
+      const fullUrl = serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
+
+      const response = await fetch(`${fullUrl}/api/users/${currentUser.uid}/preferences`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ avatarId: pendingAvatarId }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to save avatar");
+      }
+
+      setIsAvatarDialogOpen(false);
+    } catch (error) {
+      console.error("Failed to persist avatar:", error);
+      setProfileStats((prev) => ({ ...prev, avatarId: previousAvatar }));
+    } finally {
+      setIsSavingAvatar(false);
+    }
+  };
+
   return (
-    <div className="flex h-full items-start">
+    <TooltipProvider delayDuration={100}>
+      <div className="flex h-full items-start">
       <div className="w-full space-y-8">
         <header className="space-y-2 border-b border-border/60 pb-5">
           <h1 className="flex items-center gap-2 font-sans text-2xl font-semibold tracking-tight">
@@ -248,12 +402,35 @@ const Profile = () => {
           </h1>
         </header>
 
-        <section className="grid gap-4 sm:grid-cols-2">
+        <section className="grid gap-4 sm:grid-cols-3">
           <div className="rounded-lg border border-border/70 bg-background/40 p-4">
             <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
               Username
             </p>
             <p className="mt-2 font-sans text-lg font-semibold">{username}</p>
+          </div>
+          <div className="rounded-lg border border-border/70 bg-background/40 p-4">
+            <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
+              Avatar
+            </p>
+            <div className="mt-2 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <UserAvatar
+                  avatarId={profileStats.avatarId}
+                  username={username}
+                  size="lg"
+                  expandOnClick
+                />
+                <p className="text-sm text-muted-foreground">{profileStats.avatarId}</p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsAvatarDialogOpen(true)}
+              >
+                Change
+              </Button>
+            </div>
           </div>
           <div className="rounded-lg border border-border/70 bg-background/40 p-4">
             <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
@@ -265,11 +442,70 @@ const Profile = () => {
           </div>
         </section>
 
+        <section className="space-y-4 rounded-lg border border-border/70 bg-background/40 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                Tier Progression
+              </p>
+              <h2 className="mt-1 text-lg font-semibold">{currentTier.label}</h2>
+              <p className="mt-1 text-sm text-muted-foreground">{currentTier.description}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-sm text-muted-foreground">Rating</p>
+              <p className="font-mono text-2xl font-bold tabular-nums">{profileStats.rating}</p>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-primary transition-all"
+                style={{ width: `${tierProgressPercent}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>{currentTier.min} floor</span>
+              <span>
+                {nextTier
+                  ? `${Math.max(0, nextTier.min - Number(profileStats.rating || 0))} to ${nextTier.label}`
+                  : "Top tier reached"}
+              </span>
+            </div>
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {RATING_TIERS.map((tier) => {
+              const active = tier.label === currentTier.label;
+              return (
+                <Tooltip key={tier.label}>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className={`rounded-md border px-3 py-2 text-left transition-colors ${
+                        active
+                          ? `${tier.color} ring-1 ring-primary/20`
+                          : "border-border/70 bg-card/30 hover:bg-card/50"
+                      }`}
+                    >
+                      <p className="text-sm font-semibold">{tier.label}</p>
+                      <p className="text-xs text-muted-foreground">{tier.min}+</p>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent sideOffset={6} className="max-w-64">
+                    {tier.description}
+                  </TooltipContent>
+                </Tooltip>
+              );
+            })}
+          </div>
+        </section>
+
         <section className="grid items-stretch gap-6 xl:grid-cols-[minmax(290px,360px)_minmax(0,1fr)]">
           <div className="h-full space-y-5 rounded-lg border border-border/70 bg-background/40 p-4">
             <div>
               <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
-                Typing Preferences
+                For The Globe
               </p>
             </div>
 
@@ -410,8 +646,72 @@ const Profile = () => {
             </p>
           )}
         </section>
+
+        <AlertDialog open={isAvatarDialogOpen} onOpenChange={setIsAvatarDialogOpen}>
+          <AlertDialogContent className="max-w-2xl">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Choose your avatar</AlertDialogTitle>
+            </AlertDialogHeader>
+
+            <div className="space-y-4">
+              <div>
+                <p className="mb-2 text-xs uppercase tracking-[0.12em] text-muted-foreground">Male</p>
+                <div className="grid grid-cols-5 gap-2">
+                  {MALE_AVATAR_IDS.map((avatarId) => {
+                    const selected = pendingAvatarId === avatarId;
+                    return (
+                      <button
+                        key={avatarId}
+                        type="button"
+                        onClick={() => setPendingAvatarId(avatarId)}
+                        className={`rounded-md border p-2 transition-colors ${
+                          selected
+                            ? "border-primary bg-primary/10"
+                            : "border-border/70 bg-card/30 hover:bg-card/50"
+                        }`}
+                      >
+                        <UserAvatar avatarId={avatarId} username={username} className="mx-auto" />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-2 text-xs uppercase tracking-[0.12em] text-muted-foreground">Female</p>
+                <div className="grid grid-cols-5 gap-2">
+                  {FEMALE_AVATAR_IDS.map((avatarId) => {
+                    const selected = pendingAvatarId === avatarId;
+                    return (
+                      <button
+                        key={avatarId}
+                        type="button"
+                        onClick={() => setPendingAvatarId(avatarId)}
+                        className={`rounded-md border p-2 transition-colors ${
+                          selected
+                            ? "border-primary bg-primary/10"
+                            : "border-border/70 bg-card/30 hover:bg-card/50"
+                        }`}
+                      >
+                        <UserAvatar avatarId={avatarId} username={username} className="mx-auto" />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isSavingAvatar}>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleSaveAvatar} disabled={isSavingAvatar}>
+                {isSavingAvatar ? "Saving..." : "Save Avatar"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
+    </TooltipProvider>
   );
 };
 

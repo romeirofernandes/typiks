@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { UserAvatar } from "@/components/ui/user-avatar";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,7 +31,6 @@ export default function Friends() {
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
-  const [fetching, setFetching] = useState(false);
   const [friends, setFriends] = useState([]);
   const [incomingRequests, setIncomingRequests] = useState([]);
   const [outgoingRequests, setOutgoingRequests] = useState([]);
@@ -47,7 +47,6 @@ export default function Friends() {
     if (!currentUser) return;
 
     try {
-      setFetching(true);
       setFeedback("");
 
       const idToken = await currentUser.getIdToken();
@@ -82,7 +81,6 @@ export default function Friends() {
       console.error("Failed to load friends:", error);
       setFeedback("Failed to load friends. Please try again.");
     } finally {
-      setFetching(false);
       setLoading(false);
     }
   }, [currentUser]);
@@ -476,7 +474,10 @@ export default function Friends() {
                       className="flex items-center justify-between gap-3 rounded-md border border-border/70 bg-card/40 px-3 py-2"
                     >
                       <div>
-                        <p className="font-semibold">{user.username}</p>
+                        <p className="inline-flex items-center gap-2 font-semibold">
+                          <UserAvatar avatarId={user.avatarId} username={user.username} size="sm" />
+                          <span>{user.username}</span>
+                        </p>
                         <p className="text-xs text-muted-foreground">Rating: {user.rating}</p>
                       </div>
                       <Button
@@ -514,8 +515,9 @@ export default function Friends() {
                 className="flex flex-col gap-3 rounded-md border border-border/70 bg-card/30 p-3 sm:flex-row sm:items-center sm:justify-between"
               >
                 <div>
-                  <p className="font-semibold">
-                    {request.senderUsername} sent you a friend request
+                  <p className="inline-flex items-center gap-2 font-semibold">
+                    <UserAvatar avatarId={request.senderAvatarId} username={request.senderUsername} size="sm" />
+                    <span>{request.senderUsername} sent you a friend request</span>
                   </p>
                   <p className="text-xs text-muted-foreground">
                     Rating: {request.senderRating} • {request.senderOnline ? "Online" : "Offline"}
@@ -534,8 +536,9 @@ export default function Friends() {
                 className="flex flex-col gap-3 rounded-md border border-border/70 bg-card/30 p-3 sm:flex-row sm:items-center sm:justify-between"
               >
                 <div>
-                  <p className="font-semibold">
-                    {invite.inviterUsername} invited you to room {invite.roomCode}
+                  <p className="inline-flex items-center gap-2 font-semibold">
+                    <UserAvatar avatarId={invite.inviterAvatarId} username={invite.inviterUsername} size="sm" />
+                    <span>{invite.inviterUsername} invited you to room {invite.roomCode}</span>
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {invite.inviterOnline ? "Inviter online" : "Inviter offline"}
@@ -566,7 +569,10 @@ export default function Friends() {
                   className="flex flex-col gap-2 rounded-md border border-border/70 bg-card/30 p-3"
                 >
                   <div className="flex items-center justify-between gap-3">
-                    <p className="font-semibold">{request.senderUsername}</p>
+                    <p className="inline-flex items-center gap-2 font-semibold">
+                      <UserAvatar avatarId={request.senderAvatarId} username={request.senderUsername} size="sm" />
+                      <span>{request.senderUsername}</span>
+                    </p>
                     <p className="text-xs text-muted-foreground">
                       Rating: {request.senderRating} • {request.senderOnline ? "Online" : "Offline"}
                     </p>
@@ -603,7 +609,10 @@ export default function Friends() {
                   className="flex items-center justify-between rounded-md border border-border/70 bg-card/30 p-3"
                 >
                   <div>
-                    <p className="font-semibold">{request.receiverUsername}</p>
+                    <p className="inline-flex items-center gap-2 font-semibold">
+                      <UserAvatar avatarId={request.receiverAvatarId} username={request.receiverUsername} size="sm" />
+                      <span>{request.receiverUsername}</span>
+                    </p>
                     <p className="text-xs text-muted-foreground">Waiting for response</p>
                   </div>
                   <p className="text-xs text-muted-foreground">
@@ -639,7 +648,7 @@ export default function Friends() {
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
                       <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
-                        <UserIcon className="h-5 w-5" />
+                        <UserAvatar avatarId={friend.avatarId} username={friend.username} />
                       </div>
                       <div>
                         <p className="font-semibold">{friend.username}</p>

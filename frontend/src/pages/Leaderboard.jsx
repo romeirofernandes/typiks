@@ -4,34 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StarIcon } from "@radix-ui/react-icons";
 import { TbAward } from "react-icons/tb";
-
-const RATING_TIERS = [
-  {
-    min: 1600,
-    label: "Expert",
-    color: "bg-chart-5/15 text-chart-5 border-chart-5/25",
-  },
-  {
-    min: 1400,
-    label: "Advanced",
-    color: "bg-chart-4/15 text-chart-4 border-chart-4/25",
-  },
-  {
-    min: 1200,
-    label: "Intermediate",
-    color: "bg-chart-3/15 text-chart-3 border-chart-3/25",
-  },
-  {
-    min: 1000,
-    label: "Beginner",
-    color: "bg-chart-2/15 text-chart-2 border-chart-2/25",
-  },
-  {
-    min: 0,
-    label: "Novice",
-    color: "bg-muted text-muted-foreground border-border",
-  },
-];
+import { UserAvatar } from "@/components/ui/user-avatar";
+import { getTierByRating } from "@/lib/player-meta";
 
 const Leaderboard = () => {
   const [leaderboard, setLeaderboard] = useState([]);
@@ -83,9 +57,7 @@ const Leaderboard = () => {
     return "text-muted-foreground";
   };
 
-  const getRatingBadge = (rating) => {
-    return RATING_TIERS.find((tier) => rating >= tier.min) || RATING_TIERS.at(-1);
-  };
+  const getRatingBadge = (rating) => getTierByRating(rating);
 
   const topThree = useMemo(
     () => leaderboard.filter((player) => player.rank <= 3).sort((a, b) => a.rank - b.rank),
@@ -214,7 +186,10 @@ const Leaderboard = () => {
                       </div>
                       <span className="text-xs text-muted-foreground tabular-nums">{player.winRate}% WR</span>
                     </div>
-                    <p className="mt-2 truncate text-lg font-semibold">{player.username}</p>
+                    <div className="mt-2 flex items-center gap-2">
+                      <UserAvatar avatarId={player.avatarId} username={player.username} size="sm" />
+                      <p className="truncate text-lg font-semibold">{player.username}</p>
+                    </div>
                     <p className={`mt-1 text-sm font-medium tabular-nums ${getRatingColor(player.rating)}`}>
                       {player.rating} rating
                     </p>
@@ -246,7 +221,10 @@ const Leaderboard = () => {
                       {player.winRate}% WR
                     </span>
                   </div>
-                  <p className="mt-2 truncate text-lg font-semibold">{player.username}</p>
+                  <div className="mt-2 flex items-center gap-2">
+                    <UserAvatar avatarId={player.avatarId} username={player.username} size="sm" />
+                    <p className="truncate text-lg font-semibold">{player.username}</p>
+                  </div>
                   <p
                     className={`mt-1 text-sm font-medium tabular-nums ${getRatingColor(
                       player.rating
@@ -317,7 +295,10 @@ const Leaderboard = () => {
                             </td>
 
                             <td className="px-4 py-3">
-                              <span className="font-semibold">{player.username}</span>
+                              <span className="inline-flex items-center gap-2 font-semibold">
+                                <UserAvatar avatarId={player.avatarId} username={player.username} size="sm" />
+                                <span>{player.username}</span>
+                              </span>
                             </td>
 
                             <td className="px-4 py-3">
@@ -353,21 +334,6 @@ const Leaderboard = () => {
           </Card>
         </motion.div>
 
-        <motion.div
-          initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: 0.14 }}
-          className="flex flex-wrap gap-2"
-        >
-          {RATING_TIERS.map((tier) => (
-            <span
-              key={tier.label}
-              className={`inline-flex rounded-full border px-3 py-1 text-xs font-medium ${tier.color}`}
-            >
-              {tier.label}
-            </span>
-          ))}
-        </motion.div>
       </div>
     </div>
   );

@@ -15,6 +15,7 @@ import BotMode from "./pages/BotMode";
 import Friends from "./pages/Friends";
 import CreateRoom from "./pages/CreateRoom";
 import TheGlobe from "./pages/TheGlobe";
+import { Toaster } from "@/components/ui/sonner";
 
 export default function App() {
   return (
@@ -43,6 +44,7 @@ export default function App() {
             <Route path="/game" element={<Game />} />
           </Route>
         </Routes>
+        <Toaster />
       </BrowserRouter>
     </AuthProvider>
   );

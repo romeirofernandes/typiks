@@ -17,6 +17,12 @@ const DEFAULT_ROOM_SETTINGS = {
 	roundTimeSeconds: 60,
 	wordCount: 30,
 	gameMode: 'ffa', // 'ffa' or 'coop'
+	coopMode: 'normal', // 'normal' or 'switcher'
+};
+
+const COOP_MODES = {
+	normal: 'normal',
+	switcher: 'switcher',
 };
 
 const DEFAULT_TEAM_NAMES = ['Team Alpha', 'Team Beta', 'Team Gamma', 'Team Delta', 'Team Epsilon', 'Team Zeta'];
@@ -54,6 +60,10 @@ export function normalizePrivateRoomSettings(rawSettings = {}, { currentMembers 
 	);
 	const wordCount = toInteger(rawSettings.wordCount, DEFAULT_ROOM_SETTINGS.wordCount);
 	const gameMode = rawSettings.gameMode === 'coop' ? 'coop' : 'ffa';
+	const coopMode =
+		rawSettings.coopMode === COOP_MODES.switcher
+			? COOP_MODES.switcher
+			: COOP_MODES.normal;
 
 	if (maxPlayers < PRIVATE_ROOM_LIMITS.minPlayers || maxPlayers > PRIVATE_ROOM_LIMITS.maxPlayers) {
 		return {
@@ -88,6 +98,7 @@ export function normalizePrivateRoomSettings(rawSettings = {}, { currentMembers 
 			roundTimeSeconds,
 			wordCount,
 			gameMode,
+			coopMode,
 		},
 	};
 }
@@ -193,6 +204,7 @@ export class PrivateRoom {
 		const safe = {
 			username: 'player',
 			rating: 800,
+			avatarId: 'avatar1',
 		};
 
 		if (!userInfo || typeof userInfo !== 'object') return safe;
@@ -203,6 +215,13 @@ export class PrivateRoom {
 
 		if (Number.isFinite(userInfo.rating)) {
 			safe.rating = Math.max(0, Math.min(3000, Math.floor(userInfo.rating)));
+		}
+
+		if (
+			typeof userInfo.avatarId === 'string' &&
+			/^avatar([1-9]|10)$/.test(userInfo.avatarId.trim().toLowerCase())
+		) {
+			safe.avatarId = userInfo.avatarId.trim().toLowerCase();
 		}
 
 		return safe;
@@ -285,27 +304,66 @@ export class PrivateRoom {
 			return [];
 		}
 
+		const isSwitcherCoop =
+			this.settings.gameMode === 'coop' &&
+			this.settings.coopMode === COOP_MODES.switcher &&
+			this.game?.teamProgress;
+
 		return this.getSortedMembers().map((member) => {
 			const progress = this.game.progress.get(member.id) || {
 				score: 0,
 				correctChars: 0,
 				currentWordIndex: 0,
 			};
+			const teamProgress =
+				isSwitcherCoop && member.teamId ? this.game.teamProgress.get(member.teamId) : null;
+			const activePlayerId =
+				teamProgress && Array.isArray(teamProgress.memberIds)
+					? teamProgress.memberIds[teamProgress.activeMemberIndex] || null
+					: null;
 
 			return {
 				playerId: member.id,
 				username: member.userInfo.username,
+				avatarId: member.userInfo.avatarId,
 				score: progress.score,
 				correctChars: progress.correctChars,
-				currentWordIndex: progress.currentWordIndex,
+				currentWordIndex: teamProgress?.currentWordIndex ?? progress.currentWordIndex,
+				isActiveTurn: activePlayerId === member.id,
 			};
 		});
+	}
+
+	buildTeamTurnState() {
+		if (!this.game?.teamProgress) {
+			return {};
+		}
+
+		const state = {};
+		for (const [teamId, teamProgress] of this.game.teamProgress.entries()) {
+			const activePlayerId =
+				Array.isArray(teamProgress.memberIds) && teamProgress.memberIds.length > 0
+					? teamProgress.memberIds[teamProgress.activeMemberIndex] || teamProgress.memberIds[0]
+					: null;
+
+			state[teamId] = {
+				teamId,
+				activePlayerId,
+				currentWordIndex: teamProgress.currentWordIndex,
+				currentInput: teamProgress.currentInput || '',
+				score: teamProgress.score,
+				correctChars: teamProgress.correctChars,
+			};
+		}
+
+		return state;
 	}
 
 	buildRoomState(forPlayerId) {
 		const members = this.getSortedMembers().map((member) => ({
 			id: member.id,
 			username: member.userInfo.username,
+			avatarId: member.userInfo.avatarId,
 			rating: member.userInfo.rating,
 			ready: member.ready,
 			isLeader: member.id === this.ownerId,
@@ -342,6 +400,8 @@ export class PrivateRoom {
 				durationMs: Math.max(0, this.game.endTime - Date.now()),
 				words: this.game.words,
 				progress: this.buildProgressList(),
+				teamTurnState: this.buildTeamTurnState(),
+				coopMode: this.settings.coopMode || COOP_MODES.normal,
 			};
 		}
 
@@ -485,10 +545,20 @@ export class PrivateRoom {
 		}
 	}
 
+	sendToTeamMembers(teamId, message) {
+		if (!teamId) return;
+		for (const member of this.members.values()) {
+			if (member.teamId !== teamId) continue;
+			if (!member.sessionId) continue;
+			this.sendToPlayer(member.sessionId, message);
+		}
+	}
+
 	sendProgress() {
 		this.sendToMembers({
 			type: 'ROOM_PROGRESS',
 			progress: this.buildProgressList(),
+			teamTurnState: this.buildTeamTurnState(),
 		});
 	}
 
@@ -600,6 +670,7 @@ export class PrivateRoom {
 		const endTime = startTime + durationMs;
 
 		const progress = new Map();
+		const teamProgress = new Map();
 		for (const member of this.members.values()) {
 			progress.set(member.id, {
 				score: 0,
@@ -607,6 +678,23 @@ export class PrivateRoom {
 				currentWordIndex: 0,
 			});
 			member.ready = false;
+		}
+
+		if (this.settings.gameMode === 'coop' && this.settings.coopMode === COOP_MODES.switcher) {
+			for (const team of this.coopTeams) {
+				const teamMembers = this.getSortedMembers().filter((member) => member.teamId === team.id);
+				if (teamMembers.length === 0) continue;
+
+				teamProgress.set(team.id, {
+					teamId: team.id,
+					memberIds: teamMembers.map((member) => member.id),
+					activeMemberIndex: 0,
+					currentWordIndex: 0,
+					score: 0,
+					correctChars: 0,
+					currentInput: '',
+				});
+			}
 		}
 
 		this.gameState = 'playing';
@@ -617,6 +705,7 @@ export class PrivateRoom {
 			gameTimer: null,
 			words,
 			progress,
+			teamProgress,
 			startTime,
 			endTime,
 		};
@@ -627,6 +716,8 @@ export class PrivateRoom {
 			startTime,
 			endTime,
 			duration: durationMs,
+			coopMode: this.settings.coopMode || COOP_MODES.normal,
+			teamTurnState: this.buildTeamTurnState(),
 		});
 		this.sendProgress();
 		this.broadcastRoomState();
@@ -653,6 +744,7 @@ export class PrivateRoom {
 				return {
 					playerId: member.id,
 					username: member.userInfo.username,
+					avatarId: member.userInfo.avatarId,
 					score: progress.score,
 					correctChars: progress.correctChars,
 					teamId: member.teamId || null,
@@ -688,6 +780,7 @@ export class PrivateRoom {
 				teamBucket.members.push({
 					playerId: row.playerId,
 					username: row.username,
+					avatarId: row.avatarId,
 					score: row.score,
 					correctChars: row.correctChars,
 					progress: row.progress,
@@ -758,6 +851,61 @@ export class PrivateRoom {
 			return;
 		}
 
+		if (this.settings.gameMode === 'coop' && this.settings.coopMode === COOP_MODES.switcher) {
+			const member = this.members.get(playerId);
+			if (!member?.teamId) return;
+
+			const teamProgress = this.game.teamProgress?.get(member.teamId);
+			if (!teamProgress || !Array.isArray(teamProgress.memberIds) || teamProgress.memberIds.length === 0) {
+				return;
+			}
+
+			const activePlayerId =
+				teamProgress.memberIds[teamProgress.activeMemberIndex] || teamProgress.memberIds[0];
+			if (activePlayerId !== playerId) {
+				const sessionId = this.playerToSession.get(playerId);
+				this.sendRoomError(sessionId, 'Wait for your turn');
+				return;
+			}
+
+			const currentWord = this.game.words[teamProgress.currentWordIndex];
+			if (typeof currentWord !== 'string') {
+				this.endGame('completed');
+				return;
+			}
+
+			if (normalizedInput !== currentWord.toLowerCase()) {
+				const sessionId = this.playerToSession.get(playerId);
+				this.sendToPlayer(sessionId, { type: 'ROOM_WRONG_WORD' });
+				return;
+			}
+
+			progress.score += 1;
+			progress.correctChars += currentWord.length;
+			teamProgress.score += 1;
+			teamProgress.correctChars += currentWord.length;
+			teamProgress.currentWordIndex += 1;
+			teamProgress.currentInput = '';
+
+			for (const memberId of teamProgress.memberIds) {
+				const memberProgress = this.game.progress.get(memberId);
+				if (memberProgress) {
+					memberProgress.currentWordIndex = teamProgress.currentWordIndex;
+				}
+			}
+
+			teamProgress.activeMemberIndex =
+				(teamProgress.activeMemberIndex + 1) % teamProgress.memberIds.length;
+
+			this.sendProgress();
+
+			if (teamProgress.currentWordIndex >= this.game.words.length) {
+				this.endGame('completed', { winnerId: playerId });
+			}
+
+			return;
+		}
+
 		const currentWord = this.game.words[progress.currentWordIndex];
 		if (typeof currentWord !== 'string') {
 			this.endGame('completed');
@@ -774,14 +922,48 @@ export class PrivateRoom {
 		progress.correctChars += currentWord.length;
 		progress.currentWordIndex += 1;
 		this.sendProgress();
-		this.broadcastRoomState();
 
 		if (progress.currentWordIndex >= this.game.words.length) {
 			this.endGame('completed', { winnerId: playerId });
 		}
 	}
 
+	handlePlayerTyping(playerId, rawInput) {
+		if (typeof rawInput !== 'string') return;
+		if (this.gameState !== 'playing' || !this.game) return;
+		if (this.settings.gameMode !== 'coop' || this.settings.coopMode !== COOP_MODES.switcher) return;
+
+		const member = this.members.get(playerId);
+		if (!member?.teamId) return;
+
+		const teamProgress = this.game.teamProgress?.get(member.teamId);
+		if (!teamProgress || !Array.isArray(teamProgress.memberIds) || teamProgress.memberIds.length === 0) {
+			return;
+		}
+
+		const activePlayerId = teamProgress.memberIds[teamProgress.activeMemberIndex] || teamProgress.memberIds[0];
+		if (activePlayerId !== playerId) {
+			return;
+		}
+
+		const currentWord = this.game.words[teamProgress.currentWordIndex] || '';
+		const typedInput = String(rawInput || '').replace(/\s/g, '').slice(0, currentWord.length);
+		teamProgress.currentInput = typedInput;
+		this.sendToTeamMembers(member.teamId, {
+			type: 'ROOM_TEAM_TYPING',
+			teamId: member.teamId,
+			activePlayerId,
+			currentWordIndex: teamProgress.currentWordIndex,
+			currentInput: typedInput,
+		});
+	}
+
 	handleJoin(playerId, sessionId, message = {}) {
+		if (!this.ownerId) {
+			this.sendRoomError(sessionId, 'Room not found');
+			return false;
+		}
+
 		const existingSessionId = this.playerToSession.get(playerId);
 		if (
 			existingSessionId &&
@@ -1229,6 +1411,14 @@ export class PrivateRoom {
 							return;
 						}
 						this.handlePlayerInput(playerId, message.input);
+						break;
+
+					case 'PLAYER_TYPING':
+						if (!playerId) {
+							this.sendRoomError(sessionId, 'Join the room first');
+							return;
+						}
+						this.handlePlayerTyping(playerId, message.input);
 						break;
 
 					case 'ROOM_LEAVE':
