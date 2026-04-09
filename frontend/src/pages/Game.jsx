@@ -36,6 +36,7 @@ const Game = () => {
   const [timeLeft, setTimeLeft] = useState(60);
   const [input, setInput] = useState("");
   const [gameResults, setGameResults] = useState(null);
+  const [postMatchRating, setPostMatchRating] = useState(null);
   const [modeSeconds, setModeSeconds] = useState(initialModeSeconds);
   const [activeGameId, setActiveGameId] = useState(null);
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
@@ -369,6 +370,7 @@ const Game = () => {
       case "MATCH_FOUND":
         setRematchState("idle");
         setIncomingRematch(null);
+        setPostMatchRating(null);
         setActiveGameId(message.gameId || null);
         setModeSeconds(Number(message.modeSeconds) || modeSeconds);
         setOpponent(message.opponent);
@@ -494,6 +496,7 @@ const Game = () => {
         gameEndedRef.current = true;
         setRematchState("idle");
         setIncomingRematch(null);
+        setPostMatchRating(null);
         setInput("");
         setGameState("finished");
         {
@@ -612,11 +615,25 @@ const Game = () => {
       if (response.ok) {
         resultPersistedRef.current = true;
         const data = await response.json();
+        setPostMatchRating(
+          Number.isFinite(Number(data?.modeStats?.rating))
+            ? Number(data.modeStats.rating)
+            : Number.isFinite(Number(data?.player?.rating))
+              ? Number(data.player.rating)
+              : null
+        );
 
         // Update local user stats for immediate UI update
         setUserStats((prev) => ({
           ...prev,
           ...data.player,
+          modeStats: Array.isArray(prev?.modeStats)
+            ? prev.modeStats.map((mode) =>
+                Number(mode.modeSeconds) === Number(modeSeconds) && data?.modeStats
+                  ? { ...mode, ...data.modeStats }
+                  : mode
+              )
+            : prev?.modeStats,
           winRate:
             prev.gamesPlayed > 0
               ? (
@@ -1136,8 +1153,12 @@ const Game = () => {
                       <FiTrendingUp className="h-4 w-4 text-muted-foreground" />
                       <span className="text-sm text-muted-foreground">
                         New Rating:{" "}
-                        <span className={`font-semibold ${getRatingColor(userStats.rating)}`}>
-                          {userStats.rating}
+                        <span
+                          className={`font-semibold ${getRatingColor(
+                            Number.isFinite(Number(postMatchRating)) ? Number(postMatchRating) : userStats.rating
+                          )}`}
+                        >
+                          {Number.isFinite(Number(postMatchRating)) ? Number(postMatchRating) : userStats.rating}
                         </span>
                       </span>
                     </div>
