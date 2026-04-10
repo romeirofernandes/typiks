@@ -1,4 +1,4 @@
-import React, { memo, useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   motion,
   AnimatePresence,
@@ -17,52 +17,6 @@ import {
   PLAYER_PREFERENCES_STORAGE_KEY,
 } from "@/lib/player-preferences";
 import { FiClock, FiArrowLeft, FiZap, FiTrendingUp, FiCheck, FiX } from "react-icons/fi";
-
-const TypingWordDisplay = memo(function TypingWordDisplay({ word, input }) {
-  const activeWord = String(word || "");
-  const activeInput = String(input || "");
-
-  return (
-    <div className="relative inline-block font-mono text-4xl font-medium tracking-wider leading-none sm:text-5xl">
-      {activeWord.split("").map((char, charIndex) => {
-        const typedChar = activeInput[charIndex];
-        const isCurrentPosition = charIndex === activeInput.length;
-        const isTyped = charIndex < activeInput.length;
-        const isCorrect = isTyped && typedChar === char;
-        const isWrong = isTyped && typedChar !== char;
-        const renderedChar = char === " " ? "\u00A0" : char;
-        const renderedTypedChar = isWrong && typedChar === " " ? "_" : typedChar;
-
-        return (
-          <span
-            key={charIndex}
-            className={`relative inline-block min-w-[0.45em] align-baseline ${
-              isCorrect
-                ? "text-primary"
-                : isWrong
-                  ? "text-destructive"
-                  : "text-muted-foreground/50"
-            }`}
-          >
-            {isCurrentPosition ? (
-              <span
-                className="absolute -left-[2px] top-0 h-full w-[3px] bg-primary"
-                style={{ animation: "blink 1s ease-in-out infinite" }}
-              />
-            ) : null}
-            {isWrong ? renderedTypedChar : renderedChar}
-          </span>
-        );
-      })}
-      {activeInput.length === activeWord.length && activeWord ? (
-        <span
-          className="absolute -right-[2px] top-0 h-full w-[3px] bg-primary"
-          style={{ animation: "blink 1s ease-in-out infinite" }}
-        />
-      ) : null}
-    </div>
-  );
-});
 
 const Game = () => {
   const { currentUser } = useAuth();
@@ -105,10 +59,6 @@ const Game = () => {
   const inputRef = useRef(null);
   const timerRef = useRef(null);
   const wsRef = useRef(null);
-  const socketMessageHandlerRef = useRef(null);
-  const reconnectTimeoutRef = useRef(null);
-  const queuedInputRef = useRef(null);
-  const lastSubmittedInputRef = useRef("");
   const isConnectingRef = useRef(false);
   const connectAttemptRef = useRef(0);
   const gameEndedRef = useRef(false);
@@ -130,11 +80,6 @@ const Game = () => {
 
   const cleanup = () => {
     connectAttemptRef.current += 1;
-
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
-    }
 
     if (wsRef.current) {
       wsRef.current.close();
@@ -225,10 +170,6 @@ const Game = () => {
         return false;
       }
 
-      if (normalizedInput === lastSubmittedInputRef.current) {
-        return false;
-      }
-
       try {
         wsRef.current.send(
           JSON.stringify({
@@ -241,7 +182,6 @@ const Game = () => {
         return false;
       }
 
-      lastSubmittedInputRef.current = normalizedInput;
       setMyScore((prev) => prev + 1);
       setCurrentWordIndex((prev) => Math.min(prev + 1, words.length));
       setInput("");
@@ -337,8 +277,6 @@ const Game = () => {
 
         isConnectingRef.current = false;
         setGameState("waiting");
-        queuedInputRef.current = null;
-        lastSubmittedInputRef.current = "";
 
         // Join the matchmaking queue with proper user info
         websocket.send(
@@ -357,14 +295,8 @@ const Game = () => {
 
       websocket.onmessage = (event) => {
         if (wsRef.current !== websocket) return;
-        let message;
-        try {
-          message = JSON.parse(event.data);
-        } catch {
-          return;
-        }
-
-        socketMessageHandlerRef.current?.(message);
+        const message = JSON.parse(event.data);
+        handleWebSocketMessage(message);
       };
 
       websocket.onclose = (event) => {
@@ -401,15 +333,6 @@ const Game = () => {
           message: "Could not connect to the game server.",
         });
         setGameState("error");
-
-        if (!reconnectTimeoutRef.current) {
-          reconnectTimeoutRef.current = setTimeout(() => {
-            reconnectTimeoutRef.current = null;
-            if (gameEndedRef.current || wsRef.current || isConnectingRef.current) return;
-            if (document.visibilityState === "hidden") return;
-            connectWebSocket();
-          }, 1200);
-        }
       };
 
       websocket.onerror = (error) => {
@@ -421,7 +344,8 @@ const Game = () => {
       isConnectingRef.current = false;
       console.error("Failed to connect WebSocket:", error);
     }
-  }, [currentUser, modeSeconds, queueRating, userStats]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser, modeSeconds, navigate, queueRating, userStats]); // note: handleWebSocketMessage is omitted as it's structurally bound to the latest render by design or handled
 
   useEffect(() => {
     fetchUserStats();
@@ -429,7 +353,8 @@ const Game = () => {
     return () => {
       cleanup();
     };
-  }, [fetchUserStats]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount! fetchUserStats uses latest refs or is stable enough.
 
   useEffect(() => {
     if (
@@ -463,8 +388,6 @@ const Game = () => {
       case "GAME_START": {
         gameEndedRef.current = false;
         resultPersistedRef.current = false;
-        lastSubmittedInputRef.current = "";
-        queuedInputRef.current = null;
         setModeSeconds(Number(message.modeSeconds) || modeSeconds);
         setWords(Array.isArray(message.words) ? message.words : []);
         setTimeLeft(
@@ -502,24 +425,10 @@ const Game = () => {
         setCurrentWordIndex(myData.currentWordIndex);
         setOpponentScore(opponentData.score);
         setOpponentWordIndex(opponentData.currentWordIndex);
-        if (Number.isFinite(myData.currentWordIndex)) {
-          setInput((prev) => {
-            const queued = queuedInputRef.current;
-            if (!queued) return prev;
-            const expectedWord = words[myData.currentWordIndex] || "";
-            if (queued.wordIndex === myData.currentWordIndex && queued.value !== expectedWord) {
-              return queued.value;
-            }
-            queuedInputRef.current = null;
-            return prev;
-          });
-        }
         break;
       }
 
       case "GAME_RESUMED": {
-        lastSubmittedInputRef.current = "";
-        queuedInputRef.current = null;
         setModeSeconds(Number(message.modeSeconds) || modeSeconds);
         setOpponent(message.opponent || null);
         setWords(Array.isArray(message.words) ? message.words : []);
@@ -571,8 +480,6 @@ const Game = () => {
 
       case "GAME_END":
         gameEndedRef.current = true;
-        lastSubmittedInputRef.current = "";
-        queuedInputRef.current = null;
         setRematchState("idle");
         setIncomingRematch(null);
         setActiveGameId(message.results?.gameId || activeGameId);
@@ -590,8 +497,6 @@ const Game = () => {
 
       case "OPPONENT_DISCONNECTED":
         gameEndedRef.current = true;
-        lastSubmittedInputRef.current = "";
-        queuedInputRef.current = null;
         setRematchState("idle");
         setIncomingRematch(null);
         setPostMatchRating(null);
@@ -657,10 +562,6 @@ const Game = () => {
         break;
     }
   };
-
-  useEffect(() => {
-    socketMessageHandlerRef.current = handleWebSocketMessage;
-  });
 
   const updateGameResults = async (results) => {
     try {
@@ -775,17 +676,10 @@ const Game = () => {
   const handleInputChange = (e) => {
     const maxLength = currentWord.length;
     const nextValue = String(e.target.value || "").replace(/\s/g, "").slice(0, maxLength);
-    if (nextValue === input) return;
     setInput(nextValue);
 
     if (isAutoAdvanceEnabled) {
-      const submitted = submitWordIfCorrect(nextValue);
-      if (submitted) {
-        queuedInputRef.current = {
-          value: "",
-          wordIndex: currentWordIndex + 1,
-        };
-      }
+      submitWordIfCorrect(nextValue);
     }
   };
 
@@ -812,8 +706,6 @@ const Game = () => {
   useEffect(() => {
     if (gameState !== "playing") {
       setInput("");
-      queuedInputRef.current = null;
-      lastSubmittedInputRef.current = "";
     }
   }, [gameState]);
 
@@ -1087,7 +979,49 @@ const Game = () => {
                     <p className="mb-4 font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">
                       Type This Word
                     </p>
-                    <TypingWordDisplay word={words[currentWordIndex]} input={input} />
+                    <div className="relative inline-block font-mono text-4xl font-medium tracking-wider leading-none sm:text-5xl">
+                      {(words[currentWordIndex] || "").split("").map((char, charIndex) => {
+                        const typedChar = input[charIndex];
+                        const isCurrentPosition = charIndex === input.length;
+                        const isTyped = charIndex < input.length;
+                        const isCorrect = isTyped && typedChar === char;
+                        const isWrong = isTyped && typedChar !== char;
+                        const renderedChar = char === " " ? "\u00A0" : char;
+                        const renderedTypedChar = isWrong && typedChar === " " ? "_" : typedChar;
+
+                        return (
+                          <span
+                            key={charIndex}
+                            className={`relative inline-block min-w-[0.45em] align-baseline ${
+                              isCorrect
+                                ? "text-primary"
+                                : isWrong
+                                ? "text-destructive"
+                                : "text-muted-foreground/50"
+                            }`}
+                          >
+                            {isCurrentPosition && (
+                              <span
+                                className="absolute -left-[2px] top-0 h-full w-[3px] bg-primary"
+                                style={{
+                                  animation: "blink 1s ease-in-out infinite",
+                                }}
+                              />
+                            )}
+                            {isWrong ? renderedTypedChar : renderedChar}
+                          </span>
+                        );
+                      })}
+                      {/* Cursor at end if all typed */}
+                      {input.length === (words[currentWordIndex] || "").length && (
+                        <span
+                          className="absolute -right-[2px] top-0 h-full w-[3px] bg-primary"
+                          style={{
+                            animation: "blink 1s ease-in-out infinite",
+                          }}
+                        />
+                      )}
+                    </div>
                   </div>
                   <input
                     ref={inputRef}
@@ -1138,15 +1072,15 @@ const Game = () => {
                     <span className="font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
                       Your Progress
                     </span>
-                      <span className="font-mono text-xs text-primary">
-                        {Math.round((currentWordIndex / Math.max(words.length, 1)) * 100)}%
-                      </span>
+                    <span className="font-mono text-xs text-primary">
+                      {Math.round((currentWordIndex / words.length) * 100)}%
+                    </span>
                   </div>
                   <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
                     <motion.div
                       className="h-full rounded-full bg-primary"
                       initial={{ width: 0 }}
-                      animate={{ width: `${(currentWordIndex / Math.max(words.length, 1)) * 100}%` }}
+                      animate={{ width: `${(currentWordIndex / words.length) * 100}%` }}
                       transition={{ duration: 0.3 }}
                     />
                   </div>
@@ -1156,15 +1090,15 @@ const Game = () => {
                     <span className="font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
                       Opponent Progress
                     </span>
-                      <span className="font-mono text-xs text-destructive">
-                        {Math.round((opponentWordIndex / Math.max(words.length, 1)) * 100)}%
-                      </span>
+                    <span className="font-mono text-xs text-destructive">
+                      {Math.round((opponentWordIndex / words.length) * 100)}%
+                    </span>
                   </div>
                   <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
                     <motion.div
                       className="h-full rounded-full bg-destructive"
                       initial={{ width: 0 }}
-                      animate={{ width: `${(opponentWordIndex / Math.max(words.length, 1)) * 100}%` }}
+                      animate={{ width: `${(opponentWordIndex / words.length) * 100}%` }}
                       transition={{ duration: 0.3 }}
                     />
                   </div>
