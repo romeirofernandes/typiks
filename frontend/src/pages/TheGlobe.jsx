@@ -220,6 +220,9 @@ export function GlobeToMapTransform() {
     ? markerById.get(hoveredMarkerId) || null
     : null;
   const activeMarker = hoveredMarker;
+  const activeMarkerUserCount = Number(
+    activeMarkerSource?.userCount ?? activeMarker?.userCount ?? NaN
+  );
 
   const getNearestProjectedMarker = (x, y) => {
     let nearest = null;
@@ -377,6 +380,12 @@ export function GlobeToMapTransform() {
       activeMarkerSource && markerFeatureById.has(activeMarkerSource.id)
         ? markerFeatureById.get(activeMarkerSource.id)
         : null;
+    const activeFeatureMarker =
+      activeFeatureIndex !== null ? featureMarkerByIndex.get(activeFeatureIndex) : null;
+    const activeFeatureStroke = activeFeatureMarker
+      ? markerColorMap.get(activeFeatureMarker.id)?.base || countryColor
+      : countryColor;
+    const activeFeatureStrokeOpacity = 1;
 
     const defs = svg.append("defs");
     const hatch = defs
@@ -388,14 +397,21 @@ export function GlobeToMapTransform() {
       .attr("patternTransform", "rotate(30)");
 
     hatch
+      .append("rect")
+      .attr("width", 8)
+      .attr("height", 8)
+      .attr("fill", activeFeatureStroke)
+      .attr("opacity", 0.14);
+
+    hatch
       .append("line")
       .attr("x1", 0)
       .attr("y1", 0)
       .attr("x2", 0)
       .attr("y2", 8)
-      .attr("stroke", "var(--primary)")
+      .attr("stroke", activeFeatureStroke)
       .attr("stroke-width", 2)
-      .attr("opacity", isDark ? 0.45 : 0.35);
+      .attr("opacity", activeFeatureStrokeOpacity);
 
     const graticule = d3.geoGraticule();
     svg
@@ -425,11 +441,14 @@ export function GlobeToMapTransform() {
       .attr("stroke-opacity", (_, index) => {
         const matchedMarker = featureMarkerByIndex.get(index);
         if (!matchedMarker) return 0.95;
-        return markerColorMap.get(matchedMarker.id)?.alpha || 0.95;
+        return 1;
       })
       .attr("stroke-width", (_, index) =>
-        activeFeatureIndex === index ? 1.9 : 1.15
+        activeFeatureIndex === index ? 2.05 : featureMarkerByIndex.has(index) ? 2.05 : 1.15
       )
+      .attr("stroke-linejoin", "round")
+      .attr("stroke-linecap", "round")
+      .attr("vector-effect", "non-scaling-stroke")
       .attr("opacity", 1)
       .style("visibility", function () {
         const pathData = d3.select(this).attr("d");
@@ -589,6 +608,9 @@ export function GlobeToMapTransform() {
           </div>
           <div className="tabular-nums text-muted-foreground">
             Most played mode: {activeMarker.mostPlayedMode ? `${activeMarker.mostPlayedMode}s` : "N/A"}
+          </div>
+          <div className="tabular-nums text-muted-foreground">
+            Players: {Number.isFinite(activeMarkerUserCount) ? activeMarkerUserCount.toLocaleString() : "N/A"}
           </div>
         </div>
       ) : null}
