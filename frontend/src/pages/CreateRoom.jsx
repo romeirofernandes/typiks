@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/context/AuthContext";
 import { useLocation } from "react-router-dom";
@@ -60,6 +60,52 @@ function clampSettingValue(rawValue, min, max, fallback) {
   return Math.min(max, Math.max(min, parsed));
 }
 
+const TypingWordDisplay = memo(function TypingWordDisplay({ word, input }) {
+  const activeWord = String(word || "");
+  const activeInput = String(input || "");
+
+  return (
+    <div className="relative inline-block font-mono text-4xl font-medium leading-none tracking-wider sm:text-5xl">
+      {activeWord.split("").map((char, charIndex) => {
+        const typedChar = activeInput[charIndex];
+        const isCurrentPosition = charIndex === activeInput.length;
+        const isTyped = charIndex < activeInput.length;
+        const isCorrect = isTyped && typedChar === char;
+        const isWrong = isTyped && typedChar !== char;
+        const renderedChar = char === " " ? "\u00A0" : char;
+        const renderedTypedChar = isWrong && typedChar === " " ? "_" : typedChar;
+
+        return (
+          <span
+            key={charIndex}
+            className={`relative inline-block min-w-[0.45em] align-baseline transition-colors duration-75 ${
+              isCorrect
+                ? "text-primary"
+                : isWrong
+                  ? "text-destructive"
+                  : "text-muted-foreground/50"
+            }`}
+          >
+            {isCurrentPosition ? (
+              <span
+                className="absolute -left-[2px] top-0 h-full w-[3px] bg-primary"
+                style={{ animation: "blink 1s ease-in-out infinite" }}
+              />
+            ) : null}
+            {isWrong ? renderedTypedChar : renderedChar}
+          </span>
+        );
+      })}
+      {activeInput.length === activeWord.length && activeWord ? (
+        <span
+          className="absolute -right-[2px] top-0 h-full w-[3px] bg-primary"
+          style={{ animation: "blink 1s ease-in-out infinite" }}
+        />
+      ) : null}
+    </div>
+  );
+});
+
 export default function CreateRoom() {
   const { currentUser } = useAuth();
   const location = useLocation();
@@ -67,6 +113,11 @@ export default function CreateRoom() {
   const wsRef = useRef(null);
   const manualDisconnectRef = useRef(false);
   const timerRef = useRef(null);
+   const typingSyncRef = useRef({
+    timeoutId: null,
+    pendingInput: "",
+    lastSentInput: "",
+  });
   const inputRef = useRef(null);
   const autoJoinHandledRef = useRef(false);
   const userInfoRef = useRef({ username: "Player", rating: 800, avatarId: "avatar1" });
@@ -94,6 +145,11 @@ export default function CreateRoom() {
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
   const [playerPreferences, setPlayerPreferences] = useState(() => loadPlayerPreferences());
+  const friendsRefreshRef = useRef({
+    intervalId: null,
+    timeoutId: null,
+    inFlight: false,
+  });
 
   useEffect(() => {
     const updateViewport = () => {
@@ -196,8 +252,10 @@ export default function CreateRoom() {
 
   const fetchFriendsForInvite = useCallback(async () => {
     if (!currentUser) return;
+    if (friendsRefreshRef.current.inFlight) return;
 
     try {
+      friendsRefreshRef.current.inFlight = true;
       const idToken = await currentUser.getIdToken();
       const baseUrl = getServerBaseUrl();
       const response = await fetch(`${baseUrl}/api/users/me/friends`, {
@@ -215,6 +273,8 @@ export default function CreateRoom() {
     } catch (error) {
       console.error("Failed to fetch friends for invite:", error);
       setFriendsForInvite([]);
+    } finally {
+      friendsRefreshRef.current.inFlight = false;
     }
   }, [currentUser]);
 
@@ -230,9 +290,14 @@ export default function CreateRoom() {
   }, []);
 
   useEffect(() => {
+    const typingSync = typingSyncRef.current;
     return () => {
       manualDisconnectRef.current = true;
       cleanupSocket();
+      if (typingSync.timeoutId) {
+        window.clearTimeout(typingSync.timeoutId);
+        typingSync.timeoutId = null;
+      }
       if (timerRef.current) {
         clearInterval(timerRef.current);
       }
@@ -299,16 +364,27 @@ export default function CreateRoom() {
       case "ROOM_PROGRESS":
         setGame((prev) => {
           if (!prev) return prev;
+
+          const nextProgress = Array.isArray(message.progress) ? message.progress : [];
+          const nextTeamTurnState = message.teamTurnState || prev.teamTurnState || {};
+
+          const sameProgressRef = prev.progress === nextProgress;
+          const sameTurnRef = prev.teamTurnState === nextTeamTurnState;
+          if (sameProgressRef && sameTurnRef) return prev;
+
           return {
             ...prev,
-            progress: Array.isArray(message.progress) ? message.progress : [],
-            teamTurnState: message.teamTurnState || prev.teamTurnState || {},
+            progress: nextProgress,
+            teamTurnState: nextTeamTurnState,
           };
         });
         break;
 
       case "ROOM_TEAM_TYPING":
-        setTeamTypingInput(String(message.currentInput || ""));
+        setTeamTypingInput((prev) => {
+          const next = String(message.currentInput || "");
+          return prev === next ? prev : next;
+        });
         break;
 
       case "ROOM_GAME_END":
@@ -316,6 +392,12 @@ export default function CreateRoom() {
         setCountdown(null);
         setGameInput("");
         setTeamTypingInput("");
+        if (typingSyncRef.current.timeoutId) {
+          window.clearTimeout(typingSyncRef.current.timeoutId);
+          typingSyncRef.current.timeoutId = null;
+        }
+        typingSyncRef.current.pendingInput = "";
+        typingSyncRef.current.lastSentInput = "";
         break;
 
       case "ROOM_ERROR":
@@ -499,6 +581,15 @@ export default function CreateRoom() {
 
     wsRef.current.send(JSON.stringify(payload));
   };
+
+  const sendSocketMessageSilently = useCallback((payload) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      return false;
+    }
+
+    wsRef.current.send(JSON.stringify(payload));
+    return true;
+  }, []);
 
   const leaveRoom = () => {
     manualDisconnectRef.current = true;
@@ -800,6 +891,12 @@ export default function CreateRoom() {
     }
 
     sendSocketMessage({ type: "PLAYER_INPUT", input: normalizedInput });
+    if (typingSyncRef.current.timeoutId) {
+      window.clearTimeout(typingSyncRef.current.timeoutId);
+      typingSyncRef.current.timeoutId = null;
+    }
+    typingSyncRef.current.pendingInput = "";
+    typingSyncRef.current.lastSentInput = "";
     setGameInput("");
     setTeamTypingInput("");
   }, [currentUser?.uid, currentWord, isMyTurnInSwitcher, isPlaying, isSwitcherCoopActive]);
@@ -823,11 +920,24 @@ export default function CreateRoom() {
 
     const maxLength = currentWord.length;
     const nextValue = String(event.target.value || "").replace(/\s/g, "").slice(0, maxLength);
+    if (nextValue === gameInput) return;
     setGameInput(nextValue);
 
     if (isSwitcherCoopActive) {
-      setTeamTypingInput(nextValue);
-      sendSocketMessage({ type: "PLAYER_TYPING", input: nextValue });
+      const typingSync = typingSyncRef.current;
+      typingSync.pendingInput = nextValue;
+
+      if (!typingSync.timeoutId) {
+        typingSync.timeoutId = window.setTimeout(() => {
+          typingSync.timeoutId = null;
+          const payloadInput = typingSync.pendingInput;
+          if (payloadInput === typingSync.lastSentInput) return;
+          const sent = sendSocketMessageSilently({ type: "PLAYER_TYPING", input: payloadInput });
+          if (sent) {
+            typingSync.lastSentInput = payloadInput;
+          }
+        }, 45);
+      }
     }
 
     if (isAutoAdvanceEnabled) {
@@ -843,6 +953,12 @@ export default function CreateRoom() {
     if (!isPlaying || !isSwitcherCoopActive) return;
 
     if (!isMyTurnInSwitcher) {
+      if (typingSyncRef.current.timeoutId) {
+        window.clearTimeout(typingSyncRef.current.timeoutId);
+        typingSyncRef.current.timeoutId = null;
+      }
+      typingSyncRef.current.pendingInput = "";
+      typingSyncRef.current.lastSentInput = "";
       setGameInput("");
       return;
     }
@@ -957,17 +1073,40 @@ export default function CreateRoom() {
 
   useEffect(() => {
     if (!isInRoom || !isLobbyState || !currentUser) return;
+    const refreshState = friendsRefreshRef.current;
 
     const refreshFriends = () => {
       fetchFriendsForInvite();
     };
 
-    const timerId = window.setInterval(refreshFriends, 8000);
+    if (refreshState.intervalId) {
+      window.clearInterval(refreshState.intervalId);
+      refreshState.intervalId = null;
+    }
+
+    if (refreshState.timeoutId) {
+      window.clearTimeout(refreshState.timeoutId);
+      refreshState.timeoutId = null;
+    }
+
+    refreshState.timeoutId = window.setTimeout(() => {
+      refreshFriends();
+      refreshState.timeoutId = null;
+    }, 300);
+
+    refreshState.intervalId = window.setInterval(refreshFriends, 10000);
     window.addEventListener("focus", refreshFriends);
     document.addEventListener("visibilitychange", refreshFriends);
 
     return () => {
-      window.clearInterval(timerId);
+      if (refreshState.intervalId) {
+        window.clearInterval(refreshState.intervalId);
+        refreshState.intervalId = null;
+      }
+      if (refreshState.timeoutId) {
+        window.clearTimeout(refreshState.timeoutId);
+        refreshState.timeoutId = null;
+      }
       window.removeEventListener("focus", refreshFriends);
       document.removeEventListener("visibilitychange", refreshFriends);
     };
@@ -1094,48 +1233,7 @@ export default function CreateRoom() {
                 <p className="mb-2 font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">
                   Type This Word
                 </p>
-                <div className="relative inline-block font-mono text-4xl font-medium tracking-wider leading-none sm:text-5xl">
-                  {(currentWord || "").split("").map((char, charIndex) => {
-                    const typedChar = liveSwitcherInput[charIndex];
-                    const isCurrentPosition = charIndex === liveSwitcherInput.length;
-                    const isTyped = charIndex < liveSwitcherInput.length;
-                    const isCorrect = isTyped && typedChar === char;
-                    const isWrong = isTyped && typedChar !== char;
-                    const renderedChar = char === " " ? "\u00A0" : char;
-                    const renderedTypedChar = isWrong && typedChar === " " ? "_" : typedChar;
-
-                    return (
-                      <span
-                        key={charIndex}
-                        className={`relative inline-block min-w-[0.45em] align-baseline transition-colors duration-75 ${
-                          isCorrect
-                            ? "text-primary"
-                            : isWrong
-                            ? "text-destructive"
-                            : "text-muted-foreground/50"
-                        }`}
-                      >
-                        {isCurrentPosition && (
-                          <motion.span
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            className="absolute -left-[2px] top-0 h-full w-[3px] bg-primary"
-                            style={{ animation: "blink 1s ease-in-out infinite" }}
-                          />
-                        )}
-                        {isWrong ? renderedTypedChar : renderedChar}
-                      </span>
-                    );
-                  })}
-                  {liveSwitcherInput.length === (currentWord || "").length && currentWord ? (
-                    <motion.span
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="absolute -right-[2px] top-0 h-full w-[3px] bg-primary"
-                      style={{ animation: "blink 1s ease-in-out infinite" }}
-                    />
-                  ) : null}
-                </div>
+                <TypingWordDisplay word={currentWord} input={liveSwitcherInput} />
               </div>
               {isSwitcherCoopActive ? (
                 <p className="-mt-2 text-center text-xs text-muted-foreground">
