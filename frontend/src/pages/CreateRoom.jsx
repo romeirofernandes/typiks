@@ -2187,50 +2187,7 @@ export default function CreateRoom() {
                       <p className="mb-2 font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">
                         Type This Word
                       </p>
-                      <div
-                        className="relative inline-block font-mono text-4xl font-medium tracking-wider leading-none sm:text-5xl"
-                      >
-                        {(currentWord || "").split("").map((char, charIndex) => {
-                          const typedChar = liveSwitcherInput[charIndex];
-                          const isCurrentPosition = charIndex === liveSwitcherInput.length;
-                          const isTyped = charIndex < liveSwitcherInput.length;
-                          const isCorrect = isTyped && typedChar === char;
-                          const isWrong = isTyped && typedChar !== char;
-                          const renderedChar = char === " " ? "\u00A0" : char;
-                          const renderedTypedChar = isWrong && typedChar === " " ? "_" : typedChar;
-
-                          return (
-                            <span
-                              key={charIndex}
-                              className={`relative inline-block min-w-[0.45em] align-baseline transition-colors duration-75 ${
-                                isCorrect
-                                  ? "text-primary"
-                                  : isWrong
-                                  ? "text-destructive"
-                                  : "text-muted-foreground/50"
-                              }`}
-                            >
-                              {isCurrentPosition && (
-                                <motion.span
-                                  initial={{ opacity: 0 }}
-                                  animate={{ opacity: 1 }}
-                                  className="absolute -left-[2px] top-0 h-full w-[3px] bg-primary"
-                                  style={{ animation: "blink 1s ease-in-out infinite" }}
-                                />
-                              )}
-                              {isWrong ? renderedTypedChar : renderedChar}
-                            </span>
-                          );
-                        })}
-                        {liveSwitcherInput.length === (currentWord || "").length && currentWord ? (
-                          <motion.span
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            className="absolute -right-[2px] top-0 h-full w-[3px] bg-primary"
-                            style={{ animation: "blink 1s ease-in-out infinite" }}
-                          />
-                        ) : null}
-                      </div>
+                      <TypingWordDisplay word={currentWord} input={liveSwitcherInput} />
                     </div>
                     {isSwitcherCoopActive ? (
                       <p className="-mt-2 text-center text-xs text-muted-foreground">
