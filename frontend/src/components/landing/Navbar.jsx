@@ -9,6 +9,15 @@ export default function Navbar() {
   const [theme, setTheme] = useState(
     () => localStorage.getItem("theme") || "light"
   );
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 10);
+    };
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   useEffect(() => {
     if (theme === "dark") {
@@ -50,7 +59,7 @@ export default function Navbar() {
   return (
     <header className="fixed top-6 left-0 right-0 z-50 flex justify-center px-4 w-full">
       {/* Outer border wrapper */}
-      <div className="w-full max-w-5xl shadow-sm border border-border bg-card">
+      <div className={`w-full max-w-5xl border transition-all duration-300 ${scrolled ? 'shadow-sm border-border bg-card' : 'border-transparent'}`}>
         {/* Inner background wrapper */}
         <nav className="w-full flex items-center justify-between px-6 py-3">
           {/* Left: Brand */}
@@ -98,7 +107,7 @@ export default function Navbar() {
             {/* Sign Up Button */}
             <Link
               to={currentUser ? "/dashboard" : "/signup"}
-              className="bg-primary text-primary-foreground hover:bg-primary/90 normal-case flex items-center justify-center px-5 py-2 text-sm transition-colors"
+              className="hidden md:flex bg-primary text-primary-foreground hover:bg-primary/90 normal-case items-center justify-center px-5 py-2 text-sm transition-colors"
             >
               {currentUser ? "Dashboard" : "Sign Up"}
             </Link>

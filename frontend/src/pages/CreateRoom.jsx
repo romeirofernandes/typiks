@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/context/AuthContext";
 import { useLocation } from "react-router-dom";
@@ -60,6 +60,52 @@ function clampSettingValue(rawValue, min, max, fallback) {
   return Math.min(max, Math.max(min, parsed));
 }
 
+const TypingWordDisplay = memo(function TypingWordDisplay({ word, input }) {
+  const activeWord = String(word || "");
+  const activeInput = String(input || "");
+
+  return (
+    <div className="relative inline-block font-mono text-4xl font-medium leading-none tracking-wider sm:text-5xl">
+      {activeWord.split("").map((char, charIndex) => {
+        const typedChar = activeInput[charIndex];
+        const isCurrentPosition = charIndex === activeInput.length;
+        const isTyped = charIndex < activeInput.length;
+        const isCorrect = isTyped && typedChar === char;
+        const isWrong = isTyped && typedChar !== char;
+        const renderedChar = char === " " ? "\u00A0" : char;
+        const renderedTypedChar = isWrong && typedChar === " " ? "_" : typedChar;
+
+        return (
+          <span
+            key={charIndex}
+            className={`relative inline-block min-w-[0.45em] align-baseline transition-colors duration-75 ${
+              isCorrect
+                ? "text-primary"
+                : isWrong
+                  ? "text-destructive"
+                  : "text-muted-foreground/50"
+            }`}
+          >
+            {isCurrentPosition ? (
+              <span
+                className="absolute -left-[2px] top-0 h-full w-[3px] bg-primary"
+                style={{ animation: "blink 1s ease-in-out infinite" }}
+              />
+            ) : null}
+            {isWrong ? renderedTypedChar : renderedChar}
+          </span>
+        );
+      })}
+      {activeInput.length === activeWord.length && activeWord ? (
+        <span
+          className="absolute -right-[2px] top-0 h-full w-[3px] bg-primary"
+          style={{ animation: "blink 1s ease-in-out infinite" }}
+        />
+      ) : null}
+    </div>
+  );
+});
+
 export default function CreateRoom() {
   const { currentUser } = useAuth();
   const location = useLocation();
@@ -67,6 +113,14 @@ export default function CreateRoom() {
   const wsRef = useRef(null);
   const manualDisconnectRef = useRef(false);
   const timerRef = useRef(null);
+  const typingSyncRef = useRef({
+    timeoutId: null,
+    pendingInput: "",
+    lastSentInput: "",
+  });
+  const activeTurnKeyRef = useRef(null);
+  const currentUserIdRef = useRef(null);
+  const myTeamIdRef = useRef(null);
   const inputRef = useRef(null);
   const autoJoinHandledRef = useRef(false);
   const userInfoRef = useRef({ username: "Player", rating: 800, avatarId: "avatar1" });
@@ -91,6 +145,7 @@ export default function CreateRoom() {
   const [invitingFriendIds, setInvitingFriendIds] = useState([]);
   const [pendingInviteFriendIds, setPendingInviteFriendIds] = useState([]);
   const [teamNameDrafts, setTeamNameDrafts] = useState({});
+  const [teamNameLocks, setTeamNameLocks] = useState({});
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
   const [playerPreferences, setPlayerPreferences] = useState(() => loadPlayerPreferences());
@@ -230,8 +285,13 @@ export default function CreateRoom() {
   }, []);
 
   useEffect(() => {
+    const typingSync = typingSyncRef.current;
     return () => {
       manualDisconnectRef.current = true;
+      if (typingSync.timeoutId) {
+        window.clearTimeout(typingSync.timeoutId);
+        typingSync.timeoutId = null;
+      }
       cleanupSocket();
       if (timerRef.current) {
         clearInterval(timerRef.current);
@@ -299,16 +359,24 @@ export default function CreateRoom() {
       case "ROOM_PROGRESS":
         setGame((prev) => {
           if (!prev) return prev;
+          const nextProgress = Array.isArray(message.progress) ? message.progress : [];
+          const nextTeamTurnState = message.teamTurnState || prev.teamTurnState || {};
+          if (prev.progress === nextProgress && prev.teamTurnState === nextTeamTurnState) {
+            return prev;
+          }
           return {
             ...prev,
-            progress: Array.isArray(message.progress) ? message.progress : [],
-            teamTurnState: message.teamTurnState || prev.teamTurnState || {},
+            progress: nextProgress,
+            teamTurnState: nextTeamTurnState,
           };
         });
         break;
 
       case "ROOM_TEAM_TYPING":
-        setTeamTypingInput(String(message.currentInput || ""));
+        setTeamTypingInput((prev) => {
+          const nextInput = String(message.currentInput || "");
+          return prev === nextInput ? prev : nextInput;
+        });
         break;
 
       case "ROOM_GAME_END":
@@ -316,6 +384,12 @@ export default function CreateRoom() {
         setCountdown(null);
         setGameInput("");
         setTeamTypingInput("");
+        if (typingSyncRef.current.timeoutId) {
+          window.clearTimeout(typingSyncRef.current.timeoutId);
+          typingSyncRef.current.timeoutId = null;
+        }
+        typingSyncRef.current.pendingInput = "";
+        typingSyncRef.current.lastSentInput = "";
         break;
 
       case "ROOM_ERROR":
@@ -500,6 +574,15 @@ export default function CreateRoom() {
     wsRef.current.send(JSON.stringify(payload));
   };
 
+  const sendSocketMessageSilently = useCallback((payload) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      return false;
+    }
+
+    wsRef.current.send(JSON.stringify(payload));
+    return true;
+  }, []);
+
   const leaveRoom = () => {
     manualDisconnectRef.current = true;
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -558,6 +641,14 @@ export default function CreateRoom() {
 
   const myTeamId = me?.teamId || null;
 
+  useEffect(() => {
+    currentUserIdRef.current = currentUser?.uid || null;
+  }, [currentUser?.uid]);
+
+  useEffect(() => {
+    myTeamIdRef.current = myTeamId || null;
+  }, [myTeamId]);
+
   const teamsValid = useMemo(() => {
     if (settingsForm.gameMode !== "coop") return true;
     if (!roomState?.members?.length || coopTeams.length < 2) return false;
@@ -576,12 +667,20 @@ export default function CreateRoom() {
       ...prev,
       [teamId]: value,
     }));
+    setTeamNameLocks((prev) => ({
+      ...prev,
+      [teamId]: false,
+    }));
   };
 
   const commitTeamName = (teamId) => {
     if (!isInRoom || settingsForm.gameMode !== "coop") return;
     const nextValue = (teamNameDrafts[teamId] ?? "").slice(0, 24);
     sendSocketMessage({ type: "ROOM_SET_TEAM_NAME", teamId, name: nextValue });
+    setTeamNameLocks((prev) => ({
+      ...prev,
+      [teamId]: true,
+    }));
   };
 
   const canStartGame = useMemo(() => {
@@ -800,6 +899,12 @@ export default function CreateRoom() {
     }
 
     sendSocketMessage({ type: "PLAYER_INPUT", input: normalizedInput });
+    if (typingSyncRef.current.timeoutId) {
+      window.clearTimeout(typingSyncRef.current.timeoutId);
+      typingSyncRef.current.timeoutId = null;
+    }
+    typingSyncRef.current.pendingInput = "";
+    typingSyncRef.current.lastSentInput = "";
     setGameInput("");
     setTeamTypingInput("");
   }, [currentUser?.uid, currentWord, isMyTurnInSwitcher, isPlaying, isSwitcherCoopActive]);
@@ -821,13 +926,35 @@ export default function CreateRoom() {
       return;
     }
 
+    const rawValue = String(event.target.value || "");
     const maxLength = currentWord.length;
-    const nextValue = String(event.target.value || "").replace(/\s/g, "").slice(0, maxLength);
+    const nextValue = rawValue.replace(/\s/g, "").slice(0, maxLength);
+    if (nextValue === gameInput) return;
     setGameInput(nextValue);
 
     if (isSwitcherCoopActive) {
-      setTeamTypingInput(nextValue);
-      sendSocketMessage({ type: "PLAYER_TYPING", input: nextValue });
+      const typingSync = typingSyncRef.current;
+      typingSync.pendingInput = nextValue;
+
+      if (!typingSync.timeoutId) {
+        typingSync.timeoutId = window.setTimeout(() => {
+          typingSync.timeoutId = null;
+          const payloadInput = typingSync.pendingInput;
+          if (payloadInput === typingSync.lastSentInput) return;
+          const sent = sendSocketMessageSilently({ type: "PLAYER_TYPING", input: payloadInput });
+          if (sent) {
+            typingSync.lastSentInput = payloadInput;
+          }
+        }, 28);
+      }
+
+      if (rawValue.length === 0 && typingSync.lastSentInput !== "") {
+        const sent = sendSocketMessageSilently({ type: "PLAYER_TYPING", input: "" });
+        if (sent) {
+          typingSync.pendingInput = "";
+          typingSync.lastSentInput = "";
+        }
+      }
     }
 
     if (isAutoAdvanceEnabled) {
@@ -843,12 +970,35 @@ export default function CreateRoom() {
     if (!isPlaying || !isSwitcherCoopActive) return;
 
     if (!isMyTurnInSwitcher) {
+      if (typingSyncRef.current.timeoutId) {
+        window.clearTimeout(typingSyncRef.current.timeoutId);
+        typingSyncRef.current.timeoutId = null;
+      }
+      typingSyncRef.current.pendingInput = "";
+      typingSyncRef.current.lastSentInput = "";
       setGameInput("");
       return;
     }
 
-    setGameInput(String(myTeamTurnState?.currentInput || ""));
-  }, [isMyTurnInSwitcher, isPlaying, isSwitcherCoopActive, myTeamTurnState?.currentInput]);
+    const nextKey = `${myTeamTurnState?.activePlayerId || ""}:${myTeamTurnState?.currentWordIndex || 0}`;
+    if (activeTurnKeyRef.current !== nextKey) {
+      activeTurnKeyRef.current = nextKey;
+      setGameInput("");
+      typingSyncRef.current.pendingInput = "";
+      typingSyncRef.current.lastSentInput = "";
+      return;
+    }
+
+    const incoming = String(myTeamTurnState?.currentInput || "");
+    setGameInput((prev) => (incoming.length >= prev.length ? incoming : prev));
+  }, [
+    isMyTurnInSwitcher,
+    isPlaying,
+    isSwitcherCoopActive,
+    myTeamTurnState?.activePlayerId,
+    myTeamTurnState?.currentWordIndex,
+    myTeamTurnState?.currentInput,
+  ]);
 
   useEffect(() => {
     if (!isPlaying || !isSwitcherCoopActive || isMyTurnInSwitcher) return;
@@ -857,9 +1007,21 @@ export default function CreateRoom() {
     isMyTurnInSwitcher,
     isPlaying,
     isSwitcherCoopActive,
-    myTeamTurnState?.currentWordIndex,
     myTeamTurnState?.activePlayerId,
+    myTeamTurnState?.currentWordIndex,
   ]);
+
+  useEffect(() => {
+    if (!isSwitcherCoopActive) {
+      activeTurnKeyRef.current = null;
+      return;
+    }
+
+    const key = `${myTeamTurnState?.activePlayerId || ""}:${myTeamTurnState?.currentWordIndex || 0}`;
+    if (activeTurnKeyRef.current !== key) {
+      activeTurnKeyRef.current = key;
+    }
+  }, [isSwitcherCoopActive, myTeamTurnState?.activePlayerId, myTeamTurnState?.currentWordIndex]);
 
   useEffect(() => {
     if (!isPlaying) return;
@@ -976,6 +1138,7 @@ export default function CreateRoom() {
   useEffect(() => {
     if (!Array.isArray(coopTeams) || coopTeams.length === 0) {
       setTeamNameDrafts({});
+      setTeamNameLocks({});
       return;
     }
 
@@ -986,7 +1149,25 @@ export default function CreateRoom() {
       }
       return next;
     });
+    setTeamNameLocks((prev) => {
+      const next = {};
+      for (const team of coopTeams) {
+        next[team.id] = prev[team.id] ?? true;
+      }
+      return next;
+    });
   }, [coopTeams]);
+
+  const myWordProgress = Number(
+    isSwitcherCoopActive
+      ? myTeamTurnState?.currentWordIndex ?? myProgress.currentWordIndex ?? 0
+      : myProgress.currentWordIndex ?? 0
+  );
+  const myWordsCompleted = Math.min(myWordProgress, game?.words?.length || 0);
+  const myAccuracy =
+    myWordProgress > 0
+      ? Math.round((Number(myProgress.score || 0) / Math.max(1, myWordProgress)) * 100)
+      : 0;
 
   useEffect(() => {
     if (autoJoinHandledRef.current || !currentUser || isInRoom || isLoading) return;
@@ -1234,9 +1415,9 @@ export default function CreateRoom() {
 
       {gameResult ? (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
-          <Card className="border-primary/30 bg-card/80">
-            <CardHeader className="text-center">
-              <CardTitle className="font-sans text-2xl">
+            <Card className="border-primary/30 bg-card/80">
+              <CardHeader className="text-center">
+                <CardTitle className="font-sans text-2xl">
                 {gameResult.isDraw
                   ? "It's a Draw!"
                   : isCoopResult && winningTeam
@@ -1246,11 +1427,25 @@ export default function CreateRoom() {
                   : "Better Luck Next Time!"}
               </CardTitle>
               <p className="text-sm text-muted-foreground">Private match summary</p>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {isCoopResult ? (
-                <div className="grid gap-3 md:grid-cols-2">
-                  {(gameResult.teamResults || []).map((team) => {
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid gap-2 rounded-md border border-border/60 bg-card/50 px-3 py-2 text-xs sm:grid-cols-3">
+                  <div className="flex items-center justify-between sm:block">
+                    <span className="text-muted-foreground">Your score</span>
+                    <span className="font-mono font-semibold">{myProgress.score} pts</span>
+                  </div>
+                  <div className="flex items-center justify-between sm:block">
+                    <span className="text-muted-foreground">Words completed</span>
+                    <span className="font-mono font-semibold">{myWordsCompleted}</span>
+                  </div>
+                  <div className="flex items-center justify-between sm:block">
+                    <span className="text-muted-foreground">Accuracy proxy</span>
+                    <span className="font-mono font-semibold">{myAccuracy}%</span>
+                  </div>
+                </div>
+                {isCoopResult ? (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {(gameResult.teamResults || []).map((team) => {
                     const isWinningTeam = team.teamId === gameResult.winningTeamId && !gameResult.isDraw;
                     return (
                       <div
@@ -1264,6 +1459,15 @@ export default function CreateRoom() {
                           <div className="text-right">
                             <p className="font-mono text-sm font-bold">{team.score} pts</p>
                             <p className="font-mono text-[11px] text-muted-foreground">{team.correctChars} chars</p>
+                            <p className="font-mono text-[11px] text-muted-foreground">
+                              {Math.min(
+                                Math.max(
+                                  ...(team.members || []).map((member) => Number(member.progress || 0)),
+                                  0
+                                ),
+                                game?.words?.length || 0
+                              )} words
+                            </p>
                           </div>
                         </div>
                         <div className="space-y-1 p-2">
@@ -1281,6 +1485,9 @@ export default function CreateRoom() {
                               </span>
                               <span className="text-right font-mono text-xs text-muted-foreground">
                                 {member.correctChars} ch
+                              </span>
+                              <span className="text-right font-mono text-xs text-muted-foreground">
+                                {Math.min(Number(member.progress || 0), game?.words?.length || 0)} w
                               </span>
                             </div>
                           ))}
@@ -1636,17 +1843,20 @@ export default function CreateRoom() {
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {!isLeader && isLobbyState && (
-                    <Button
-                      variant={me?.ready ? "default" : "outline"}
-                      onClick={() => sendSocketMessage({ type: "ROOM_SET_READY", ready: !me?.ready })}
-                      disabled={settingsForm.gameMode === "coop" && !myTeamId}
-                      className="gap-2"
-                    >
-                      {me?.ready ? <FiCheck className="h-4 w-4" /> : null}
-                      {me?.ready ? "Ready" : settingsForm.gameMode === "coop" && !myTeamId ? "Join Team First" : "Set Ready"}
-                    </Button>
-                  )}
+                  {!isLeader && isLobbyState ? (
+                    <div className="inline-flex items-center rounded-md border border-border/60 bg-background/60 p-1">
+                      <Button
+                        variant={me?.ready ? "default" : "ghost"}
+                        onClick={() => sendSocketMessage({ type: "ROOM_SET_READY", ready: !me?.ready })}
+                        disabled={settingsForm.gameMode === "coop" && !myTeamId}
+                        className="h-8 gap-2 px-3"
+                        size="sm"
+                      >
+                        {me?.ready ? <FiCheck className="h-4 w-4" /> : null}
+                        {me?.ready ? "Ready" : settingsForm.gameMode === "coop" && !myTeamId ? "Join Team First" : "Set Ready"}
+                      </Button>
+                    </div>
+                  ) : null}
                   {isLeader && isLobbyState && (
                     <Button
                       onClick={() => sendSocketMessage({ type: "ROOM_START_GAME" })}
@@ -1816,20 +2026,30 @@ export default function CreateRoom() {
                               {team.id}
                             </p>
                             {isLeader ? (
-                              <Input
-                                value={teamNameDrafts[team.id] ?? team.name}
-                                onChange={(event) => updateTeamName(team.id, event.target.value)}
-                                onBlur={() => commitTeamName(team.id)}
-                                onKeyDown={(event) => {
-                                  if (event.key === "Enter") {
-                                    event.preventDefault();
-                                    commitTeamName(team.id);
-                                  }
-                                }}
-                                placeholder="Team name"
-                                maxLength={24}
-                                className="h-8 font-mono text-sm"
-                              />
+                              <div className="flex items-center gap-2">
+                                <Input
+                                  value={teamNameDrafts[team.id] ?? team.name}
+                                  onChange={(event) => updateTeamName(team.id, event.target.value)}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter") {
+                                      event.preventDefault();
+                                      commitTeamName(team.id);
+                                    }
+                                  }}
+                                  placeholder="Team name"
+                                  maxLength={24}
+                                  className="h-8 flex-1 font-mono text-sm"
+                                />
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant={teamNameLocks[team.id] === false ? "default" : "outline"}
+                                  className="h-8 px-2"
+                                  onClick={() => commitTeamName(team.id)}
+                                >
+                                  {teamNameLocks[team.id] === false ? "Lock" : "Locked"}
+                                </Button>
+                              </div>
                             ) : (
                               <p className="font-semibold">{team.name}</p>
                             )}
