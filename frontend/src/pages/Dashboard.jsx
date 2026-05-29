@@ -6,7 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { TypeGraph } from "@/components/charts/TypeGraph";
 import { RatingGrowthChart } from "@/components/charts/RatingGrowthChart";
 
-const MODE_ORDER = [15, 30, 60, 120];
+const MODE_ORDER = [15, 30, 60];
 const CONTRIBUTION_DAYS = 364; // 52 columns x 7 rows
 
 export default function Dashboard() {

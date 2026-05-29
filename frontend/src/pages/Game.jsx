@@ -22,7 +22,7 @@ const Game = () => {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const initialModeSeconds = [15, 30, 60, 120].includes(Number(location.state?.modeSeconds))
+  const initialModeSeconds = [15, 30, 60].includes(Number(location.state?.modeSeconds))
     ? Number(location.state.modeSeconds)
     : 60;
   const [gameState, setGameState] = useState("waiting");

@@ -22,7 +22,7 @@ const BOT_DIFFICULTIES = {
   hard: { id: "hard", label: "Hard", cpsRange: [4.4, 6.2], accuracy: 0.96 },
 };
 
-const MODE_SECONDS = [15, 30, 60, 120];
+const MODE_SECONDS = [15, 30, 60];
 const WORD_BANK = Array.from(
   new Set(
     (Array.isArray(wordsJson) ? wordsJson : [])

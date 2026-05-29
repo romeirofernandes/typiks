@@ -5,7 +5,7 @@ import { FiClock } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-const RANKED_MODES = [15, 30, 60, 120];
+const RANKED_MODES = [15, 30, 60];
 
 const defaultModeStats = (modeSeconds) => ({
   modeSeconds,

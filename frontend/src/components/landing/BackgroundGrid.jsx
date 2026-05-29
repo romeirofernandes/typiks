@@ -7,8 +7,8 @@ export default function BackgroundGrid({ children }) {
           className="absolute inset-0"
           style={{
             backgroundImage: `
-              linear-gradient(to right, var(--border) 1px, transparent 1px),
-              linear-gradient(to bottom, var(--border) 1px, transparent 1px)
+              linear-gradient(to right, color-mix(in oklab, var(--border) 85%, var(--foreground)) 1px, transparent 1px),
+              linear-gradient(to bottom, color-mix(in oklab, var(--border) 85%, var(--foreground)) 1px, transparent 1px)
             `,
             backgroundSize: "20px 20px",
             backgroundPosition: "0 0, 0 0",

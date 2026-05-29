@@ -3,7 +3,7 @@ import { generateSeed, generateWords, WORD_DIFFICULTIES } from '../utils/wordGen
 
 const MAX_PLAYER_INPUT_LENGTH = 32;
 const DEFAULT_MODE_SECONDS = 60;
-const ALLOWED_MODE_SECONDS = new Set([15, 30, 60, 120]);
+const ALLOWED_MODE_SECONDS = new Set([15, 30, 60]);
 const REMATCH_RESPONSE_WINDOW_MS = 10_000;
 
 export class GameRoom {

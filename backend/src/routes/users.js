@@ -24,7 +24,7 @@ const FRIEND_REQUEST_REJECTED = 'rejected';
 const ROOM_INVITE_PENDING = 'pending';
 const ROOM_INVITE_ACCEPTED = 'accepted';
 const ROOM_INVITE_REJECTED = 'rejected';
-const RANKED_MODE_SECONDS = [15, 30, 60, 120];
+const RANKED_MODE_SECONDS = [15, 30, 60];
 const DEFAULT_RATING = 800;
 const AVATAR_IDS = [
 	'avatar1',
