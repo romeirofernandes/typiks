@@ -552,7 +552,7 @@ export default function AppShell() {
               </div>
             </aside>
 
-            <div className="flex min-h-0 flex-1 flex-col gap-3">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
               <div className="flex items-center justify-between rounded-lg border border-border/80 bg-background/90 p-2 lg:hidden">
                 <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
                   <SheetTrigger asChild>
@@ -620,8 +620,8 @@ export default function AppShell() {
                 <span className="text-base font-sans font-semibold">typiks</span>
               </div>
 
-              <main className="relative z-10 min-h-0 flex-1 overflow-hidden rounded-xl border border-border/80 bg-background/95 p-4 shadow-xl sm:p-6">
-                <div className="h-full overflow-y-auto pr-1">
+              <main className="relative z-10 min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border border-border/80 bg-background/95 p-4 shadow-xl sm:p-6">
+                <div className="h-full min-w-0 overflow-y-auto pr-1">
                   <Outlet />
                 </div>
               </main>

@@ -119,6 +119,7 @@ button {
     --border: oklch(0.9197 0.0040 286.3202);
     --input: oklch(0.9851 0 0);
     --ring: oklch(0.2103 0.0059 285.8852);
+    --grid-line: color-mix(in oklab, var(--border) 85%, var(--foreground));
     --chart-1: oklch(0.8974 0.1487 115.6236);
     --chart-2: oklch(0.8603 0.1606 125.0566);
     --chart-3: oklch(0.8202 0.1699 135.0719);
@@ -189,6 +190,7 @@ button {
     --border: oklch(0.2739 0.0055 286.0326);
     --input: oklch(0.2488 0.0015 17.2584);
     --ring: oklch(0.8974 0.1487 115.6236);
+    --grid-line: var(--border);
     --chart-1: oklch(0.8974 0.1487 115.6236);
     --chart-2: oklch(0.6858 0.1175 167.2538);
     --chart-3: oklch(0.5851 0.0996 193.0165);
@@ -264,6 +266,16 @@ button {
   body {
     @apply bg-background text-foreground;
     letter-spacing: var(--tracking-normal);
+  }
+
+  /* Ranked card hover fill: origin + transform set inline by ModeCard based on entry side */
+  .ranked-fill {
+    transform: scaleX(0);
+    transition: transform 400ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .ranked-fill-text {
+    opacity: 0;
+    transition: opacity 220ms ease-out 100ms;
   }
 }
 /* View Transitions for Dark Mode Wipe */

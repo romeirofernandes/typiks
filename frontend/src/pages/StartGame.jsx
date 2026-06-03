@@ -1,11 +1,25 @@
 import { useAuth } from "@/context/AuthContext";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { FiClock } from "react-icons/fi";
+import { FiArrowRight } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 const RANKED_MODES = [15, 30, 60];
+
+const MODE_BACKGROUNDS = {
+  15: {
+    light: "/ranked_bgs/15seconds-light.png",
+    dark: "/ranked_bgs/15seconds-dark.png",
+  },
+  30: {
+    light: "/ranked_bgs/30seconds-light.png",
+    dark: "/ranked_bgs/30seconds-dark.png",
+  },
+  60: {
+    light: "/ranked_bgs/60seconds-light.png",
+    dark: "/ranked_bgs/60seconds-dark.png",
+  },
+};
 
 const defaultModeStats = (modeSeconds) => ({
   modeSeconds,
@@ -19,9 +33,6 @@ export default function StartGame() {
   const navigate = useNavigate();
   const [loadingStats, setLoadingStats] = useState(true);
   const [modeStats, setModeStats] = useState([]);
-  const [isFastCardHovered, setIsFastCardHovered] = useState(false);
-  const lightFastVideoRef = useRef(null);
-  const darkFastVideoRef = useRef(null);
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -79,34 +90,6 @@ export default function StartGame() {
     [modeStats]
   );
 
-  useEffect(() => {
-    const lightVideo = lightFastVideoRef.current;
-    const darkVideo = darkFastVideoRef.current;
-    const isDarkTheme = document.documentElement.classList.contains("dark");
-    const activeVideo = isDarkTheme ? darkVideo : lightVideo;
-    const inactiveVideo = isDarkTheme ? lightVideo : darkVideo;
-
-    if (inactiveVideo) {
-      inactiveVideo.pause();
-    }
-
-    if (!activeVideo) return;
-
-    activeVideo.defaultPlaybackRate = 1.04;
-    activeVideo.playbackRate = 1.04;
-
-    if (isFastCardHovered) {
-      const playPromise = activeVideo.play();
-      if (playPromise && typeof playPromise.catch === "function") {
-        playPromise.catch(() => {
-          // ignore autoplay interruptions
-        });
-      }
-    } else {
-      activeVideo.pause();
-    }
-  }, [isFastCardHovered]);
-
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="border-b border-border/70 pb-4">
@@ -117,111 +100,31 @@ export default function StartGame() {
         </p>
       </div>
 
-      <div className="mt-4 grid min-h-0 flex-1 auto-rows-fr grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-2">
+      <div className="mt-6 grid min-h-0 flex-1 grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {loadingStats
           ? RANKED_MODES.map((modeSeconds, index) => (
               <article
                 key={`skeleton-${modeSeconds}`}
-                className="relative flex h-full min-h-[200px] flex-col rounded-md border border-border/70 bg-card/45 p-3 sm:min-h-[220px] sm:p-4"
+                className="relative flex h-full min-h-[200px] flex-col overflow-hidden rounded-md border border-border/70 bg-card/45 sm:min-h-[220px]"
               >
-                <div className="flex items-center justify-between">
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-                    Mode {index + 1}
-                  </p>
-                  <span className="rounded-full border border-border/60 px-2 py-1 text-xs tabular-nums">
-                    {modeSeconds}s
-                  </span>
-                </div>
-
-                <Skeleton className="mt-3 h-6 w-36" />
-
-                <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
-                  <div className="rounded border border-border/60 bg-background/60 p-2.5">
-                    <Skeleton className="h-3 w-14" />
-                    <Skeleton className="mt-2 h-6 w-16" />
-                  </div>
-                  <div className="rounded border border-border/60 bg-background/60 p-2.5">
-                    <Skeleton className="h-3 w-16" />
-                    <Skeleton className="mt-2 h-6 w-14" />
-                  </div>
-                </div>
-
-                <div className="mt-auto pt-4">
-                  <Skeleton className="mb-3 h-3 w-24" />
-                  <Skeleton className="h-11 w-full" />
+                <Skeleton className="absolute inset-0" />
+                <div className="relative z-10 mt-auto flex items-center gap-4 p-3 sm:p-4">
+                  <Skeleton className="h-3 w-16" />
+                  <Skeleton className="h-3 w-16" />
+                  <Skeleton className="ml-auto h-3 w-20" />
                 </div>
               </article>
             ))
           : null}
 
         {!loadingStats
-          ? featuredModes.map((mode, index) => (
-          <article
-            key={mode.modeSeconds}
-            className={`relative flex h-full min-h-[200px] flex-col overflow-hidden rounded-md border border-border/70 p-3 sm:min-h-[220px] sm:p-4 ${
-              mode.modeSeconds === 15 ? "bg-card/20" : "bg-card/45"
-            }`}
-            onPointerEnter={mode.modeSeconds === 15 ? () => setIsFastCardHovered(true) : undefined}
-            onPointerLeave={mode.modeSeconds === 15 ? () => setIsFastCardHovered(false) : undefined}
-          >
-            {mode.modeSeconds === 15 ? (
-              <>
-                <video
-                  ref={lightFastVideoRef}
-                  muted
-                  loop
-                  playsInline
-                  preload="auto"
-                  className="pointer-events-none absolute inset-0 h-full w-full object-cover dark:hidden"
-                >
-                  <source src="/light-15.mp4" type="video/mp4" />
-                </video>
-                <video
-                  ref={darkFastVideoRef}
-                  muted
-                  loop
-                  playsInline
-                  preload="auto"
-                  className="pointer-events-none absolute inset-0 hidden h-full w-full object-cover dark:block"
-                >
-                  <source src="/dark-15.mp4" type="video/mp4" />
-                </video>
-                <div className="pointer-events-none absolute inset-0 bg-background/55 backdrop-blur-[1px] dark:bg-background/62" />
-              </>
-            ) : null}
-
-            <div className="relative z-10 flex h-full min-h-0 flex-col">
-            <div className="flex items-center justify-between">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-                Mode {index + 1}
-              </p>
-              <span className="rounded-full border border-border/60 px-2 py-1 text-xs tabular-nums">
-                {mode.modeSeconds}s
-              </span>
-            </div>
-
-            <h2 className="mt-2 text-base font-semibold text-foreground sm:mt-3 sm:text-lg">{mode.title}</h2>
-
-            <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
-              <div className="rounded border border-border/60 bg-background/60 p-2.5">
-                <p className="uppercase tracking-wide text-muted-foreground">Rating</p>
-                <p className="mt-1 text-lg font-semibold tabular-nums">{mode.rating}</p>
-              </div>
-              <div className="rounded border border-border/60 bg-background/60 p-2.5">
-                <p className="uppercase tracking-wide text-muted-foreground">Avg Score</p>
-                <p className="mt-1 text-lg font-semibold tabular-nums">{mode.averageScore.toFixed(1)}</p>
-              </div>
-            </div>
-
-            <div className="mt-auto pt-4">
-              <p className="mb-3 text-xs text-muted-foreground tabular-nums">
-                {mode.gamesPlayed} games played
-              </p>
-
-              <Button
-                size="sm"
-                className="h-10 w-full gap-2 text-xs sm:h-11 sm:text-sm"
-                onClick={() =>
+          ? featuredModes.map((mode, index) => {
+              const backgrounds = MODE_BACKGROUNDS[mode.modeSeconds];
+              return <ModeCard
+                key={mode.modeSeconds}
+                mode={mode}
+                backgrounds={backgrounds}
+                onStart={() =>
                   navigate("/game", {
                     state: {
                       fromDashboard: true,
@@ -229,16 +132,121 @@ export default function StartGame() {
                     },
                   })
                 }
-              >
-                <FiClock size={16} className="shrink-0" />
-                Queue {mode.modeSeconds}s
-              </Button>
-            </div>
-            </div>
-          </article>
-        ))
+              />;
+            })
           : null}
       </div>
     </div>
+  );
+}
+
+function ModeCard({ mode, backgrounds, onStart }) {
+  const cardRef = useRef(null);
+  const fillRef = useRef(null);
+  const textRef = useRef(null);
+  const statsRef = useRef(null);
+  const entrySideRef = useRef("left");
+
+  const handleMouseEnter = (event) => {
+    if (!cardRef.current) return;
+    const rect = cardRef.current.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const fromLeft = x;
+    const fromRight = rect.width - x;
+    const side = fromLeft <= fromRight ? "left" : "right";
+    entrySideRef.current = side;
+    const origin = side === "right" ? "right center" : "left center";
+    if (fillRef.current) {
+      fillRef.current.style.transformOrigin = origin;
+      fillRef.current.style.transform = "scaleX(1)";
+    }
+    if (textRef.current) {
+      textRef.current.style.opacity = "1";
+    }
+    if (statsRef.current) {
+      statsRef.current.style.opacity = "0";
+    }
+  };
+
+  const handleMouseLeave = () => {
+    const side = entrySideRef.current;
+    const origin = side === "right" ? "right center" : "left center";
+    if (fillRef.current) {
+      fillRef.current.style.transformOrigin = origin;
+      fillRef.current.style.transform = "scaleX(0)";
+    }
+    if (textRef.current) {
+      textRef.current.style.opacity = "0";
+    }
+    if (statsRef.current) {
+      statsRef.current.style.opacity = "1";
+    }
+  };
+
+  return (
+    <article
+      ref={cardRef}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      onClick={onStart}
+      className="group relative flex h-full min-h-[200px] cursor-pointer flex-col overflow-hidden rounded-md border border-border/70 bg-card/45 sm:min-h-[220px]"
+    >
+      {backgrounds ? (
+        <>
+          <div className="pointer-events-none absolute inset-2 overflow-hidden rounded-sm">
+            <img
+              src={backgrounds.light}
+              alt=""
+              loading="eager"
+              decoding="async"
+              className="ranked-bg h-full w-full object-fill dark:hidden"
+            />
+            <img
+              src={backgrounds.dark}
+              alt=""
+              loading="eager"
+              decoding="async"
+              className="ranked-bg hidden h-full w-full object-fill dark:block"
+            />
+          </div>
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-background/95 via-background/40 to-transparent" />
+        </>
+      ) : null}
+
+      <div
+        ref={fillRef}
+        aria-hidden
+        className="ranked-fill pointer-events-none absolute inset-0 bg-primary"
+      />
+
+      <div
+        ref={textRef}
+        className="ranked-fill-text pointer-events-none absolute inset-0 z-20 flex items-center justify-center gap-3 text-2xl font-black uppercase tracking-[0.2em] text-primary-foreground sm:text-3xl"
+        style={{ fontFamily: "var(--font-sans)" }}
+      >
+        Start Now
+        <FiArrowRight size={24} className="shrink-0" strokeWidth={2.5} />
+      </div>
+
+      <div
+        ref={statsRef}
+        className="ranked-stats relative z-10 mt-auto p-3 sm:p-4"
+      >
+        <div className="ml-auto flex w-fit items-center gap-3 rounded-md border border-border/50 bg-background/80 px-3 py-2 backdrop-blur-sm">
+          <div className="text-right">
+            <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">Rating</p>
+            <p className="text-base font-bold leading-none tabular-nums text-foreground">{mode.rating}</p>
+          </div>
+          <div className="h-7 w-px bg-border/60" />
+          <div className="text-right">
+            <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">Avg</p>
+            <p className="text-base font-bold leading-none tabular-nums text-foreground">{mode.averageScore.toFixed(1)}</p>
+          </div>
+        </div>
+        <p className="mt-1.5 text-right text-[11px] text-muted-foreground tabular-nums">
+          {mode.gamesPlayed} games played
+        </p>
+      </div>
+    </article>
   );
 }

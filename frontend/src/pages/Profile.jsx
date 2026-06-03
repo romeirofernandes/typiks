@@ -27,6 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   getSubmitKeyOptionById,
   loadPlayerPreferences,
@@ -34,6 +35,7 @@ import {
   savePlayerPreferences,
   SUBMIT_KEY_OPTIONS,
 } from "@/lib/player-preferences";
+import { COUNTRIES } from "@/lib/countries";
 import { ViewIcon } from "hugeicons-react";
 import { useEffect, useState } from "react";
 import {
@@ -45,7 +47,6 @@ import {
 
 const PROFILE_GRAPH_DAYS = 364;
 const UNSET_OPTION_VALUE = "__unset__";
-const SEARCH_DEBOUNCE_MS = 250;
 const DEFAULT_PROFILE_STATS = {
   username: "",
   rating: 800,
@@ -59,9 +60,6 @@ const Profile = () => {
   const { currentUser } = useAuth();
   const [activityData, setActivityData] = useState([]);
   const [maxCount, setMaxCount] = useState(0);
-  const [countryOptions, setCountryOptions] = useState([]);
-  const [countryQuery, setCountryQuery] = useState("");
-  const [countryIsTyping, setCountryIsTyping] = useState(false);
   const [isLocationEditing, setIsLocationEditing] = useState(false);
   const [isSavingLocation, setIsSavingLocation] = useState(false);
   const [locationApiReady, setLocationApiReady] = useState(false);
@@ -167,7 +165,6 @@ const Profile = () => {
               country: payload.country || "",
             })
           );
-          setCountryQuery(payload.country || "");
         }
 
         if (userResponse?.ok) {
@@ -198,49 +195,6 @@ const Profile = () => {
 
     fetchProfileData();
   }, [currentUser]);
-
-  useEffect(() => {
-    if (!currentUser || !locationApiReady || !countryIsTyping) {
-      setCountryOptions([]);
-      return;
-    }
-
-    const query = countryQuery.trim();
-    if (query.length === 0) {
-      setCountryOptions([]);
-      return;
-    }
-
-    const timeoutId = setTimeout(async () => {
-      try {
-        const idToken = await currentUser.getIdToken();
-        const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
-        const fullUrl = serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
-
-        const response = await fetch(
-          `${fullUrl}/api/users/locations/countries?query=${encodeURIComponent(query)}&limit=12`,
-          {
-            headers: {
-              Authorization: `Bearer ${idToken}`,
-            },
-          }
-        );
-
-        if (!response.ok) {
-          setCountryOptions([]);
-          return;
-        }
-
-        const payload = await response.json();
-        setCountryOptions(Array.isArray(payload.countries) ? payload.countries : []);
-      } catch (error) {
-        console.error("Failed to fetch countries:", error);
-        setCountryOptions([]);
-      }
-    }, SEARCH_DEBOUNCE_MS);
-
-    return () => clearTimeout(timeoutId);
-  }, [countryIsTyping, countryQuery, currentUser, locationApiReady]);
 
   useEffect(() => {
     setPendingAvatarId(profileStats.avatarId || "avatar1");
@@ -335,18 +289,13 @@ const Profile = () => {
   };
 
   const handleCountryChange = (value) => {
-    const normalizedCountry = value === UNSET_OPTION_VALUE ? "" : value;
-
     setPlayerPreferences((prev) => {
       const next = savePlayerPreferences({
         ...prev,
-        country: normalizedCountry,
+        country: value,
       });
       return next;
     });
-
-    setCountryQuery(normalizedCountry);
-    setCountryIsTyping(false);
   };
 
   const handleSaveLocation = async () => {
@@ -354,7 +303,6 @@ const Profile = () => {
     await persistLocation(playerPreferences.country);
     setIsSavingLocation(false);
     setIsLocationEditing(false);
-    setCountryIsTyping(false);
   };
 
   const handleSaveAvatar = async () => {
@@ -512,35 +460,14 @@ const Profile = () => {
             <div className="space-y-3">
               <div className="space-y-2">
                 <Label htmlFor="country-select">Country</Label>
-                <Input
+                <SearchableSelect
                   id="country-select"
-                  value={countryQuery}
-                  placeholder="Type country"
-                  onChange={(event) => {
-                    if (!isLocationEditing) return;
-                    setCountryQuery(event.target.value);
-                    setCountryIsTyping(true);
-                  }}
-                  onBlur={() => {
-                    setTimeout(() => setCountryIsTyping(false), 120);
-                  }}
+                  value={playerPreferences.country || ""}
+                  onValueChange={handleCountryChange}
+                  options={COUNTRIES.map((c) => ({ value: c, label: c }))}
+                  placeholder="Select country"
                   disabled={!isLocationEditing}
                 />
-                {isLocationEditing && countryIsTyping && countryQuery.trim().length > 0 && countryOptions.length > 0 && (
-                  <div className="max-h-36 overflow-y-auto rounded-md border border-border/70 bg-background/90 p-1">
-                    {countryOptions.map((country) => (
-                      <button
-                        key={country}
-                        type="button"
-                        onMouseDown={(event) => event.preventDefault()}
-                        onClick={() => handleCountryChange(country)}
-                        className="hover:bg-accent hover:text-accent-foreground w-full rounded-sm px-2 py-1 text-left text-sm"
-                      >
-                        {country}
-                      </button>
-                    ))}
-                  </div>
-                )}
               </div>
 
               <div className="grid grid-cols-2 gap-2 pt-1">

@@ -71,7 +71,7 @@ export function RatingGrowthChart({ points }) {
           <ChartTooltip content={(ctx) => <CustomTooltip {...ctx} />} showDatePill={false} />
         </LineChart>
       </div>
-      <div className="flex items-center justify-between text-xs text-muted-foreground tabular-nums">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground tabular-nums">
         <p>First: {first.rating} on {first.label}</p>
         <p>Latest: {latest.rating} on {latest.label}</p>
       </div>
