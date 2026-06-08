@@ -8,7 +8,7 @@ import { RatingGrowthChart } from "@/components/charts/RatingGrowthChart";
 
 const MODE_ORDER = [15, 30, 60];
 const CONTRIBUTION_DAYS = 364; // 52 columns x 7 rows
-const TYPEGRAPH_REDUCED_DAYS = 98;
+const TYPEGRAPH_REDUCED_DAYS = 0;
 
 export default function Dashboard() {
   const { currentUser } = useAuth();
