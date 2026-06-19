@@ -13,6 +13,7 @@ import {
 } from '../db/schema.js';
 import { calculateNewRatings } from '../utils/rating.js';
 import { requireFirebaseAuth } from '../middleware/firebaseAuth.js';
+import countriesGeo from '../countries-geo.json' with { type: 'json' };
 
 const userRouter = new Hono();
 
@@ -210,14 +211,8 @@ async function fetchLocationCountries() {
 		return locationCache.countries.data;
 	}
 
-	const response = await fetch('https://restcountries.com/v3.1/all?fields=name');
-	if (!response.ok) {
-		throw new Error(`Countries API returned ${response.status}`);
-	}
-
-	const payload = await response.json();
-	const countries = Array.isArray(payload)
-		? payload
+	const countries = Array.isArray(countriesGeo)
+		? countriesGeo
 				.map((country) => country?.name?.common)
 				.filter((value) => typeof value === 'string' && value.trim().length > 0)
 				.map((value) => value.trim())
@@ -526,13 +521,7 @@ userRouter.get('/globe/country-ratings', requireAuth, async (c) => {
 			: 1;
 
 		const [countryRows, usersByCountryRows, countryModeRows, countryWinRows] = await Promise.all([
-			fetch('https://restcountries.com/v3.1/all?fields=name,latlng,region')
-				.then((response) => {
-					if (!response.ok) {
-						throw new Error(`Countries API returned ${response.status}`);
-					}
-					return response.json();
-				}),
+			Promise.resolve(countriesGeo),
 			db
 				.select({
 					country: users.country,
