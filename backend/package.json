@@ -11,7 +11,7 @@
 	"devDependencies": {
 		"@cloudflare/vitest-pool-workers": "^0.14.3",
 		"drizzle-kit": "^0.18.1",
-		"vitest": "~3.2.0",
+		"vitest": "^4.1.0",
 		"wrangler": "^4.20.5"
 	},
 	"dependencies": {
