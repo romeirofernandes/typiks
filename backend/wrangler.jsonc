@@ -52,11 +52,16 @@
 		{
 			"binding": "DB",
 			"database_name": "typiks",
-			"database_id": "8bccfddd-18c3-4aa4-bdd6-a8d1e6c3f521"
+			"database_id": "8bccfddd-18c3-4aa4-bdd6-a8d1e6c3f521",
+			"remote": true
 		}
 	],
 	"durable_objects": {
 		"bindings": [
+			{
+				"name": "MATCHMAKER",
+				"class_name": "MatchmakingRoom"
+			},
 			{
 				"name": "GAME_ROOM",
 				"class_name": "GameRoom"
@@ -83,6 +88,10 @@
 		{
 			"tag": "v3",
 			"new_sqlite_classes": ["PresenceHub"]
+		},
+		{
+			"tag": "v4",
+			"new_sqlite_classes": ["MatchmakingRoom"]
 		}
 	]
 }

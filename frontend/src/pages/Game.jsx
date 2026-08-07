@@ -59,6 +59,8 @@ const Game = () => {
   const inputRef = useRef(null);
   const timerRef = useRef(null);
   const wsRef = useRef(null);
+  const wsKindRef = useRef(null); // "queue" | "game" | null
+  const matchAbortedRef = useRef(false);
   const isConnectingRef = useRef(false);
   const connectAttemptRef = useRef(0);
   const gameEndedRef = useRef(false);
@@ -86,6 +88,7 @@ const Game = () => {
       wsRef.current = null;
     }
 
+    wsKindRef.current = null;
     isConnectingRef.current = false;
 
     if (timerRef.current) {
@@ -233,10 +236,20 @@ const Game = () => {
     }
   }, [currentUser]);
 
-  const connectWebSocket = useCallback(async () => {
+  const openWebSocket = (path) => {
+    const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
+    const httpUrl = serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
+    const wsBaseUrl = httpUrl
+      .replace(/^http:/i, "ws:")
+      .replace(/^https:/i, "wss:")
+      .replace(/\/$/, "");
+    return new WebSocket(new URL(path, wsBaseUrl));
+  };
+
+  const connectQueue = useCallback(async () => {
     if (!userStats || !currentUser) return;
     if (isConnectingRef.current) return;
-    
+
     // In React 18 strict mode, this might be called twice quickly.
     // We only want to proceed if we don't have an active or connecting socket.
     if (
@@ -259,15 +272,9 @@ const Game = () => {
         return;
       }
 
-      const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
-      const httpUrl = serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
-      const wsBaseUrl = httpUrl
-        .replace(/^http:/i, "ws:")
-        .replace(/^https:/i, "wss:")
-        .replace(/\/$/, "");
-
-      const websocket = new WebSocket(new URL("/ws", wsBaseUrl));
+      const websocket = openWebSocket("/ws");
       wsRef.current = websocket;
+      wsKindRef.current = "queue";
 
       websocket.onopen = () => {
         if (attemptId !== connectAttemptRef.current || wsRef.current !== websocket) {
@@ -304,16 +311,18 @@ const Game = () => {
           return; // Was intentionally closed or replaced
         }
         wsRef.current = null;
+        wsKindRef.current = null;
         isConnectingRef.current = false;
 
-        console.warn("WebSocket closed:", {
+        console.warn("Queue WebSocket closed:", {
           url: websocket.url,
           code: event?.code,
           reason: event?.reason,
           wasClean: event?.wasClean,
         });
 
-        if (gameEndedRef.current) {
+        if (gameEndedRef.current || matchAbortedRef.current) {
+          matchAbortedRef.current = false;
           return;
         }
 
@@ -345,7 +354,97 @@ const Game = () => {
       console.error("Failed to connect WebSocket:", error);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser, modeSeconds, navigate, queueRating, userStats]); // note: handleWebSocketMessage is omitted as it's structurally bound to the latest render by design or handled
+  }, [currentUser, modeSeconds, queueRating, userStats]); // note: handleWebSocketMessage is omitted as it's structurally bound to the latest render by design or handled
+
+  const connectToGame = useCallback(
+    async (gameId) => {
+      if (!currentUser || !gameId) return;
+      if (isConnectingRef.current) return;
+
+      isConnectingRef.current = true;
+      const attemptId = ++connectAttemptRef.current;
+
+      try {
+        setConnectionError(null);
+        const idToken = await currentUser.getIdToken();
+
+        if (attemptId !== connectAttemptRef.current) {
+          isConnectingRef.current = false;
+          return;
+        }
+
+        const websocket = openWebSocket(`/ws/game/${encodeURIComponent(gameId)}`);
+        wsRef.current = websocket;
+        wsKindRef.current = "game";
+
+        websocket.onopen = () => {
+          if (attemptId !== connectAttemptRef.current || wsRef.current !== websocket) {
+            websocket.close();
+            return;
+          }
+
+          isConnectingRef.current = false;
+
+          websocket.send(
+            JSON.stringify({
+              type: "JOIN_GAME",
+              gameId,
+              idToken,
+              userInfo: {
+                username: userStats?.username || "player",
+                rating: Number.isFinite(Number(queueRating)) ? Number(queueRating) : 800,
+                avatarId: userStats?.avatarId || "avatar1",
+              },
+            })
+          );
+        };
+
+        websocket.onmessage = (event) => {
+          if (wsRef.current !== websocket) return;
+          const message = JSON.parse(event.data);
+          handleWebSocketMessage(message);
+        };
+
+        websocket.onclose = (event) => {
+          if (wsRef.current !== websocket) {
+            return; // Was intentionally closed or replaced
+          }
+          wsRef.current = null;
+          wsKindRef.current = null;
+          isConnectingRef.current = false;
+
+          console.warn("Game WebSocket closed:", {
+            url: websocket.url,
+            code: event?.code,
+            reason: event?.reason,
+            wasClean: event?.wasClean,
+          });
+
+          if (gameEndedRef.current || matchAbortedRef.current) {
+            matchAbortedRef.current = false;
+            return;
+          }
+
+          setConnectionError({
+            title: "Connection Lost",
+            message: "Could not connect to the game server.",
+          });
+          setGameState("error");
+        };
+
+        websocket.onerror = (error) => {
+          if (wsRef.current !== websocket) return;
+          isConnectingRef.current = false;
+          console.error("Game WebSocket error:", error);
+        };
+      } catch (error) {
+        isConnectingRef.current = false;
+        console.error("Failed to connect to game:", error);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [currentUser, queueRating, userStats]
+  );
 
   useEffect(() => {
     fetchUserStats();
@@ -364,9 +463,9 @@ const Game = () => {
       !wsRef.current &&
       !isConnectingRef.current
     ) {
-      connectWebSocket();
+      connectQueue();
     }
-  }, [connectWebSocket, gameState, userStats, userStatsLoaded]);
+  }, [connectQueue, gameState, userStats, userStatsLoaded]);
 
   const handleWebSocketMessage = (message) => {
     switch (message.type) {
@@ -379,6 +478,29 @@ const Game = () => {
         setOpponent(message.opponent);
         setInput("");
         setGameState("countdown");
+
+        // Initial match: hop from the matchmaking queue to the dedicated game room.
+        // Rematch: MATCH_FOUND arrives on the already-open game socket, so skip.
+        if (wsKindRef.current !== "game") {
+          const queueSocket = wsRef.current;
+          wsRef.current = null;
+          wsKindRef.current = null;
+          if (queueSocket && queueSocket.readyState === WebSocket.OPEN) {
+            queueSocket.close();
+          }
+          connectToGame(message.gameId);
+        }
+        break;
+
+      case "MATCH_ABORTED":
+        matchAbortedRef.current = true;
+        setRematchState("idle");
+        setIncomingRematch(null);
+        setPostMatchRating(null);
+        setActiveGameId(null);
+        setOpponent(null);
+        setInput("");
+        setGameState("waiting");
         break;
 
       case "COUNTDOWN":

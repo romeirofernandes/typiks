@@ -962,28 +962,14 @@ userRouter.patch('/:id/game-result', requireAuth, async (c) => {
 		const modeSeconds = normalizeModeSeconds(rawModeSeconds);
 		const gameWriteTime = new Date();
 
-		const existingGame = await db
-			.select({ id: games.id, modeSeconds: games.modeSeconds, status: games.status })
-			.from(games)
-			.where(eq(games.id, gameId))
-			.limit(1);
-
-		if (existingGame.length > 0) {
-			if (existingGame[0].modeSeconds !== modeSeconds) {
-				return c.json({ error: 'modeSeconds does not match the stored game mode' }, 409);
-			}
-
-			if (existingGame[0].status !== GAME_STATUS_FINISHED) {
-				await db
-					.update(games)
-					.set({
-						status: GAME_STATUS_FINISHED,
-						finishedAt: gameWriteTime,
-					})
-					.where(eq(games.id, gameId));
-			}
-		} else {
-			await db.insert(games).values({
+		// Insert the game row idempotently. Both players submit their result
+		// for the same gameId concurrently, so a check-then-insert races and
+		// one request would fail with a UNIQUE constraint. onConflictDoNothing
+		// turns that race into a no-op; the mode/status checks below then run
+		// against the row that won.
+		await db
+			.insert(games)
+			.values({
 				id: gameId,
 				modeSeconds,
 				difficulty: 'medium',
@@ -991,7 +977,31 @@ userRouter.patch('/:id/game-result', requireAuth, async (c) => {
 				status: GAME_STATUS_FINISHED,
 				createdAt: gameWriteTime,
 				finishedAt: gameWriteTime,
-			});
+			})
+			.onConflictDoNothing();
+
+		const storedGame = await db
+			.select({ id: games.id, modeSeconds: games.modeSeconds, status: games.status })
+			.from(games)
+			.where(eq(games.id, gameId))
+			.limit(1);
+
+		if (storedGame.length === 0) {
+			return c.json({ error: 'Failed to store game' }, 500);
+		}
+
+		if (storedGame[0].modeSeconds !== modeSeconds) {
+			return c.json({ error: 'modeSeconds does not match the stored game mode' }, 409);
+		}
+
+		if (storedGame[0].status !== GAME_STATUS_FINISHED) {
+			await db
+				.update(games)
+				.set({
+					status: GAME_STATUS_FINISHED,
+					finishedAt: gameWriteTime,
+				})
+				.where(eq(games.id, gameId));
 		}
 
 		const isGameDraw = Boolean(isDraw);

@@ -56,7 +56,25 @@ app.get('/ws', async (c) => {
 		return c.text('Expected websocket', 400);
 	}
 
-	const id = c.env.GAME_ROOM.idFromName('global-game-room');
+	const id = c.env.MATCHMAKER.idFromName('global-matchmaker');
+	const matchmaker = c.env.MATCHMAKER.get(id);
+
+	return matchmaker.fetch(c.req.raw);
+});
+
+app.get('/ws/game/:gameId', async (c) => {
+	const upgradeHeader = c.req.header('upgrade');
+	if (upgradeHeader !== 'websocket') {
+		return c.text('Expected websocket', 400);
+	}
+
+	const rawGameId = c.req.param('gameId') || '';
+	const gameId = rawGameId.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 100);
+	if (!gameId) {
+		return c.json({ error: 'Invalid game id' }, 400);
+	}
+
+	const id = c.env.GAME_ROOM.idFromName(`game-${gameId}`);
 	const gameRoom = c.env.GAME_ROOM.get(id);
 
 	return gameRoom.fetch(c.req.raw);
@@ -95,5 +113,6 @@ app.get('/ws/presence', async (c) => {
 export default app;
 
 export { GameRoom } from './durable-objects/GameRoom.js';
+export { MatchmakingRoom } from './durable-objects/MatchmakingRoom.js';
 export { PrivateRoom } from './durable-objects/PrivateRoom.js';
 export { PresenceHub } from './durable-objects/PresenceHub.js';
