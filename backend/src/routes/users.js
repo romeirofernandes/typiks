@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { drizzle } from 'drizzle-orm/d1';
-import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import {
 	friendships,
@@ -13,6 +13,7 @@ import {
 } from '../db/schema.js';
 import { calculateNewRatings } from '../utils/rating.js';
 import { requireFirebaseAuth } from '../middleware/firebaseAuth.js';
+import { generateGuestEmail, generateGuestUsername, isGuestEmail } from '../utils/guest.js';
 import countriesGeo from '../countries-geo.json' with { type: 'json' };
 
 const userRouter = new Hono();
@@ -685,16 +686,40 @@ userRouter.post('/', requireAuth, async (c) => {
 		if (!uid) {
 			return c.json({ error: 'Unauthorized' }, 401);
 		}
-		if (!email) {
-			return c.json(
-				{ error: 'Account has no email; email is required to create a profile' },
-				400
-			);
-		}
+
+		// Anonymous (guest) tokens have no email claim. Auto-provision a
+		// profile with a synthetic email so the users table constraint holds.
+		const isGuest = !email;
+		const profileEmail = isGuest ? generateGuestEmail(uid) : email;
+
 		const existingUser = await db.select().from(users).where(eq(users.id, uid)).limit(1);
 
 		if (existingUser.length > 0) {
-			return c.json({ user: existingUser[0], message: 'User already exists' });
+			const stored = existingUser[0];
+
+			// Guest upgraded to a permanent account (Firebase credential link
+			// preserves the UID): replace the synthetic email with the real one.
+			if (!isGuest && isGuestEmail(stored.email)) {
+				const byEmail = await db
+					.select({ id: users.id })
+					.from(users)
+					.where(eq(users.email, email))
+					.limit(1);
+				if (byEmail.length > 0 && byEmail[0].id !== uid) {
+					return c.json(
+						{ error: 'Email is already in use by a different account' },
+						409
+					);
+				}
+				const [upgraded] = await db
+					.update(users)
+					.set({ email })
+					.where(eq(users.id, uid))
+					.returning();
+				return c.json({ user: upgraded, message: 'User upgraded to permanent account' });
+			}
+
+			return c.json({ user: stored, message: 'User already exists' });
 		}
 
 		const sanitizeBaseUsername = (value) => {
@@ -709,10 +734,10 @@ userRouter.post('/', requireAuth, async (c) => {
 			return cleaned.length >= 3 ? cleaned : null;
 		};
 
-		const emailLocalPart = email.split('@')[0] || 'player';
-		const baseFromEmail = sanitizeBaseUsername(emailLocalPart) || 'player';
+		const emailLocalPart = email ? email.split('@')[0] || 'player' : null;
+		const baseFromEmail = emailLocalPart ? sanitizeBaseUsername(emailLocalPart) || 'player' : null;
 		const baseRequested = sanitizeBaseUsername(requestedUsername);
-		const base = baseRequested || baseFromEmail;
+		const base = baseRequested || baseFromEmail || generateGuestUsername();
 
 		const isUsernameTaken = async (candidate) => {
 			const rows = await db
@@ -750,7 +775,7 @@ userRouter.post('/', requireAuth, async (c) => {
 					.values({
 						id: uid,
 						username: chosenUsername,
-						email,
+						email: profileEmail,
 						avatarId: requestedAvatarId || getRandomDefaultAvatarId(),
 						gamesPlayed: 0,
 						gamesWon: 0,
@@ -763,7 +788,7 @@ userRouter.post('/', requireAuth, async (c) => {
 				break;
 			} catch (error) {
 				console.error('Failed to insert user:', error);
-				const byEmail = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
+				const byEmail = await db.select({ id: users.id }).from(users).where(eq(users.email, profileEmail)).limit(1);
 				if (byEmail.length > 0 && byEmail[0].id !== uid) {
 					return c.json(
 						{ error: 'Email is already in use by a different account' },
@@ -930,6 +955,55 @@ userRouter.patch('/:id/location', requireAuth, async (c) => {
 	}
 });
 
+// Update the current user's username (case-insensitively unique)
+userRouter.patch('/:id/username', requireAuth, async (c) => {
+	try {
+		const db = drizzle(c.env.DB);
+		const uid = c.req.param('id');
+		const auth = c.get('auth');
+		if (auth?.uid !== uid) {
+			return c.json({ error: 'Forbidden' }, 403);
+		}
+
+		const body = await c.req.json().catch(() => ({}));
+		const username = normalizeUsername(body?.username);
+		if (!username) {
+			return c.json(
+				{
+					error:
+						'Username must be 3-24 characters and contain only letters, numbers, dots, dashes or underscores',
+				},
+				400
+			);
+		}
+
+		const taken = await db
+			.select({ id: users.id })
+			.from(users)
+			.where(and(sql`lower(${users.username}) = ${username}`, ne(users.id, uid)))
+			.limit(1);
+
+		if (taken.length > 0) {
+			return c.json({ error: 'That username is already taken' }, 409);
+		}
+
+		const rows = await db
+			.update(users)
+			.set({ username })
+			.where(eq(users.id, uid))
+			.returning({ username: users.username });
+
+		if (rows.length === 0) {
+			return c.json({ error: 'User not found' }, 404);
+		}
+
+		return c.json({ username: rows[0].username });
+	} catch (error) {
+		console.error('Failed to update username:', error);
+		return c.json({ error: 'Failed to update username' }, 500);
+	}
+});
+
 // Update game result with rating changes
 userRouter.patch('/:id/game-result', requireAuth, async (c) => {
 	try {
@@ -1090,9 +1164,85 @@ userRouter.patch('/:id/game-result', requireAuth, async (c) => {
 			{ gamesPlayed: opponentModeStats.gamesPlayed }
 		);
 
+		const now = new Date();
+
+		// Idempotency gate: both players submit their result for the same
+		// gameId concurrently. The earlier SELECT-only check (above) raced,
+		// letting both requests pass and double-increment both players' stats.
+		// Instead, insert both log rows atomically with onConflictDoNothing and
+		// use the number of rows actually inserted to decide the winner. Only
+		// the request that inserts the rows updates the stats; the loser
+		// returns idempotent.
+		const logInsertResult = await db
+			.insert(rankedGameLogs)
+			.values([
+				{
+					id: generateEntityId('match'),
+					gameId,
+					userId: uid,
+					opponentId,
+					modeSeconds,
+					score: playerScore,
+					opponentScore: rivalScore,
+					won: playerWon ? 1 : 0,
+					isDraw: isGameDraw ? 1 : 0,
+					ratingBefore: playerModeStats.rating,
+					ratingAfter: newPlayerRating,
+					createdAt: now,
+				},
+				{
+					id: generateEntityId('match'),
+					gameId,
+					userId: opponentId,
+					opponentId: uid,
+					modeSeconds,
+					score: rivalScore,
+					opponentScore: playerScore,
+					won: !isGameDraw && !playerWon ? 1 : 0,
+					isDraw: isGameDraw ? 1 : 0,
+					ratingBefore: opponentModeStats.rating,
+					ratingAfter: newOpponentRating,
+					createdAt: now,
+				},
+			])
+			.onConflictDoNothing()
+			.returning({ id: rankedGameLogs.id });
+
+		const insertedLogs = Array.isArray(logInsertResult) ? logInsertResult : (logInsertResult?.results ?? []);
+		const insertedLogCount = insertedLogs.length;
+
+		if (insertedLogCount < 2) {
+			// Another request already recorded this game. Read the current
+			// stats so the idempotent response reflects the stored result.
+			const [currentStatsRow] = await db
+				.select()
+				.from(userModeStats)
+				.where(and(eq(userModeStats.userId, uid), eq(userModeStats.modeSeconds, modeSeconds)))
+				.limit(1);
+			const [existingResultLog] = await db
+				.select({
+					ratingBefore: rankedGameLogs.ratingBefore,
+					ratingAfter: rankedGameLogs.ratingAfter,
+				})
+				.from(rankedGameLogs)
+				.where(and(eq(rankedGameLogs.gameId, gameId), eq(rankedGameLogs.userId, uid)))
+				.limit(1);
+
+			return c.json({
+				player: {
+					id: uid,
+					rating: currentStatsRow?.rating ?? null,
+				},
+				modeStats: currentStatsRow ? modeStatsRowToDto(currentStatsRow) : null,
+				ratingChange: existingResultLog
+					? existingResultLog.ratingAfter - existingResultLog.ratingBefore
+					: 0,
+				idempotent: true,
+			});
+		}
+
 		const playerModeGamesPlayed = playerModeStats.gamesPlayed + 1;
 		const opponentModeGamesPlayed = opponentModeStats.gamesPlayed + 1;
-		const now = new Date();
 
 		const updatedPlayerModeStatsPromise = db
 			.update(userModeStats)
@@ -1155,37 +1305,6 @@ userRouter.patch('/:id/game-result', requireAuth, async (c) => {
 				})
 				.where(eq(users.id, opponentId))
 				.returning(),
-		]);
-
-		await Promise.all([
-			db.insert(rankedGameLogs).values({
-				id: generateEntityId('match'),
-				gameId,
-				userId: uid,
-				opponentId,
-				modeSeconds,
-				score: playerScore,
-				opponentScore: rivalScore,
-				won: playerWon ? 1 : 0,
-				isDraw: isGameDraw ? 1 : 0,
-				ratingBefore: playerModeStats.rating,
-				ratingAfter: newPlayerRating,
-				createdAt: now,
-			}),
-			db.insert(rankedGameLogs).values({
-				id: generateEntityId('match'),
-				gameId,
-				userId: opponentId,
-				opponentId: uid,
-				modeSeconds,
-				score: rivalScore,
-				opponentScore: playerScore,
-				won: !isGameDraw && !playerWon ? 1 : 0,
-				isDraw: isGameDraw ? 1 : 0,
-				ratingBefore: opponentModeStats.rating,
-				ratingAfter: newOpponentRating,
-				createdAt: now,
-			}),
 		]);
 
 		return c.json({

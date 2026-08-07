@@ -16,6 +16,7 @@ import { auth, googleProvider } from "@/firebase";
 import { ViewIcon, ViewOffIcon } from "hugeicons-react";
 import GoogleLogo from "@/components/icons/GoogleLogo";
 import { getRandomDefaultAvatarId } from "@/lib/player-meta";
+import GuestSignInButton from "@/components/auth/GuestSignInButton";
 
 export function LoginForm({ className, ...props }) {
   const navigate = useNavigate();
@@ -158,6 +159,16 @@ export function LoginForm({ className, ...props }) {
               </button>
             </div>
           </form>
+
+          <div className="relative my-4 flex items-center gap-3">
+            <div className="h-px flex-1 bg-border" />
+            <span className="text-xs uppercase tracking-wide text-muted-foreground">
+              or
+            </span>
+            <div className="h-px flex-1 bg-border" />
+          </div>
+
+          <GuestSignInButton />
         </CardContent>
       </Card>
     </div>

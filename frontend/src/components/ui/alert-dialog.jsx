@@ -4,8 +4,18 @@ import * as AlertDialogPrimitive from "@radix-ui/react-alert-dialog";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 
-function AlertDialog({ ...props }) {
-  return <AlertDialogPrimitive.Root data-slot="alert-dialog" {...props} />;
+const AlertDialogCloseContext = React.createContext(null);
+
+function AlertDialog({ onOpenChange, ...props }) {
+  return (
+    <AlertDialogCloseContext.Provider value={onOpenChange}>
+      <AlertDialogPrimitive.Root
+        data-slot="alert-dialog"
+        onOpenChange={onOpenChange}
+        {...props}
+      />
+    </AlertDialogCloseContext.Provider>
+  );
 }
 
 function AlertDialogTrigger({ ...props }) {
@@ -30,9 +40,13 @@ function AlertDialogOverlay({ className, ...props }) {
 }
 
 function AlertDialogContent({ className, ...props }) {
+  const onOpenChange = React.useContext(AlertDialogCloseContext);
   return (
     <AlertDialogPortal>
-      <AlertDialogOverlay />
+      <AlertDialogOverlay
+        onClick={() => onOpenChange?.(false)}
+        className="cursor-pointer"
+      />
       <AlertDialogPrimitive.Content
         data-slot="alert-dialog-content"
         className={cn(

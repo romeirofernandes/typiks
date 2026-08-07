@@ -1,5 +1,6 @@
 import { useAuth } from "@/context/AuthContext";
 import { TypeGraph } from "@/components/charts/TypeGraph";
+import GuestUpgradePrompt from "@/components/auth/GuestUpgradePrompt";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -37,8 +38,7 @@ import {
 } from "@/lib/player-preferences";
 import { COUNTRIES } from "@/lib/countries";
 import { ViewIcon } from "hugeicons-react";
-import { useEffect, useState } from "react";
-import {
+import { useEffect, useState } from "react";import {
   FEMALE_AVATAR_IDS,
   MALE_AVATAR_IDS,
   RATING_TIERS,
@@ -70,6 +70,11 @@ const Profile = () => {
   const [playerPreferences, setPlayerPreferences] = useState(() =>
     loadPlayerPreferences()
   );
+  const [isUsernameDialogOpen, setIsUsernameDialogOpen] = useState(false);
+  const [usernameDraft, setUsernameDraft] = useState("");
+  const [isSavingUsername, setIsSavingUsername] = useState(false);
+  const [usernameError, setUsernameError] = useState("");
+  const [showConnectAccount, setShowConnectAccount] = useState(false);
 
   const username =
     profileStats.username ||
@@ -339,6 +344,59 @@ const Profile = () => {
     }
   };
 
+  const handleSaveUsername = async () => {
+    if (!currentUser) return;
+
+    const value = usernameDraft.trim();
+    if (value.length < 3 || value.length > 24) {
+      setUsernameError("Username must be 3-24 characters long.");
+      return;
+    }
+    if (!/^[a-z0-9._-]+$/i.test(value)) {
+      setUsernameError(
+        "Username can only contain letters, numbers, dots, dashes or underscores."
+      );
+      return;
+    }
+
+    setIsSavingUsername(true);
+    setUsernameError("");
+
+    try {
+      const idToken = await currentUser.getIdToken();
+      const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
+      const fullUrl = serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
+
+      const response = await fetch(`${fullUrl}/api/users/${currentUser.uid}/username`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ username: value }),
+      });
+
+      if (response.status === 409) {
+        setUsernameError("That username is already taken.");
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error("Failed to update username");
+      }
+
+      const data = await response.json();
+      setProfileStats((prev) => ({ ...prev, username: data.username }));
+      setIsUsernameDialogOpen(false);
+      setUsernameDraft("");
+    } catch (error) {
+      console.error("Failed to persist username:", error);
+      setUsernameError("Could not update your username. Please try again.");
+    } finally {
+      setIsSavingUsername(false);
+    }
+  };
+
   return (
     <TooltipProvider delayDuration={100}>
       <div className="flex h-full items-start">
@@ -355,7 +413,20 @@ const Profile = () => {
             <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
               Username
             </p>
-            <p className="mt-2 font-sans text-lg font-semibold">{username}</p>
+            <div className="mt-2 flex items-center justify-between gap-3">
+              <p className="font-sans text-lg font-semibold">{username}</p>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setUsernameDraft(username);
+                  setUsernameError("");
+                  setIsUsernameDialogOpen(true);
+                }}
+              >
+                Change
+              </Button>
+            </div>
           </div>
           <div className="rounded-lg border border-border/70 bg-background/40 p-4">
             <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
@@ -384,9 +455,20 @@ const Profile = () => {
             <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
               Email
             </p>
-            <p className="mt-2 break-all text-sm text-foreground">
-              {currentUser?.email || "No email available"}
-            </p>
+            <div className="mt-2 flex items-center justify-between gap-3">
+              <p className="break-all text-sm text-foreground">
+                {currentUser?.email || "No email available"}
+              </p>
+              {!currentUser?.email ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowConnectAccount(true)}
+                >
+                  Connect account
+                </Button>
+              ) : null}
+            </div>
           </div>
         </section>
 
@@ -574,6 +656,51 @@ const Profile = () => {
           )}
         </section>
 
+        <AlertDialog open={isUsernameDialogOpen} onOpenChange={setIsUsernameDialogOpen}>
+          <AlertDialogContent className="max-w-md">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Change username</AlertDialogTitle>
+              <AlertDialogDescription>
+                Choose a unique username. It must be 3-24 characters and can only
+                contain letters, numbers, dots, dashes or underscores.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSaveUsername();
+              }}
+              className="space-y-3"
+            >
+              <div className="space-y-1">
+                <Label htmlFor="profile-username">Username</Label>
+                <Input
+                  id="profile-username"
+                  type="text"
+                  value={usernameDraft}
+                  onChange={(e) => {
+                    setUsernameDraft(e.target.value);
+                    setUsernameError("");
+                  }}
+                  minLength={3}
+                  maxLength={24}
+                  autoComplete="off"
+                />
+              </div>
+              {usernameError ? (
+                <p className="text-xs text-destructive">{usernameError}</p>
+              ) : null}
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={isSavingUsername}>Cancel</AlertDialogCancel>
+                <Button type="submit" disabled={isSavingUsername}>
+                  {isSavingUsername ? "Saving..." : "Save Username"}
+                </Button>
+              </AlertDialogFooter>
+            </form>
+          </AlertDialogContent>
+        </AlertDialog>
+
         <AlertDialog open={isAvatarDialogOpen} onOpenChange={setIsAvatarDialogOpen}>
           <AlertDialogContent className="max-w-2xl">
             <AlertDialogHeader>
@@ -636,6 +763,11 @@ const Profile = () => {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        <GuestUpgradePrompt
+          open={showConnectAccount}
+          onOpenChange={setShowConnectAccount}
+        />
       </div>
     </div>
     </TooltipProvider>

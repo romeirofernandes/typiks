@@ -16,7 +16,8 @@ import {
   NEXT_WORD_CONDITIONS,
   PLAYER_PREFERENCES_STORAGE_KEY,
 } from "@/lib/player-preferences";
-import { FiClock, FiArrowLeft, FiZap, FiTrendingUp, FiCheck, FiX } from "react-icons/fi";
+import { FiClock, FiArrowLeft, FiZap, FiTrendingUp, FiCheck, FiX, FiSave } from "react-icons/fi";
+import GuestUpgradePrompt from "@/components/auth/GuestUpgradePrompt";
 
 const Game = () => {
   const { currentUser } = useAuth();
@@ -43,6 +44,7 @@ const Game = () => {
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
   const [rematchState, setRematchState] = useState("idle");
   const [incomingRematch, setIncomingRematch] = useState(null);
+  const [showGuestUpgrade, setShowGuestUpgrade] = useState(false);
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
   const [playerPreferences, setPlayerPreferences] = useState(() =>
     loadPlayerPreferences()
@@ -762,12 +764,11 @@ const Game = () => {
               )
             : prev?.modeStats,
           winRate:
-            prev.gamesPlayed > 0
-              ? (
-                  (data.player.gamesWon / data.player.gamesPlayed) *
-                  100
-                ).toFixed(1)
-              : 0,
+            prev.gamesPlayed > 0 && Number(data.player.gamesPlayed) > 0
+              ? ((Number(data.player.gamesWon) / Number(data.player.gamesPlayed)) * 100).toFixed(1)
+              : prev.gamesPlayed > 0
+                ? ((Number(prev.gamesWon) / Number(prev.gamesPlayed)) * 100).toFixed(1)
+                : 0,
         }));
       } else {
         const errorBody = await response.text();
@@ -880,6 +881,11 @@ const Game = () => {
       (gameResults.player2?.id === currentUser?.uid && gameResults.player2?.won)
     )
   );
+
+  const displayRating =
+    postMatchRating != null && Number.isFinite(Number(postMatchRating))
+      ? Number(postMatchRating)
+      : userStats?.rating ?? 800;
 
   return (
     <div className="flex h-full flex-col gap-6">
@@ -1293,11 +1299,9 @@ const Game = () => {
                       <span className="text-sm text-muted-foreground">
                         New Rating:{" "}
                         <span
-                          className={`font-semibold ${getRatingColor(
-                            Number.isFinite(Number(postMatchRating)) ? Number(postMatchRating) : userStats.rating
-                          )}`}
+                          className={`font-semibold ${getRatingColor(displayRating)}`}
                         >
-                          {Number.isFinite(Number(postMatchRating)) ? Number(postMatchRating) : userStats.rating}
+                          {displayRating}
                         </span>
                       </span>
                     </div>
@@ -1307,6 +1311,16 @@ const Game = () => {
                     <FiArrowLeft className="h-4 w-4" />
                     Back to Dashboard
                   </Button>
+                  {currentUser?.isAnonymous ? (
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowGuestUpgrade(true)}
+                      className="w-full gap-2"
+                    >
+                      <FiSave className="h-4 w-4" />
+                      Save progress
+                    </Button>
+                  ) : null}
                   {rematchState !== "declined" ? (
                     <Button variant="outline" onClick={handleRematch} className="w-full" disabled={rematchState === "pending"}>
                       {rematchState === "pending" ? "Rematch Requested..." : "Rematch"}
@@ -1353,6 +1367,11 @@ const Game = () => {
             </motion.div>
           ) : null}
         </AnimatePresence>
+
+        <GuestUpgradePrompt
+          open={showGuestUpgrade}
+          onOpenChange={setShowGuestUpgrade}
+        />
     </div>
   );
 };
