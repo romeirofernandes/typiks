@@ -4,6 +4,7 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import NewLanding from "./pages/NewLanding";
 import SignUp from "./pages/SignUp";
 import SignIn from "./pages/SignIn";
+import ForgotPassword from "./pages/ForgotPassword";
 import Dashboard from "./pages/Dashboard";
 import Leaderboard from "./pages/Leaderboard";
 import WaitingRoom from "./pages/WaitingRoom";
@@ -25,6 +26,7 @@ export default function App() {
           <Route path="/" element={<NewLanding />} />
           <Route path="/signup" element={<SignUp />} />
           <Route path="/signin" element={<SignIn />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route
             element={
               <ProtectedRoute>

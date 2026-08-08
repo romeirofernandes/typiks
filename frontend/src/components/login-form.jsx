@@ -111,8 +111,17 @@ export function LoginForm({ className, ...props }) {
                   required
                 />
               </div>
-              <div className="grid gap-3">
-                <Label htmlFor="password">Password</Label>
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password">Password</Label>
+                  <button
+                    type="button"
+                    onClick={() => navigate("/forgot-password")}
+                    className="text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground transition-colors"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
                 <div className="relative">
                   <Input
                     id="password"
