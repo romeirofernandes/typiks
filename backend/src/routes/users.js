@@ -15,6 +15,7 @@ import { calculateNewRatings } from '../utils/rating.js';
 import { requireFirebaseAuth } from '../middleware/firebaseAuth.js';
 import { generateGuestEmail, generateGuestUsername, isGuestEmail } from '../utils/guest.js';
 import countriesGeo from '../countries-geo.json' with { type: 'json' };
+import isoCountries from '../iso-countries.json' with { type: 'json' };
 
 const userRouter = new Hono();
 
@@ -57,6 +58,16 @@ function normalizeLocationKey(value) {
 	if (typeof value !== 'string') return null;
 	const normalized = value.trim().toLowerCase();
 	return normalized.length > 0 ? normalized : null;
+}
+
+// Cloudflare injects a CF-IPCountry header (ISO 3166-1 alpha-2) on every
+// request to the Worker. Best-effort: resolve it to the country common name
+// used across the location/globe features, or null when unavailable.
+function countryFromIpHeader(headerValue) {
+	if (typeof headerValue !== 'string') return null;
+	const code = headerValue.trim().toUpperCase();
+	if (!/^[A-Z]{2}$/.test(code)) return null;
+	return isoCountries[code] || null;
 }
 
 function generateEntityId(prefix) {
@@ -766,6 +777,7 @@ userRouter.post('/', requireAuth, async (c) => {
 		}
 
 		let newUser;
+		const ipCountry = countryFromIpHeader(c.req.header('cf-ip-country'));
 		let attempts = 0;
 		while (attempts < 3) {
 			attempts++;
@@ -783,6 +795,7 @@ userRouter.post('/', requireAuth, async (c) => {
 						rating: 800,
 						nextWordCondition: 'auto',
 						createdAt: new Date(),
+						...(ipCountry ? { country: ipCountry } : {}),
 					})
 					.returning();
 				break;

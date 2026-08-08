@@ -53,9 +53,14 @@ export function GlobeToMapTransform() {
   const [worldData, setWorldData] = useState([]);
   const [rotation, setRotation] = useState([0, 0]);
   const [translation, setTranslation] = useState([0, 0]);
-  const [isDark, setIsDark] = useState(() =>
-    document.documentElement.classList.contains("dark")
-  );
+  const [isDark, setIsDark] = useState(() => {
+    const stored =
+      (typeof localStorage !== "undefined" ? localStorage.getItem("theme") : null) ||
+      "light";
+    return (
+      document.documentElement.classList.contains("dark") || stored === "dark"
+    );
+  });
   const [countryMarkers, setCountryMarkers] = useState([]);
   const [projectedMarkers, setProjectedMarkers] = useState([]);
   const [hoveredMarkerId, setHoveredMarkerId] = useState(null);
@@ -75,9 +80,9 @@ export function GlobeToMapTransform() {
 
   useEffect(() => {
     const root = document.documentElement;
-    const observer = new MutationObserver(() => {
-      setIsDark(root.classList.contains("dark"));
-    });
+    const apply = () => setIsDark(root.classList.contains("dark"));
+    apply();
+    const observer = new MutationObserver(apply);
     observer.observe(root, { attributes: true, attributeFilter: ["class"] });
     return () => observer.disconnect();
   }, []);
@@ -472,7 +477,7 @@ export function GlobeToMapTransform() {
       .attr("stroke-width", 1)
       .attr("opacity", 1);
 
-    const fitScale = Math.min(
+    const fitScale = Math.max(
       width > 0 ? svgRef.current.clientWidth / width : 1,
       height > 0 ? svgRef.current.clientHeight / height : 1
     );
@@ -550,12 +555,20 @@ export function GlobeToMapTransform() {
   };
 
   return (
-    <div className="relative flex h-full w-full items-center justify-center">
+    <div className="relative isolate flex h-full w-full items-center justify-center">
+      <div
+        className="pointer-events-none absolute inset-0 -z-10"
+        style={{
+          background: isDark
+            ? "radial-gradient(125% 125% at 50% 10%, #000000 40%, #072607 100%)"
+            : "radial-gradient(125% 125% at 50% 10%, #ffffff 40%, color-mix(in oklab, var(--primary) 55%, white) 100%)",
+        }}
+      />
       <svg
         ref={svgRef}
         viewBox={`0 0 ${width} ${height}`}
         className="h-full w-full cursor-grab bg-transparent active:cursor-grabbing"
-        preserveAspectRatio="xMidYMid meet"
+        preserveAspectRatio="xMidYMid slice"
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
