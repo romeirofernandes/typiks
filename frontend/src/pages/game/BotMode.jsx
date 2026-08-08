@@ -5,7 +5,6 @@ import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useViewport } from "@/hooks/useViewport";
 import { useIsCoarsePointer } from "@/hooks/useIsCoarsePointer";
 import { usePlayerPreferences } from "@/hooks/usePlayerPreferences";
@@ -14,7 +13,6 @@ import {
   NEXT_WORD_CONDITIONS,
 } from "@/lib/player-preferences";
 import { FiUser, FiClock, FiArrowLeft, FiZap, FiCpu } from "react-icons/fi";
-import { InfoIcon } from "lucide-react";
 
 const BOT_DIFFICULTIES = {
   easy: { id: "easy", label: "Easy", cpsRange: [2.2, 3.4], accuracy: 0.82 },
@@ -102,11 +100,6 @@ export default function BotMode() {
   const activeSubmitLabel = activeSubmitKeys.map((option) => option.label).join(" / ");
 
   const isWinner = gameState === "finished" && myScore > opponentScore;
-  const avgWordLength = useMemo(() => {
-    if (wordBank.length === 0) return 0;
-    const totalChars = wordBank.reduce((sum, word) => sum + word.length, 0);
-    return totalChars / wordBank.length;
-  }, [wordBank]);
 
   useEffect(() => {
     let cancelled = false;
@@ -118,17 +111,6 @@ export default function BotMode() {
       cancelled = true;
     };
   }, []);
-  const expectedCorrectWordsRange = useMemo(() => {
-    if (avgWordLength === 0) return { min: 1, max: 1 };
-    const [minCps, maxCps] = botDifficulty.cpsRange;
-    const minWords = Math.round((modeSeconds * minCps * botDifficulty.accuracy) / avgWordLength);
-    const maxWords = Math.round((modeSeconds * maxCps * botDifficulty.accuracy) / avgWordLength);
-    return {
-      min: Math.max(1, minWords),
-      max: Math.max(1, maxWords),
-    };
-  }, [avgWordLength, botDifficulty.accuracy, botDifficulty.cpsRange, modeSeconds]);
-
   const clearGameTimers = () => {
     if (timerRef.current) {
       clearInterval(timerRef.current);
@@ -352,64 +334,61 @@ export default function BotMode() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="grid w-full gap-4"
+            className="flex h-full min-h-0 flex-1 flex-col gap-4"
           >
             {isBooting ? (
-              <>
-                <Card>
-                  <CardHeader>
-                    <Skeleton className="h-6 w-40" />
-                  </CardHeader>
-                  <CardContent className="space-y-5">
-                    <div className="grid gap-5 md:grid-cols-2">
-                      <div className="space-y-2">
-                        <Skeleton className="h-3 w-20" />
-                        <div className="grid grid-cols-4 gap-2">
-                          {MODE_SECONDS.map((mode) => (
-                            <Skeleton key={`timer-skeleton-${mode}`} className="h-9 w-full" />
-                          ))}
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <Skeleton className="h-3 w-24" />
-                        <div className="grid grid-cols-3 gap-2">
-                          <Skeleton className="h-9 w-full" />
-                          <Skeleton className="h-9 w-full" />
-                          <Skeleton className="h-9 w-full" />
-                        </div>
+              <Card className="flex-1">
+                <CardHeader>
+                  <Skeleton className="h-6 w-40" />
+                </CardHeader>
+                <CardContent className="flex flex-1 flex-col justify-center gap-8">
+                  <div className="mx-auto flex w-full max-w-sm flex-col gap-8">
+                    <div className="space-y-3">
+                      <Skeleton className="h-3 w-20" />
+                      <div className="flex flex-col gap-2.5">
+                        {MODE_SECONDS.map((mode) => (
+                          <Skeleton key={`timer-skeleton-${mode}`} className="h-12 w-full" />
+                        ))}
                       </div>
                     </div>
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                      <Skeleton className="h-10 w-full" />
-                      <Skeleton className="h-10 w-full" />
+                    <div className="space-y-3">
+                      <Skeleton className="h-3 w-24" />
+                      <div className="flex flex-col gap-2.5">
+                        {Object.keys(BOT_DIFFICULTIES).map((id) => (
+                          <Skeleton key={`difficulty-skeleton-${id}`} className="h-12 w-full" />
+                        ))}
+                      </div>
                     </div>
-                  </CardContent>
-                </Card>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <Skeleton className="h-16 w-full" />
-                  <Skeleton className="h-16 w-full" />
-                  <Skeleton className="h-16 w-full" />
-                </div>
-              </>
+                  </div>
+                </CardContent>
+              </Card>
             ) : (
               <>
-                <Card>
-                  <CardHeader>
+                <Card className="relative flex-1 overflow-hidden">
+                  <div
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-0"
+                    style={{
+                      backgroundImage:
+                        "repeating-linear-gradient(-45deg, var(--border) 0 0.8px, transparent 0.8px 10px)",
+                    }}
+                  />
+                  <CardHeader className="relative">
                     <CardTitle className="flex items-center gap-2">
                       <FiCpu className="h-4 w-4" /> Configure Bot
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-5">
-                    <div className="grid gap-5 md:grid-cols-2">
-                      <div className="space-y-2">
+                  <CardContent className="relative flex flex-1 flex-col justify-center gap-8">
+                    <div className="mx-auto flex w-full max-w-sm flex-col gap-8">
+                      <div className="space-y-3">
                         <p className="text-xs uppercase tracking-[0.15em] text-muted-foreground">Timer</p>
-                        <div className="grid grid-cols-4 gap-2">
+                        <div className="flex flex-col gap-2.5">
                           {MODE_SECONDS.map((mode) => (
                             <Button
                               key={mode}
                               type="button"
-                              size="sm"
                               variant={modeSeconds === mode ? "default" : "outline"}
+                              className="h-12 w-full justify-start px-4 text-base"
                               onClick={() => setModeSeconds(mode)}
                             >
                               {mode}s
@@ -418,15 +397,15 @@ export default function BotMode() {
                         </div>
                       </div>
 
-                      <div className="space-y-2">
+                      <div className="space-y-3">
                         <p className="text-xs uppercase tracking-[0.15em] text-muted-foreground">Difficulty</p>
-                        <div className="grid grid-cols-3 gap-2">
+                        <div className="flex flex-col gap-2.5">
                           {Object.values(BOT_DIFFICULTIES).map((preset) => (
                             <Button
                               key={preset.id}
                               type="button"
-                              size="sm"
                               variant={difficulty === preset.id ? "default" : "outline"}
+                              className="h-12 w-full justify-start px-4 text-base"
                               onClick={() => setDifficulty(preset.id)}
                             >
                               {preset.label}
@@ -435,57 +414,13 @@ export default function BotMode() {
                         </div>
                       </div>
                     </div>
-
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                      <Button className="w-full" onClick={startBotGame} disabled={wordBank.length === 0}>Start Bot Match</Button>
-                      <Button variant="outline" className="w-full gap-2" onClick={() => navigate("/dashboard")}>
-                        <FiArrowLeft className="h-4 w-4" /> Back
-                      </Button>
-                    </div>
                   </CardContent>
                 </Card>
 
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div className="rounded-md border border-border/70 bg-card/40 p-3">
-                    <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Mode</p>
-                    <p className="mt-1 font-semibold">{botDifficulty.label} - {modeSeconds}s</p>
-                  </div>
-                  <div className="rounded-md border border-border/70 bg-card/40 p-3">
-                    <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Accuracy</p>
-                    <div className="mt-1 flex items-center gap-1.5">
-                      <p className="font-semibold">{Math.round(botDifficulty.accuracy * 100)}%</p>
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button type="button" className="inline-flex text-muted-foreground hover:text-foreground" aria-label="Accuracy info">
-                              <InfoIcon className="h-3.5 w-3.5" />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent side="top" align="center">
-                            Applied when bot completes each word after character-timed progression.
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </div>
-                  </div>
-                  <div className="rounded-md border border-border/70 bg-card/40 p-3">
-                    <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Expected</p>
-                    <div className="mt-1 flex items-center gap-1.5">
-                      <p className="font-semibold">{expectedCorrectWordsRange.min}-{expectedCorrectWordsRange.max}</p>
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button type="button" className="inline-flex text-muted-foreground hover:text-foreground" aria-label="Expected words info">
-                              <InfoIcon className="h-3.5 w-3.5" />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent side="top" align="center">
-                            Estimated correct words from mode timer, cps range, and accuracy.
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </div>
-                  </div>
+                <div className="flex items-center justify-end">
+                  <Button size="lg" onClick={startBotGame} disabled={wordBank.length === 0}>
+                    Start Bot Match
+                  </Button>
                 </div>
               </>
             )}
