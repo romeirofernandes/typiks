@@ -74,21 +74,6 @@ const Leaderboard = () => {
     [topThree]
   );
 
-  const summary = useMemo(() => {
-    if (!leaderboard.length) {
-      return { players: 0, averageRating: 0, topWinRate: 0 };
-    }
-
-    const totalRating = leaderboard.reduce((sum, player) => sum + (player.rating || 0), 0);
-    const topWinRate = Math.max(...leaderboard.map((player) => Number(player.winRate) || 0));
-
-    return {
-      players: leaderboard.length,
-      averageRating: Math.round(totalRating / leaderboard.length),
-      topWinRate,
-    };
-  }, [leaderboard]);
-
   if (loading) {
     return (
       <div className="min-h-[78svh] text-foreground">
@@ -155,17 +140,6 @@ const Leaderboard = () => {
                 Leaderboard
               </h1>
             </div>
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              <span className="rounded-full border border-border bg-background/80 px-3 py-1 tabular-nums">
-                {summary.players} players
-              </span>
-              <span className="rounded-full border border-border bg-background/80 px-3 py-1 tabular-nums">
-                Avg {summary.averageRating}
-              </span>
-              <span className="rounded-full border border-border bg-background/80 px-3 py-1 tabular-nums">
-                Best {summary.topWinRate}%
-              </span>
-            </div>
           </div>
 
           {podium.length > 0 ? (
@@ -205,7 +179,7 @@ const Leaderboard = () => {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.25, delay: index * 0.04 }}
                   className={`relative overflow-hidden rounded-md border border-border/70 bg-card p-3 shadow-sm ${
-                    player.rank === 1 ? "sm:min-h-[176px]" : player.rank === 2 ? "sm:min-h-[150px]" : "sm:min-h-[136px]"
+                    player.rank === 1 ? "sm:min-h-[180px]" : player.rank === 2 ? "sm:min-h-[150px]" : "sm:min-h-[120px]"
                   }`}
                 >
                   <div className={`absolute inset-x-0 bottom-0 h-2 ${

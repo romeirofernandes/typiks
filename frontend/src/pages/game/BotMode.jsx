@@ -370,7 +370,7 @@ export default function BotMode() {
                     className="pointer-events-none absolute inset-0"
                     style={{
                       backgroundImage:
-                        "repeating-linear-gradient(-45deg, var(--border) 0 0.8px, transparent 0.8px 10px)",
+                        "repeating-linear-gradient(-45deg, var(--border) 0 0.9px, transparent 0.9px 12px)",
                     }}
                   />
                   <CardHeader className="relative">
@@ -388,7 +388,7 @@ export default function BotMode() {
                               key={mode}
                               type="button"
                               variant={modeSeconds === mode ? "default" : "outline"}
-                              className="h-12 w-full justify-start px-4 text-base"
+                              className={`h-12 w-full justify-start px-4 text-base ${modeSeconds === mode ? "" : "dark:bg-input dark:hover:bg-input hover:scale-[1.02] active:scale-[0.98]"}`}
                               onClick={() => setModeSeconds(mode)}
                             >
                               {mode}s
@@ -405,7 +405,7 @@ export default function BotMode() {
                               key={preset.id}
                               type="button"
                               variant={difficulty === preset.id ? "default" : "outline"}
-                              className="h-12 w-full justify-start px-4 text-base"
+                              className={`h-12 w-full justify-start px-4 text-base ${difficulty === preset.id ? "" : "dark:bg-input dark:hover:bg-input hover:scale-[1.02] active:scale-[0.98]"}`}
                               onClick={() => setDifficulty(preset.id)}
                             >
                               {preset.label}
@@ -415,13 +415,12 @@ export default function BotMode() {
                       </div>
                     </div>
                   </CardContent>
+                  <div className="relative flex items-center justify-end px-6">
+                    <Button size="lg" onClick={startBotGame} disabled={wordBank.length === 0}>
+                      Start Bot Match
+                    </Button>
+                  </div>
                 </Card>
-
-                <div className="flex items-center justify-end">
-                  <Button size="lg" onClick={startBotGame} disabled={wordBank.length === 0}>
-                    Start Bot Match
-                  </Button>
-                </div>
               </>
             )}
           </motion.div>

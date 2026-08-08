@@ -1475,7 +1475,7 @@ export default function CreateRoom() {
         <motion.div 
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="space-y-6"
+          className="flex flex-1 flex-col space-y-6"
         >
           {/* Mode Selection Cards */}
           <div className="grid gap-4 md:grid-cols-2">
@@ -1488,26 +1488,21 @@ export default function CreateRoom() {
               <Card
                 className={`h-full transition-all duration-200 ${
                   entryMode === "create"
-                    ? "border-primary/50 bg-primary/5 ring-1 ring-primary/20"
+                    ? "border-primary bg-primary"
                     : "border-border/50 hover:border-border"
                 }`}
               >
                 <CardHeader className="gap-2 pb-3">
                   <div className="flex items-center gap-2">
-                    <div className={`rounded-md p-2 ${entryMode === "create" ? "bg-primary/20" : "bg-muted"}`}>
-                      <FiSettings className="h-4 w-4" />
+                    <div className={`rounded-md p-2 ${entryMode === "create" ? "" : "bg-muted"}`}>
+                      <FiSettings className={`h-4 w-4 ${entryMode === "create" ? "text-primary-foreground" : ""}`} />
                     </div>
-                    <p className="font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                    <p className={`font-mono text-xs uppercase tracking-[0.15em] ${entryMode === "create" ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
                       Create
                     </p>
                   </div>
-                  <CardTitle className="font-sans text-lg">Create a New Room</CardTitle>
+                  <CardTitle className={`font-sans text-lg ${entryMode === "create" ? "text-primary-foreground" : ""}`}>Create a New Room</CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground">
-                    Host the lobby, configure settings, and start when everyone's ready.
-                  </p>
-                </CardContent>
               </Card>
             </motion.button>
 
@@ -1520,26 +1515,21 @@ export default function CreateRoom() {
               <Card
                 className={`h-full transition-all duration-200 ${
                   entryMode === "join"
-                    ? "border-primary/50 bg-primary/5 ring-1 ring-primary/20"
+                    ? "border-primary bg-primary"
                     : "border-border/50 hover:border-border"
                 }`}
               >
                 <CardHeader className="gap-2 pb-3">
                   <div className="flex items-center gap-2">
-                    <div className={`rounded-md p-2 ${entryMode === "join" ? "bg-primary/20" : "bg-muted"}`}>
-                      <FiUsers className="h-4 w-4" />
+                    <div className={`rounded-md p-2 ${entryMode === "join" ? "" : "bg-muted"}`}>
+                      <FiUsers className={`h-4 w-4 ${entryMode === "join" ? "text-primary-foreground" : ""}`} />
                     </div>
-                    <p className="font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                    <p className={`font-mono text-xs uppercase tracking-[0.15em] ${entryMode === "join" ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
                       Join
                     </p>
                   </div>
-                  <CardTitle className="font-sans text-lg">Join with Code</CardTitle>
+                  <CardTitle className={`font-sans text-lg ${entryMode === "join" ? "text-primary-foreground" : ""}`}>Join with Code</CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground">
-                    Enter a 6-character code and join an active room instantly.
-                  </p>
-                </CardContent>
               </Card>
             </motion.button>
           </div>
@@ -1552,12 +1542,21 @@ export default function CreateRoom() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
+                className="flex flex-1 flex-col"
               >
-                <Card className="border-primary/20">
-                  <CardHeader>
+                <Card className="relative flex-1 overflow-hidden">
+                  <div
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-0"
+                    style={{
+                      backgroundImage:
+                        "repeating-linear-gradient(-45deg, var(--border) 0 0.9px, transparent 0.9px 12px)",
+                    }}
+                  />
+                  <CardHeader className="relative">
                     <CardTitle className="font-sans text-lg">Room Settings</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-6">
+                  <CardContent className="relative space-y-6">
                     {/* Game Mode Selection */}
                     <div className="space-y-3">
                       <p className="font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">
@@ -1569,13 +1568,13 @@ export default function CreateRoom() {
                             key={mode.id}
                             type="button"
                             onClick={() => setSettingsForm((prev) => ({ ...prev, gameMode: mode.id }))}
-                            className={`rounded-md border px-3 py-2 text-center text-sm transition-all ${
+                            className={`flex h-14 items-center justify-center rounded-md border px-3 text-lg transition-all ${
                               settingsForm.gameMode === mode.id
-                                ? "border-primary bg-primary/10 text-foreground dark:text-primary"
-                                : "border-border/50 hover:border-border hover:bg-muted/50"
+                                ? "border-primary bg-primary"
+                                : "border-border/50 bg-input hover:border-border"
                             }`}
                           >
-                            <span className="font-semibold">{mode.label}</span>
+                            <span className={`font-semibold ${settingsForm.gameMode === mode.id ? "text-primary-foreground" : ""}`}>{mode.label}</span>
                           </button>
                         ))}
                       </div>
@@ -1586,9 +1585,9 @@ export default function CreateRoom() {
 
                     {/* Settings Grid */}
                     <div className="grid gap-4 sm:grid-cols-3">
-                      <label className="space-y-2">
+                      <label className="space-y-2.5">
                         <span className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
-                          <FiUsers className="h-3 w-3" /> Max Players
+                          <FiUsers className="h-3.5 w-3.5" /> Max Players
                         </span>
                         <Input
                           type="number"
@@ -1596,12 +1595,13 @@ export default function CreateRoom() {
                           max={ROOM_SETTING_LIMITS.maxPlayers.max}
                           value={settingsForm.maxPlayers}
                           onChange={(e) => updateSettingsField("maxPlayers", e.target.value)}
+                          className="h-14 bg-input text-center text-lg dark:bg-input"
                         />
                       </label>
 
-                      <label className="space-y-2">
+                      <label className="space-y-2.5">
                         <span className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
-                          <FiClock className="h-3 w-3" /> Round Time (s)
+                          <FiClock className="h-3.5 w-3.5" /> Round Time (s)
                         </span>
                         <Input
                           type="number"
@@ -1609,12 +1609,13 @@ export default function CreateRoom() {
                           max={ROOM_SETTING_LIMITS.roundTimeSeconds.max}
                           value={settingsForm.roundTimeSeconds}
                           onChange={(e) => updateSettingsField("roundTimeSeconds", e.target.value)}
+                          className="h-14 bg-input text-center text-lg dark:bg-input"
                         />
                       </label>
 
-                      <label className="space-y-2">
+                      <label className="space-y-2.5">
                         <span className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
-                          <FiHash className="h-3 w-3" /> Word Count
+                          <FiHash className="h-3.5 w-3.5" /> Word Count
                         </span>
                         <Input
                           type="number"
@@ -1622,6 +1623,7 @@ export default function CreateRoom() {
                           max={ROOM_SETTING_LIMITS.wordCount.max}
                           value={settingsForm.wordCount}
                           onChange={(e) => updateSettingsField("wordCount", e.target.value)}
+                          className="h-14 bg-input text-center text-lg dark:bg-input"
                         />
                       </label>
                     </div>
@@ -1631,7 +1633,7 @@ export default function CreateRoom() {
                         <p className="font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">
                           Coop Mode
                         </p>
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-2 gap-3">
                           {COOP_MODES.map((mode) => (
                             <button
                               key={mode.id}
@@ -1642,22 +1644,22 @@ export default function CreateRoom() {
                                   coopMode: mode.id,
                                 }))
                               }
-                              className={`rounded-md border px-3 py-2 text-left text-sm transition-all ${
+                              className={`flex h-20 flex-col justify-center rounded-md border px-4 py-2 text-left text-sm transition-all ${
                                 settingsForm.coopMode === mode.id
-                                  ? "border-primary bg-primary/10 text-foreground dark:text-primary"
-                                  : "border-border/50 hover:border-border hover:bg-muted/50"
+                                  ? "border-primary bg-primary"
+                                  : "border-border/50 bg-input hover:border-border"
                               }`}
                             >
-                              <p className="font-semibold">{mode.label}</p>
-                              <p className="mt-1 text-xs text-muted-foreground">{mode.description}</p>
+                              <p className={`font-semibold ${settingsForm.coopMode === mode.id ? "text-primary-foreground" : ""}`}>{mode.label}</p>
+                              <p className={`mt-1 text-xs ${settingsForm.coopMode === mode.id ? "text-primary-foreground/80" : "text-muted-foreground"}`}>{mode.description}</p>
                             </button>
                           ))}
                         </div>
                       </div>
                     ) : null}
 
-                    <div className="flex flex-col gap-3 border-t border-border/50 pt-4 sm:flex-row sm:items-center sm:justify-between">
-                      <p className="text-xs text-muted-foreground">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-sm text-muted-foreground">
                         Private games don't affect your rating.
                       </p>
                       <Button onClick={createRoom} disabled={busy} className="w-full sm:w-auto">
@@ -1680,28 +1682,37 @@ export default function CreateRoom() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
+                className="flex flex-1 flex-col"
               >
-                <Card className="border-primary/20">
-                  <CardHeader>
+                <Card className="relative flex-1 overflow-hidden">
+                  <div
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-0"
+                    style={{
+                      backgroundImage:
+                        "repeating-linear-gradient(-45deg, var(--border) 0 0.9px, transparent 0.9px 12px)",
+                    }}
+                  />
+                  <CardHeader className="relative">
                     <CardTitle className="font-sans text-lg">Enter Room Code</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="flex flex-col gap-3 sm:flex-row">
-                    <Input
-                      value={joinCode}
-                      onChange={(e) => setJoinCode(sanitizeRoomCode(e.target.value))}
-                      placeholder="ABC123"
-                      maxLength={6}
-                      autoComplete="off"
-                      spellCheck={false}
-                      autoCapitalize="characters"
-                      className="flex-1 text-center font-mono text-xl uppercase tracking-[0.3em]"
-                    />
-                      <Button onClick={joinRoom} className="sm:w-auto">
+                  <CardContent className="relative flex flex-1 flex-col justify-center gap-8">
+                    <div className="mx-auto flex w-full max-w-sm flex-col gap-4">
+                      <Input
+                        value={joinCode}
+                        onChange={(e) => setJoinCode(sanitizeRoomCode(e.target.value))}
+                        placeholder="ABC123"
+                        maxLength={6}
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoCapitalize="characters"
+                        className="h-12 text-center font-mono text-xl uppercase tracking-[0.3em] bg-input dark:bg-input"
+                      />
+                      <Button onClick={joinRoom} className="h-12 w-full text-base">
                         Join Room
                       </Button>
                     </div>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-center text-xs text-muted-foreground">
                       Status: {wsStatus === "idle" ? "Ready to connect" : wsStatus}
                     </p>
                   </CardContent>

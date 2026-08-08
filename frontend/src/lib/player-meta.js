@@ -36,37 +36,37 @@ export const RATING_TIERS = [
     min: 1700,
     label: "Mythic",
     description: "Top 1% typing aura. Fast, precise, and absurdly consistent.",
-    color: "bg-chart-5/15 text-chart-5 border-chart-5/30",
+    color: "bg-chart-5/15 text-foreground border-chart-5/30",
   },
   {
     min: 1500,
     label: "Knight",
     description: "Serious pace and clean control. You rarely fumble pressure rounds.",
-    color: "bg-chart-4/15 text-chart-4 border-chart-4/30",
+    color: "bg-chart-4/15 text-foreground border-chart-4/30",
   },
   {
     min: 1300,
     label: "Vanguard",
     description: "Confident, reliable, and usually ahead of lobby tempo.",
-    color: "bg-chart-3/15 text-chart-3 border-chart-3/30",
+    color: "bg-chart-3/15 text-foreground border-chart-3/30",
   },
   {
     min: 1100,
     label: "Contender",
     description: "Good fundamentals with enough speed to win close games.",
-    color: "bg-chart-2/15 text-chart-2 border-chart-2/30",
+    color: "bg-chart-2/15 text-foreground border-chart-2/30",
   },
   {
     min: 900,
     label: "Cadet",
     description: "Progress phase. Building rhythm, control, and match confidence.",
-    color: "bg-primary/10 text-primary border-primary/25",
+    color: "bg-primary/10 text-foreground border-primary/25",
   },
   {
     min: 0,
     label: "Rookie",
     description: "Starting rank. Lock in accuracy first, speed follows.",
-    color: "bg-muted text-muted-foreground border-border",
+    color: "bg-muted text-foreground border-border",
   },
 ];
 
