@@ -1,10 +1,10 @@
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Keyboard } from "@/components/ui/keyboard";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
 
 export default function HeroSection() {
-  const { currentUser } = useAuth();
+  const { state: { currentUser } } = useAuth();
   const scrollToTestimonials = (e) => {
     e?.preventDefault?.();
     const el = document.getElementById("testimonials");
@@ -39,7 +39,7 @@ export default function HeroSection() {
         </div>
 
         <div className="w-full overflow-visible pt-1 sm:pt-2">
-            <Keyboard size="lg" theme="typiks" enableSound={true} enableHaptics={true} disableNativeBehavior={false} />
+            <Keyboard size="lg" theme="typiks" options={{ sound: true, haptics: true, nativeBehavior: true }} />
         </div>
       </div>
     </section>

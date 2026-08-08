@@ -1,12 +1,7 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { auth } from "../firebase";
 import { onAuthStateChanged } from 'firebase/auth';
-
-const AuthContext = createContext();
-
-export const useAuth = () => {
-  return useContext(AuthContext);
-};
+import { AuthContext } from "./auth-context";
 
 export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
@@ -22,8 +17,9 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const value = {
-    currentUser,
-    loading
+    state: { currentUser, loading },
+    actions: {},
+    meta: {},
   };
 
   return (

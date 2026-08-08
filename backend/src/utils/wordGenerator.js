@@ -77,33 +77,54 @@ function pickBucket(difficulty) {
 	return BUCKETS.hard;
 }
 
+// Weighted candidate pools are built once at module load and reused across
+// every generateWords() call. The old implementation rebuilt the pool (a
+// .map() allocation plus an O(n) splice per pick) on every request, which was
+// wasteful on the large buckets.
+const WEIGHTED_POOLS = new WeakMap();
+
+function getWeightedPool(bucket) {
+	let pool = WEIGHTED_POOLS.get(bucket);
+	if (!pool) {
+		pool = bucket.map((word, idx) => ({
+			word,
+			weight: Math.max(1, bucket.length - idx),
+		}));
+		WEIGHTED_POOLS.set(bucket, pool);
+	}
+	return pool;
+}
+
 function sampleWeightedWithoutReplacement(bucket, rng, count) {
-	const candidates = bucket.map((word, idx) => ({
-		word,
-		weight: Math.max(1, bucket.length - idx),
-	}));
-
-	/** @type {string[]} */
+	const pool = getWeightedPool(bucket);
+	const picks = Math.min(count, pool.length);
 	const selected = [];
-	const picks = Math.min(count, candidates.length);
 
-	for (let p = 0; p < picks; p++) {
-		let totalWeight = 0;
-		for (let i = 0; i < candidates.length; i++) totalWeight += candidates[i].weight;
+	let size = pool.length;
+	let totalWeight = 0;
+	for (let i = 0; i < size; i++) totalWeight += pool[i].weight;
+
+	for (let p = 0; p < picks && size > 0; p++) {
 		if (totalWeight <= 0) break;
 
 		let r = Math.floor(rng() * totalWeight);
 		let chosenIndex = 0;
-		for (let i = 0; i < candidates.length; i++) {
-			r -= candidates[i].weight;
+		for (let i = 0; i < size; i++) {
+			r -= pool[i].weight;
 			if (r < 0) {
 				chosenIndex = i;
 				break;
 			}
 		}
 
-		selected.push(candidates[chosenIndex].word);
-		candidates.splice(chosenIndex, 1);
+		selected.push(pool[chosenIndex].word);
+
+		// Swap-and-pop keeps the pool dense without an O(n) splice.
+		totalWeight -= pool[chosenIndex].weight;
+		size -= 1;
+		const tmp = pool[chosenIndex];
+		pool[chosenIndex] = pool[size];
+		pool[size] = tmp;
 	}
 
 	return selected;

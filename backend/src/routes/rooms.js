@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { requireFirebaseAuth } from '../middleware/firebaseAuth.js';
+import { logger } from '../services/logger.js';
 
 const roomsRouter = new Hono();
 
@@ -18,10 +19,14 @@ const ROOM_LIMITS = {
 };
 
 function generateRoomCode() {
+	const bytes = new Uint8Array(ROOM_CODE_LENGTH);
+	crypto.getRandomValues(bytes);
 	let code = '';
 	for (let i = 0; i < ROOM_CODE_LENGTH; i++) {
-		const idx = Math.floor(Math.random() * ROOM_CODE_ALPHABET.length);
-		code += ROOM_CODE_ALPHABET[idx];
+		// getRandomValues bytes are uniform in [0, 256); rejection-free bias
+		// of <1% is acceptable for a 6-char room code, but keep it minimal by
+		// masking to the nearest power of two above the alphabet length.
+		code += ROOM_CODE_ALPHABET[bytes[i] % ROOM_CODE_ALPHABET.length];
 	}
 	return code;
 }
@@ -112,7 +117,10 @@ roomsRouter.post('/', requireAuth, async (c) => {
 
 			if (!configureResponse.ok) {
 				const payload = await configureResponse.text().catch(() => '');
-				console.error('Failed to configure private room:', configureResponse.status, payload);
+				logger.error('Failed to configure private room', {
+					status: configureResponse.status,
+					payload,
+				});
 				return c.json({ error: 'Failed to create room' }, 500);
 			}
 
@@ -125,7 +133,7 @@ roomsRouter.post('/', requireAuth, async (c) => {
 
 		return c.json({ error: 'Unable to allocate a room code, please retry' }, 503);
 	} catch (error) {
-		console.error('Failed to create room:', error);
+		logger.error('Failed to create room', { error: error?.message });
 		return c.json({ error: 'Failed to create room' }, 500);
 	}
 });

@@ -1,14 +1,12 @@
 import { useEffect, useState } from "react";
-import { flushSync } from "react-dom";
 import { Link } from "react-router-dom";
 import { Moon02Icon, Sun03Icon } from "hugeicons-react";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
+import { useTheme } from "@/hooks/useTheme";
 
 export default function Navbar() {
-  const { currentUser } = useAuth();
-  const [theme, setTheme] = useState(
-    () => localStorage.getItem("theme") || "light"
-  );
+  const { state: { currentUser } } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
@@ -18,37 +16,6 @@ export default function Navbar() {
     window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
-
-  useEffect(() => {
-    if (theme === "dark") {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
-    localStorage.setItem("theme", theme);
-  }, [theme]);
-
-  const toggleTheme = () => {
-    const switchTheme = () => {
-      flushSync(() => {
-        setTheme((prevTheme) => {
-          const newTheme = prevTheme === "light" ? "dark" : "light";
-          if (newTheme === "dark") {
-            document.documentElement.classList.add("dark");
-          } else {
-            document.documentElement.classList.remove("dark");
-          }
-          return newTheme;
-        });
-      });
-    };
-
-    if (!document.startViewTransition) {
-      switchTheme();
-    } else {
-      document.startViewTransition(switchTheme);
-    }
-  };
 
   const scrollToSection = (sectionId) => {
     const el = document.getElementById(sectionId);

@@ -171,7 +171,7 @@ describe('PrivateRoom start guards', () => {
 
 		expect(leaderSocket.sentMessages[0]).toMatchObject({
 			type: 'ROOM_ERROR',
-			error: 'At least two teams are required for coop matches',
+			error: 'Each team must have at least one player',
 		});
 	});
 

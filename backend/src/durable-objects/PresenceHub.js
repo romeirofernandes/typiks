@@ -293,7 +293,11 @@ export class PresenceHub {
 		if (typeof crypto?.randomUUID === 'function') {
 			return `presence_${crypto.randomUUID()}`;
 		}
-		return `presence_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+
+		const bytes = new Uint8Array(8);
+		crypto.getRandomValues(bytes);
+		const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+		return `presence_${Date.now()}_${hex}`;
 	}
 
 	async ensureAlarm() {

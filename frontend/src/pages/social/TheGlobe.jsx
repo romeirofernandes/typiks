@@ -1,14 +1,25 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import * as d3 from "d3";
+import {
+  geoCentroid,
+  geoContains,
+  geoDistance,
+  geoEquirectangularRaw,
+  geoGraticule,
+  geoOrthographicRaw,
+  geoPath,
+  geoProjectionMutator,
+  scaleLinear,
+  select,
+} from "d3";
 import { feature } from "topojson-client";
 
 import { Button } from "@/components/ui/button";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
 
 function interpolateProjection(raw0, raw1) {
-  const mutate = d3.geoProjectionMutator((t) => (x, y) => {
+  const mutate = geoProjectionMutator((t) => (x, y) => {
     const [x0, y0] = raw0(x, y);
     const [x1, y1] = raw1(x, y);
     return [x0 + t * (x1 - x0), y0 + t * (y1 - y0)];
@@ -45,7 +56,7 @@ function colorFromIndex(index) {
 }
 
 export function GlobeToMapTransform() {
-  const { currentUser } = useAuth();
+  const { state: { currentUser } } = useAuth();
   const svgRef = useRef(null);
 
   const [isAnimating, setIsAnimating] = useState(false);
@@ -212,7 +223,7 @@ export function GlobeToMapTransform() {
   }, [countryMarkers]);
 
   const worldCentroids = useMemo(
-    () => worldData.map((country) => d3.geoCentroid(country)),
+    () => worldData.map((country) => geoCentroid(country)),
     [worldData]
   );
 
@@ -326,18 +337,18 @@ export function GlobeToMapTransform() {
   useEffect(() => {
     if (!svgRef.current || worldData.length === 0) return;
 
-    const svg = d3.select(svgRef.current);
+    const svg = select(svgRef.current);
     svg.selectAll("*").remove();
 
     const t = progress[0] / 100;
     const alpha = Math.pow(t, 0.5);
 
-    const scale = d3.scaleLinear().domain([0, 1]).range([200, 120]);
-    const baseRotate = d3.scaleLinear().domain([0, 1]).range([0, 0]);
+    const scale = scaleLinear().domain([0, 1]).range([200, 120]);
+    const baseRotate = scaleLinear().domain([0, 1]).range([0, 0]);
 
     const projection = interpolateProjection(
-      d3.geoOrthographicRaw,
-      d3.geoEquirectangularRaw
+      geoOrthographicRaw,
+      geoEquirectangularRaw
     )
       .scale(scale(alpha) * zoom)
       .translate([width / 2 + translation[0], height / 2 + translation[1]])
@@ -346,7 +357,7 @@ export function GlobeToMapTransform() {
 
     projection.alpha(alpha);
 
-    const path = d3.geoPath(projection);
+    const path = geoPath(projection);
     const gridColor = isDark ? "#9ca3af" : "#c4c4c4";
     const countryColor = isDark ? "#b7b7b7" : "#bbbbbb";
 
@@ -355,7 +366,7 @@ export function GlobeToMapTransform() {
 
     countryMarkers.forEach((marker) => {
       let featureIndex = worldData.findIndex((country) =>
-        d3.geoContains(country, [marker.lng, marker.lat])
+        geoContains(country, [marker.lng, marker.lat])
       );
 
       if (featureIndex < 0 && worldCentroids.length > 0) {
@@ -363,7 +374,7 @@ export function GlobeToMapTransform() {
         let nearestDistance = Infinity;
 
         worldCentroids.forEach((centroid, index) => {
-          const distance = d3.geoDistance([marker.lng, marker.lat], centroid);
+          const distance = geoDistance([marker.lng, marker.lat], centroid);
           if (distance < nearestDistance) {
             nearestDistance = distance;
             nearestIndex = index;
@@ -418,7 +429,7 @@ export function GlobeToMapTransform() {
       .attr("stroke-width", 2)
       .attr("opacity", activeFeatureStrokeOpacity);
 
-    const graticule = d3.geoGraticule();
+    const graticule = geoGraticule();
     svg
       .append("path")
       .datum(graticule())
@@ -456,7 +467,7 @@ export function GlobeToMapTransform() {
       .attr("vector-effect", "non-scaling-stroke")
       .attr("opacity", 1)
       .style("visibility", function () {
-        const pathData = d3.select(this).attr("d");
+        const pathData = select(this).attr("d");
         return pathData && pathData.length > 0 && !pathData.includes("NaN")
           ? "visible"
           : "hidden";
@@ -495,7 +506,7 @@ export function GlobeToMapTransform() {
 
         const isFrontFacing =
           t >= 0.55 ||
-          d3.geoDistance([marker.lng, marker.lat], [-rotation[0], -rotation[1]]) <=
+          geoDistance([marker.lng, marker.lat], [-rotation[0], -rotation[1]]) <=
             Math.PI / 2;
 
         if (!isFrontFacing) return null;

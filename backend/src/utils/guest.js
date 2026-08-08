@@ -44,10 +44,18 @@ const ANIMALS = [
 	'Zebra',
 ];
 
+function randomIndex(length) {
+	if (length <= 0) return 0;
+	const bytes = new Uint8Array(4);
+	crypto.getRandomValues(bytes);
+	const value = (bytes[0] << 24 | bytes[1] << 16 | bytes[2] << 8 | bytes[3]) >>> 0;
+	return value % length;
+}
+
 export function generateGuestUsername() {
-	const adjective = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
-	const animal = ANIMALS[Math.floor(Math.random() * ANIMALS.length)];
-	const suffix = Math.floor(Math.random() * 90) + 10;
+	const adjective = ADJECTIVES[randomIndex(ADJECTIVES.length)];
+	const animal = ANIMALS[randomIndex(ANIMALS.length)];
+	const suffix = randomIndex(90) + 10;
 	return `${adjective}${animal}${suffix}`;
 }
 

@@ -3,8 +3,9 @@ import { cors } from 'hono/cors';
 import { drizzle } from 'drizzle-orm/d1';
 import { sql } from 'drizzle-orm';
 import { users } from './db/schema.js';
-import userRouter from './routes/users.js';
+import userRouter from './routes/users/index.js';
 import roomsRouter from './routes/rooms.js';
+import { logger } from './services/logger.js';
 
 const app = new Hono();
 
@@ -41,7 +42,7 @@ app.get('/api/stats', async (c) => {
 			totalUsers: stats.totalUsers || 0,
 		});
 	} catch (error) {
-		console.error('Failed to fetch platform stats:', error);
+		logger.error('Failed to fetch platform stats', { error: error?.message });
 		return c.json({ error: 'Failed to fetch stats' }, 500);
 	}
 });

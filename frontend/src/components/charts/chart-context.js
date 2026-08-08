@@ -1,4 +1,4 @@
-import { createContext, useContext } from "react";
+import { createContext } from "react";
 
 // CSS variable references for theming
 export const chartCssVars = {
@@ -21,22 +21,4 @@ export const chartCssVars = {
   segmentLine: "var(--chart-segment-line)",
 };
 
-const ChartContext = createContext(null);
-
-export function ChartProvider({
-  children,
-  value
-}) {
-  return (<ChartContext.Provider value={value}>{children}</ChartContext.Provider>);
-}
-
-export function useChart() {
-  const context = useContext(ChartContext);
-  if (!context) {
-    throw new Error("useChart must be used within a ChartProvider. " +
-      "Make sure your component is wrapped in <LineChart>, <AreaChart>, or <BarChart>.");
-  }
-  return context;
-}
-
-export default ChartContext;
+export const ChartContext = createContext(null);

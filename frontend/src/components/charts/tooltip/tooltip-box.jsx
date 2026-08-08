@@ -1,5 +1,5 @@
 import { createPortal } from "react-dom";
-import { motion, useSpring } from "motion/react";
+import { motion, useSpring } from "framer-motion";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 

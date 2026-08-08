@@ -1,49 +1,14 @@
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { SignUpForm } from "@/components/signup-form";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft01Icon, Moon02Icon, Sun03Icon } from "hugeicons-react";
 import { Button } from "@/components/ui/button";
-import { flushSync } from "react-dom";
+import { useTheme } from "@/hooks/useTheme";
 import BackgroundGrid from "@/components/landing/BackgroundGrid";
 
 const SignUp = () => {
   const navigate = useNavigate();
-  const [theme, setTheme] = useState(
-    () => localStorage.getItem("theme") || "light"
-  );
-
-  useEffect(() => {
-    if (theme === "dark") {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
-    localStorage.setItem("theme", theme);
-  }, [theme]);
-
-  const toggleTheme = () => {
-    const switchTheme = () => {
-      flushSync(() => {
-        setTheme((prevTheme) => {
-          const newTheme = prevTheme === "light" ? "dark" : "light";
-          if (newTheme === "dark") {
-            document.documentElement.classList.add("dark");
-          } else {
-            document.documentElement.classList.remove("dark");
-          }
-          localStorage.setItem("theme", newTheme);
-          return newTheme;
-        });
-      });
-    };
-
-    if (!document.startViewTransition) {
-      switchTheme();
-      return;
-    }
-
-    document.startViewTransition(switchTheme);
-  };
+  const { theme, toggleTheme } = useTheme();
 
   return (
     <BackgroundGrid>

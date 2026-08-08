@@ -6,13 +6,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { useViewport } from "@/hooks/useViewport";
+import { useIsCoarsePointer } from "@/hooks/useIsCoarsePointer";
+import { usePlayerPreferences } from "@/hooks/usePlayerPreferences";
 import {
   getSubmitKeyOptionById,
-  loadPlayerPreferences,
   NEXT_WORD_CONDITIONS,
-  PLAYER_PREFERENCES_STORAGE_KEY,
 } from "@/lib/player-preferences";
-import wordsJson from "../../../words.json";
 import { FiUser, FiClock, FiArrowLeft, FiZap, FiCpu } from "react-icons/fi";
 import { InfoIcon } from "lucide-react";
 
@@ -23,23 +23,26 @@ const BOT_DIFFICULTIES = {
 };
 
 const MODE_SECONDS = [15, 30, 60];
-const WORD_BANK = Array.from(
-  new Set(
-    (Array.isArray(wordsJson) ? wordsJson : [])
-      .filter((word) => typeof word === "string")
-      .map((word) => word.trim().toLowerCase())
-      .filter((word) => word.length >= 3 && word.length <= 12)
-  )
-);
+
+function buildWordBank(wordsJson) {
+  return Array.from(
+    new Set(
+      (Array.isArray(wordsJson) ? wordsJson : [])
+        .filter((word) => typeof word === "string")
+        .map((word) => word.trim().toLowerCase())
+        .filter((word) => word.length >= 3 && word.length <= 12)
+    )
+  );
+}
 
 function randomRange(min, max) {
   return Math.random() * (max - min) + min;
 }
 
-function pickWords(count) {
-  if (WORD_BANK.length === 0) return [];
+function pickWords(count, wordBank) {
+  if (wordBank.length === 0) return [];
 
-  const shuffled = [...WORD_BANK];
+  const shuffled = [...wordBank];
   for (let i = shuffled.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
@@ -51,7 +54,7 @@ function pickWords(count) {
 
   const output = [...shuffled];
   while (output.length < count) {
-    const nextBatch = [...WORD_BANK];
+    const nextBatch = [...wordBank];
     for (let i = nextBatch.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [nextBatch[i], nextBatch[j]] = [nextBatch[j], nextBatch[i]];
@@ -69,6 +72,7 @@ export default function BotMode() {
   const [difficulty, setDifficulty] = useState("medium");
   const [gameState, setGameState] = useState("setup");
   const [countdown, setCountdown] = useState(null);
+  const [wordBank, setWordBank] = useState([]);
   const [words, setWords] = useState([]);
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
   const [opponentWordIndex, setOpponentWordIndex] = useState(0);
@@ -76,10 +80,10 @@ export default function BotMode() {
   const [opponentScore, setOpponentScore] = useState(0);
   const [timeLeft, setTimeLeft] = useState(30);
   const [input, setInput] = useState("");
-  const [viewport, setViewport] = useState({ width: 0, height: 0 });
   const [isBooting, setIsBooting] = useState(true);
-  const [playerPreferences, setPlayerPreferences] = useState(() => loadPlayerPreferences());
-  const [isCoarsePointer, setIsCoarsePointer] = useState(false);
+  const [playerPreferences] = usePlayerPreferences();
+  const viewport = useViewport();
+  const isCoarsePointer = useIsCoarsePointer();
 
   const inputRef = useRef(null);
   const timerRef = useRef(null);
@@ -99,10 +103,23 @@ export default function BotMode() {
 
   const isWinner = gameState === "finished" && myScore > opponentScore;
   const avgWordLength = useMemo(() => {
-    const totalChars = WORD_BANK.reduce((sum, word) => sum + word.length, 0);
-    return totalChars / WORD_BANK.length;
+    if (wordBank.length === 0) return 0;
+    const totalChars = wordBank.reduce((sum, word) => sum + word.length, 0);
+    return totalChars / wordBank.length;
+  }, [wordBank]);
+
+  useEffect(() => {
+    let cancelled = false;
+    import("../../../../words.json").then((module) => {
+      if (cancelled) return;
+      setWordBank(buildWordBank(module.default));
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
   const expectedCorrectWordsRange = useMemo(() => {
+    if (avgWordLength === 0) return { min: 1, max: 1 };
     const [minCps, maxCps] = botDifficulty.cpsRange;
     const minWords = Math.round((modeSeconds * minCps * botDifficulty.accuracy) / avgWordLength);
     const maxWords = Math.round((modeSeconds * maxCps * botDifficulty.accuracy) / avgWordLength);
@@ -135,58 +152,6 @@ export default function BotMode() {
     }, 350);
     return () => {
       window.clearTimeout(timer);
-    };
-  }, []);
-
-  useEffect(() => {
-    const updateViewport = () => {
-      setViewport({ width: window.innerWidth, height: window.innerHeight });
-    };
-
-    updateViewport();
-    window.addEventListener("resize", updateViewport);
-    return () => {
-      window.removeEventListener("resize", updateViewport);
-    };
-  }, []);
-
-  useEffect(() => {
-    const mediaQuery = window.matchMedia("(pointer: coarse)");
-    const updatePointerType = () => {
-      setIsCoarsePointer(mediaQuery.matches);
-    };
-
-    updatePointerType();
-    mediaQuery.addEventListener("change", updatePointerType);
-    return () => {
-      mediaQuery.removeEventListener("change", updatePointerType);
-    };
-  }, []);
-
-  useEffect(() => {
-    const syncPreferences = () => {
-      setPlayerPreferences(loadPlayerPreferences());
-    };
-
-    syncPreferences();
-    window.addEventListener("storage", syncPreferences);
-
-    return () => {
-      window.removeEventListener("storage", syncPreferences);
-    };
-  }, []);
-
-  useEffect(() => {
-    const handleFocus = () => {
-      const stored = window.localStorage.getItem(PLAYER_PREFERENCES_STORAGE_KEY);
-      if (stored) {
-        setPlayerPreferences(loadPlayerPreferences());
-      }
-    };
-
-    window.addEventListener("focus", handleFocus);
-    return () => {
-      window.removeEventListener("focus", handleFocus);
     };
   }, []);
 
@@ -249,7 +214,7 @@ export default function BotMode() {
   const startBotGame = () => {
     clearGameTimers();
 
-    const generatedWords = pickWords(Math.max(18, Math.round(modeSeconds * 1.2)));
+    const generatedWords = pickWords(Math.max(18, Math.round(modeSeconds * 1.2)), wordBank);
     setWords(generatedWords);
     setCurrentWordIndex(0);
     setOpponentWordIndex(0);
@@ -472,7 +437,7 @@ export default function BotMode() {
                     </div>
 
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                      <Button className="w-full" onClick={startBotGame}>Start Bot Match</Button>
+                      <Button className="w-full" onClick={startBotGame} disabled={wordBank.length === 0}>Start Bot Match</Button>
                       <Button variant="outline" className="w-full gap-2" onClick={() => navigate("/dashboard")}>
                         <FiArrowLeft className="h-4 w-4" /> Back
                       </Button>

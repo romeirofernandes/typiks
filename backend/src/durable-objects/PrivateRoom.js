@@ -1,5 +1,6 @@
 import { verifyFirebaseIdToken } from '../middleware/firebaseAuth.js';
 import { generateSeed, generateWords, WORD_DIFFICULTIES } from '../utils/wordGenerator.js';
+import { generateEntityId as createId } from '../services/ids.js';
 
 const MAX_PLAYER_INPUT_LENGTH = 32;
 
@@ -239,14 +240,6 @@ export class PrivateRoom {
 		} catch {
 			return null;
 		}
-	}
-
-	generateEntityId(prefix) {
-		if (typeof crypto?.randomUUID === 'function') {
-			return `${prefix}_${crypto.randomUUID()}`;
-		}
-
-		return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
 	}
 
 	isSocketOpen(webSocket) {
@@ -1311,7 +1304,7 @@ export class PrivateRoom {
 	handleSession(webSocket, request) {
 		webSocket.accept();
 
-		const sessionId = this.generateEntityId('private_session');
+		const sessionId = createId('private_session');
 		this.sessions.set(sessionId, webSocket);
 		this.sessionOrder.set(sessionId, this.nextSessionOrder++);
 

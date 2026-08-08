@@ -66,9 +66,11 @@ export function Keyboard({
   className,
   theme = "typiks",
   size = "default",
-  enableSound = true,
-  enableHaptics = true,
-  disableNativeBehavior = true,
+  options = {
+    sound: true,
+    haptics: true,
+    nativeBehavior: false,
+  },
   soundUrl = "/sounds/sound.ogg",
   onKeyEvent,
 }) {
@@ -76,12 +78,8 @@ export function Keyboard({
 
   return (
     <KeyboardProvider
-      containerRef={containerRef}
       theme={theme}
-      size={size}
-      enableSound={enableSound}
-      enableHaptics={enableHaptics}
-      disableNativeBehavior={disableNativeBehavior}
+      options={options}
       soundUrl={soundUrl}
       onKeyEvent={onKeyEvent}
     >
@@ -106,15 +104,17 @@ function useKeyboardContext() {
 
 function KeyboardProvider({
   children,
-  containerRef,
   theme,
-  size,
-  enableSound,
-  enableHaptics,
-  disableNativeBehavior,
+  options = {},
   soundUrl,
   onKeyEvent,
 }) {
+  const {
+    sound: enableSound = true,
+    haptics: enableHaptics = true,
+    nativeBehavior: disableNativeBehavior = false,
+  } = options;
+
   const audioContextRef = useRef(null);
   const audioBufferRef = useRef(null);
   const pressedKeysRef = useRef(new Set());
@@ -375,7 +375,7 @@ function KeyboardLayout({ size }) {
               "--kb-row-gap": `${dims.gap}px`,
             }}
           >
-            <Row gap={dims.gap}>
+            <Row>
               <Key keyCode={KEYCODE.Escape} width={w(50)} dims={dims}>{"esc"}</Key>
 
               <Key keyCode={KEYCODE.F1} width={w(50)} dims={dims}>
@@ -438,7 +438,7 @@ function KeyboardLayout({ size }) {
               </Key>
             </Row>
 
-            <Row gap={dims.gap}>
+            <Row>
               <Key keyCode={KEYCODE.Backquote} width={w(50)} dims={dims}>
                 <span>{"~"}</span>
                 <span>{"`"}</span>
@@ -497,7 +497,7 @@ function KeyboardLayout({ size }) {
               <Key keyCode={KEYCODE.PageUp} width={w(50)} dims={dims}>{"pgup"}</Key>
             </Row>
 
-            <Row gap={dims.gap}>
+            <Row>
               <Key keyCode={KEYCODE.Tab} width={w(75)} dims={dims}>{"tab"}</Key>
               <Key keyCode={KEYCODE.KeyQ} width={w(50)} dims={dims}>{"Q"}</Key>
               <Key keyCode={KEYCODE.KeyW} width={w(50)} dims={dims}>{"W"}</Key>
@@ -524,7 +524,7 @@ function KeyboardLayout({ size }) {
               <Key keyCode={KEYCODE.PageDown} width={w(50)} dims={dims}>{"pgdn"}</Key>
             </Row>
 
-            <Row gap={dims.gap}>
+            <Row>
               <Key keyCode={KEYCODE.CapsLock} width={w(100)} dims={dims}>{"caps lock"}</Key>
               <Key keyCode={KEYCODE.KeyA} width={w(50)} dims={dims}>{"A"}</Key>
               <Key keyCode={KEYCODE.KeyS} width={w(50)} dims={dims}>{"S"}</Key>
@@ -547,7 +547,7 @@ function KeyboardLayout({ size }) {
               <Key keyCode={KEYCODE.Home} width={w(50)} dims={dims}>{"home"}</Key>
             </Row>
 
-            <Row gap={dims.gap}>
+            <Row>
               <Key keyCode={KEYCODE.ShiftLeft} width={w(123)} dims={dims}>{"shift"}</Key>
               <Key keyCode={KEYCODE.KeyZ} width={w(50)} dims={dims}>{"Z"}</Key>
               <Key keyCode={KEYCODE.KeyX} width={w(50)} dims={dims}>{"X"}</Key>
@@ -575,7 +575,7 @@ function KeyboardLayout({ size }) {
               <Key keyCode={KEYCODE.End} width={w(50)} dims={dims}>{"end"}</Key>
             </Row>
 
-            <Row gap={dims.gap}>
+            <Row>
               <Key keyCode={KEYCODE.ControlLeft} width={w(62)} dims={dims}>{"ctrl"}</Key>
               <Key keyCode={KEYCODE.AltLeft} width={w(62)} dims={dims}>{"option"}</Key>
               <Key keyCode={KEYCODE.MetaLeft} width={w(62)} dims={dims}>
@@ -604,7 +604,7 @@ function KeyboardLayout({ size }) {
   );
 }
 
-function Row({ children, gap }) {
+function Row({ children }) {
   return <div className="flex">{children}</div>;
 }
 
@@ -1011,7 +1011,7 @@ function toRgba(color, alpha) {
   return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
 }
 
-export const SOUND_DEFINES_DOWN = {
+const SOUND_DEFINES_DOWN = {
   Escape: [9069, 115],
   F1: [2754, 104],
   F2: [3155, 99],
@@ -1099,7 +1099,7 @@ export const SOUND_DEFINES_DOWN = {
   AltRight: [35878, 90],
 };
 
-export const SOUND_DEFINES_UP = {
+const SOUND_DEFINES_UP = {
   Escape: [9069 + 115, 94],
   F1: [2754 + 104, 85],
   F2: [3155 + 99, 81],

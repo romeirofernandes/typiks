@@ -1,9 +1,10 @@
 import { curveNatural } from "@visx/curve";
 import { LinePath } from "@visx/shape";
 
-import { motion, useMotionTemplate, useSpring } from "motion/react";
+import { motion, useMotionTemplate, useSpring } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { chartCssVars, useChart } from "./chart-context";
+import { chartCssVars } from "./chart-context";
+import { useChart } from "./use-chart";
 
 export function Line({
   dataKey,

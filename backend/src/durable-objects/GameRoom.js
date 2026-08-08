@@ -1,6 +1,7 @@
 import { verifyFirebaseIdToken } from '../middleware/firebaseAuth.js';
 import { generateSeed, generateWords, WORD_DIFFICULTIES } from '../utils/wordGenerator.js';
 import { resolveServerProfiles } from '../utils/serverProfiles.js';
+import { generateEntityId as createId } from '../services/ids.js';
 
 export const DEFAULT_MODE_SECONDS = 60;
 export const ALLOWED_MODE_SECONDS = new Set([15, 30, 60]);
@@ -124,13 +125,13 @@ export class GameRoom {
 		};
 	}
 
-	persistRoomState() {
+	async persistRoomState() {
 		if (!this.storage?.put) return;
-		this.storage
-			.put(ROOM_STATE_KEY, this.buildRoomState())
-			.catch((error) => {
-				console.error('Failed to persist room state:', error);
-			});
+		try {
+			await this.storage.put(ROOM_STATE_KEY, this.buildRoomState());
+		} catch (error) {
+			console.error('Failed to persist room state:', error);
+		}
 	}
 
 	// Resets every persisted lifecycle field back to a fresh room. With
@@ -186,7 +187,7 @@ export class GameRoom {
 		}
 
 		if (saved.round) {
-			this.restoreRound(saved.round);
+			await this.restoreRound(saved.round);
 
 			// Safety net: if a 'playing' round's deadline has passed and its
 			// game_end alarm was already consumed (e.g. eviction mid-flight),
@@ -194,7 +195,7 @@ export class GameRoom {
 			if (this.phase === PHASE.PLAYING) {
 				const game = this.activeGames.get(saved.round.id);
 				if (game?.endTime && game.endTime <= Date.now()) {
-					this.endGame(game.id, 'timeout');
+					await this.endGame(game.id, 'timeout');
 				}
 			}
 		}
@@ -208,7 +209,7 @@ export class GameRoom {
 		// stale-playing path above.
 		if (this.alarmPurpose && this.alarmDeadline && this.alarmDeadline <= Date.now()) {
 			if (this.alarmPurpose === 'wait') {
-				this.abortWaitingMatch();
+				await this.abortWaitingMatch();
 			} else if (this.alarmPurpose === 'rematch_response') {
 				this.expireRematchOffer();
 			}
@@ -252,7 +253,7 @@ export class GameRoom {
 		this.playerToRematchOffer.set(offer.player2.id, offer.id);
 	}
 
-	restoreRound(savedRound) {
+	async restoreRound(savedRound) {
 		const game = {
 			...savedRound,
 			gameTimer: null,
@@ -264,7 +265,7 @@ export class GameRoom {
 		this.playerToGame.set(game.player2.id, game.id);
 
 		if (this.phase === PHASE.COUNTDOWN) {
-			this.startCountdown(game.id);
+			await this.startCountdown(game.id);
 		}
 	}
 
@@ -290,7 +291,7 @@ export class GameRoom {
 		this.alarmPurpose = 'wait';
 		this.alarmDeadline = Date.now() + MATCH_WAIT_TIMEOUT_MS;
 		this.waitDeadline = this.alarmDeadline;
-		this.persistRoomState();
+		await this.persistRoomState();
 		if (this.storage?.setAlarm) {
 			await this.storage.setAlarm(this.alarmDeadline);
 		}
@@ -299,7 +300,7 @@ export class GameRoom {
 	async armGameEndAlarm(durationMs) {
 		this.alarmPurpose = 'game_end';
 		this.alarmDeadline = Date.now() + durationMs;
-		this.persistRoomState();
+		await this.persistRoomState();
 		if (this.storage?.setAlarm) {
 			await this.storage.setAlarm(this.alarmDeadline);
 		}
@@ -308,7 +309,7 @@ export class GameRoom {
 	async armRematchAlarm(expiresAt) {
 		this.alarmPurpose = 'rematch_response';
 		this.alarmDeadline = expiresAt;
-		this.persistRoomState();
+		await this.persistRoomState();
 		if (this.storage?.setAlarm) {
 			await this.storage.setAlarm(this.alarmDeadline);
 		}
@@ -323,11 +324,11 @@ export class GameRoom {
 		this.clearAlarmState();
 
 		if (purpose === 'wait') {
-			this.abortWaitingMatch();
+			await this.abortWaitingMatch();
 		} else if (purpose === 'game_end') {
 			const gameId = this.activeGames.size === 1 ? this.activeGames.keys().next().value : null;
 			if (gameId) {
-				this.endGame(gameId, 'timeout');
+				await this.endGame(gameId, 'timeout');
 			}
 		} else if (purpose === 'rematch_response') {
 			this.expireRematchOffer();
@@ -430,7 +431,7 @@ export class GameRoom {
 		}
 	}
 
-	abortWaitingMatch() {
+	async abortWaitingMatch() {
 		if (this.phase !== PHASE.WAITING_FOR_PLAYERS) return;
 		if (this.activeGames.size > 0) return;
 
@@ -446,7 +447,7 @@ export class GameRoom {
 			this.closeSession(sessionId, 4000, 'Match aborted');
 		}
 
-		this.persistRoomState();
+		await this.persistRoomState();
 	}
 
 	// ----- WebSocket session handling ---------------------------------------
@@ -463,14 +464,6 @@ export class GameRoom {
 		} catch {
 			return null;
 		}
-	}
-
-	generateEntityId(prefix) {
-		if (typeof crypto?.randomUUID === 'function') {
-			return `${prefix}_${crypto.randomUUID()}`;
-		}
-
-		return `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
 	}
 
 	isSocketOpen(webSocket) {
@@ -540,7 +533,7 @@ export class GameRoom {
 	}
 
 	createRematchOfferFromGame(game) {
-		const offerId = this.generateEntityId('rematch');
+		const offerId = createId('rematch');
 		const offer = {
 			id: offerId,
 			modeSeconds: game.modeSeconds || DEFAULT_MODE_SECONDS,
@@ -824,7 +817,7 @@ export class GameRoom {
 	}
 
 	generateSessionId() {
-		return this.generateEntityId('session');
+		return createId('session');
 	}
 
 	async createGame() {
@@ -844,7 +837,7 @@ export class GameRoom {
 		const session2 = this.playerToSession.get(match.player2.id);
 		if (!session1 || !session2) return;
 
-		const gameId = this.generateEntityId('game');
+		const gameId = createId('game');
 		const wordSeed = generateSeed();
 		const difficulty = WORD_DIFFICULTIES.medium;
 		const normalizedModeSeconds = this.normalizeModeSeconds(match.modeSeconds);
@@ -912,16 +905,16 @@ export class GameRoom {
 		});
 
 		this.persistRoomState();
-		this.startCountdown(gameId);
+		await this.startCountdown(gameId);
 	}
 
-	startCountdown(gameId) {
+	async startCountdown(gameId) {
 		const game = this.activeGames.get(gameId);
 		if (!game || game.status !== 'countdown' || game.countdownTimer) return;
 
 		if (!game.countdownStart) {
 			game.countdownStart = Date.now();
-			this.persistRoomState();
+			await this.persistRoomState();
 		}
 
 		const remainingTotal = COUNTDOWN_TOTAL_MS - (Date.now() - game.countdownStart);
@@ -943,7 +936,9 @@ export class GameRoom {
 				this.startGame(gameId).catch((error) => console.error('Failed to start game:', error));
 				return;
 			}
-			this.startCountdown(gameId);
+			this.startCountdown(gameId).catch((error) =>
+				console.error('Failed to continue countdown:', error)
+			);
 		}, count === 0 ? GO_DELAY_MS : 1000);
 	}
 
@@ -968,7 +963,7 @@ export class GameRoom {
 		});
 
 		this.phase = PHASE.PLAYING;
-		this.persistRoomState();
+		await this.persistRoomState();
 
 		// The round must never hang forever just because its end alarm could
 		// not be armed: fail closed by ending it as a timeout instead.
@@ -976,7 +971,7 @@ export class GameRoom {
 			await this.armGameEndAlarm(durationMs);
 		} catch (error) {
 			console.error('Failed to arm game end alarm; ending game as timeout:', error);
-			this.endGame(gameId, 'timeout');
+			await this.endGame(gameId, 'timeout');
 		}
 	}
 
@@ -997,7 +992,9 @@ export class GameRoom {
 
 		const currentWord = game.words[player.currentWordIndex];
 		if (typeof currentWord !== 'string') {
-			this.endGame(gameId, 'completed');
+			this.endGame(gameId, 'completed').catch((error) =>
+				console.error('Failed to finalize game:', error)
+			);
 			return;
 		}
 
@@ -1019,7 +1016,9 @@ export class GameRoom {
 			}
 
 			if (player.currentWordIndex >= game.words.length) {
-				this.endGame(gameId, 'completed');
+				this.endGame(gameId, 'completed').catch((error) =>
+					console.error('Failed to finalize game:', error)
+				);
 			}
 		} else {
 			this.sendToPlayer(this.playerToSession.get(playerId), {
@@ -1028,7 +1027,7 @@ export class GameRoom {
 		}
 	}
 
-	endGame(gameId, reason = 'timeout', options = {}) {
+	async endGame(gameId, reason = 'timeout', options = {}) {
 		const game = this.activeGames.get(gameId);
 		if (!game) return;
 
@@ -1112,7 +1111,7 @@ export class GameRoom {
 			this.rematchState = { offerId: null, requesterId: null, expiresAt: null };
 		}
 
-		this.persistRoomState();
+		await this.persistRoomState();
 	}
 
 	handlePlayerDisconnect(playerId) {
@@ -1125,7 +1124,7 @@ export class GameRoom {
 			if (game) {
 				this.endGame(gameId, 'opponent_disconnected', {
 					disconnectedPlayerId: playerId,
-				});
+				}).catch((error) => console.error('Failed to finalize game:', error));
 				return;
 			}
 

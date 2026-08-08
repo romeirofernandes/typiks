@@ -1,10 +1,10 @@
 import React from "react";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
 import { Navigate } from "react-router-dom";
 import { motion } from "framer-motion";
 
 const ProtectedRoute = ({ children }) => {
-  const { currentUser, loading } = useAuth();
+  const { state: { currentUser, loading } } = useAuth();
 
   if (loading) {
     return (

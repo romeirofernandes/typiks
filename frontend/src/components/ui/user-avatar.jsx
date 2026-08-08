@@ -26,21 +26,9 @@ export function UserAvatar({
     className
   );
 
-  if (!expandOnClick) {
-    return (
-      <span className={wrapperClass}>
-        <img
-          src={getAvatarPath(normalizedAvatar)}
-          alt={`${username} avatar`}
-          className="h-full w-full rounded-full object-cover"
-          loading="lazy"
-          decoding="async"
-        />
-      </span>
-    );
-  }
-
   useEffect(() => {
+    if (!expandOnClick) return;
+
     window.dispatchEvent(
       new CustomEvent("typiks:avatar-preview-state", {
         detail: { open: isOpen },
@@ -54,7 +42,21 @@ export function UserAvatar({
         })
       );
     };
-  }, [isOpen]);
+  }, [expandOnClick, isOpen]);
+
+  if (!expandOnClick) {
+    return (
+      <span className={wrapperClass}>
+        <img
+          src={getAvatarPath(normalizedAvatar)}
+          alt={`${username} avatar`}
+          className="h-full w-full rounded-full object-cover"
+          loading="lazy"
+          decoding="async"
+        />
+      </span>
+    );
+  }
 
   return (
     <>

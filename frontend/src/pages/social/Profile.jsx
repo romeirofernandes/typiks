@@ -1,4 +1,6 @@
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
+import { useStats } from "@/hooks/useStats";
+import { usePlayerPreferences } from "@/hooks/usePlayerPreferences";
 import { TypeGraph } from "@/components/charts/TypeGraph";
 import GuestUpgradePrompt from "@/components/auth/GuestUpgradePrompt";
 import { Button } from "@/components/ui/button";
@@ -31,7 +33,6 @@ import {
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   getSubmitKeyOptionById,
-  loadPlayerPreferences,
   NEXT_WORD_CONDITIONS,
   savePlayerPreferences,
   SUBMIT_KEY_OPTIONS,
@@ -57,7 +58,7 @@ const DEFAULT_PROFILE_STATS = {
 };
 
 const Profile = () => {
-  const { currentUser } = useAuth();
+  const { state: { currentUser } } = useAuth();
   const [activityData, setActivityData] = useState([]);
   const [maxCount, setMaxCount] = useState(0);
   const [isLocationEditing, setIsLocationEditing] = useState(false);
@@ -67,9 +68,7 @@ const Profile = () => {
   const [isAvatarDialogOpen, setIsAvatarDialogOpen] = useState(false);
   const [pendingAvatarId, setPendingAvatarId] = useState("avatar1");
   const [isSavingAvatar, setIsSavingAvatar] = useState(false);
-  const [playerPreferences, setPlayerPreferences] = useState(() =>
-    loadPlayerPreferences()
-  );
+  const [playerPreferences, setPlayerPreferences] = usePlayerPreferences();
   const [isUsernameDialogOpen, setIsUsernameDialogOpen] = useState(false);
   const [usernameDraft, setUsernameDraft] = useState("");
   const [isSavingUsername, setIsSavingUsername] = useState(false);
@@ -103,6 +102,25 @@ const Profile = () => {
       )
     : 100;
 
+  const { stats } = useStats();
+
+  useEffect(() => {
+    if (!stats) return;
+    setProfileStats((prev) => ({
+      ...prev,
+      username: stats?.username || prev.username,
+      rating: Number.isFinite(Number(stats?.rating)) ? Number(stats.rating) : prev.rating,
+      gamesPlayed: Number.isFinite(Number(stats?.gamesPlayed))
+        ? Number(stats.gamesPlayed)
+        : prev.gamesPlayed,
+      gamesWon: Number.isFinite(Number(stats?.gamesWon))
+        ? Number(stats.gamesWon)
+        : prev.gamesWon,
+      winRate: Number.isFinite(Number(stats?.winRate)) ? Number(stats.winRate) : prev.winRate,
+      avatarId: stats?.avatarId || prev.avatarId,
+    }));
+  }, [stats]);
+
   useEffect(() => {
     const fetchProfileData = async () => {
       if (!currentUser) return;
@@ -112,12 +130,7 @@ const Profile = () => {
         const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
         const fullUrl = serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
 
-        const [statsResponse, activityResponse, locationResponse, userResponse] = await Promise.all([
-          fetch(`${fullUrl}/api/users/${currentUser.uid}/stats`, {
-            headers: {
-              Authorization: `Bearer ${idToken}`,
-            },
-          }),
+        const [activityResponse, locationResponse, userResponse] = await Promise.all([
           fetch(`${fullUrl}/api/users/${currentUser.uid}/activity?days=${PROFILE_GRAPH_DAYS}`, {
             headers: {
               Authorization: `Bearer ${idToken}`,
@@ -134,27 +147,6 @@ const Profile = () => {
             },
           }),
         ]);
-
-        if (statsResponse.ok) {
-          const payload = await statsResponse.json();
-          setProfileStats((prev) => ({
-            ...prev,
-            username: payload?.username || prev.username,
-            rating: Number.isFinite(Number(payload?.rating))
-              ? Number(payload.rating)
-              : prev.rating,
-            gamesPlayed: Number.isFinite(Number(payload?.gamesPlayed))
-              ? Number(payload.gamesPlayed)
-              : prev.gamesPlayed,
-            gamesWon: Number.isFinite(Number(payload?.gamesWon))
-              ? Number(payload.gamesWon)
-              : prev.gamesWon,
-            winRate: Number.isFinite(Number(payload?.winRate))
-              ? Number(payload.winRate)
-              : prev.winRate,
-            avatarId: payload?.avatarId || prev.avatarId,
-          }));
-        }
 
         if (activityResponse.ok) {
           const payload = await activityResponse.json();
@@ -199,7 +191,7 @@ const Profile = () => {
     };
 
     fetchProfileData();
-  }, [currentUser]);
+  }, [currentUser, setPlayerPreferences]);
 
   useEffect(() => {
     setPendingAvatarId(profileStats.avatarId || "avatar1");

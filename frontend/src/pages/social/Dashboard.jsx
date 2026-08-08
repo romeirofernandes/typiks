@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
+import { useStats } from "@/hooks/useStats";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useNavigate } from "react-router-dom";
@@ -11,21 +12,22 @@ const CONTRIBUTION_DAYS = 364; // 52 columns x 7 rows
 const TYPEGRAPH_REDUCED_DAYS = 0;
 
 export default function Dashboard() {
-  const { currentUser } = useAuth();
+  const { state: { currentUser } } = useAuth();
   const navigate = useNavigate();
 
-  const [loading, setLoading] = useState(true);
-  const [userStats, setUserStats] = useState(null);
+  const { stats: userStats, loading: statsLoading } = useStats();
+  const [activityLoading, setActivityLoading] = useState(true);
   const [activityData, setActivityData] = useState([]);
   const [maxDailyCount, setMaxDailyCount] = useState(0);
   const [selectedMode, setSelectedMode] = useState(15);
   const [ratingTrend, setRatingTrend] = useState([]);
   const typeGraphDays = Math.max(28, CONTRIBUTION_DAYS - TYPEGRAPH_REDUCED_DAYS);
+  const loading = statsLoading || activityLoading;
 
   useEffect(() => {
-    const fetchDashboardData = async () => {
+    const fetchActivity = async () => {
       if (!currentUser) {
-        setLoading(false);
+        setActivityLoading(false);
         return;
       }
 
@@ -34,37 +36,28 @@ export default function Dashboard() {
         const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
         const fullUrl = serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
 
-        const [statsResponse, activityResponse] = await Promise.all([
-          fetch(`${fullUrl}/api/users/${currentUser.uid}/stats`, {
+        const response = await fetch(
+          `${fullUrl}/api/users/${currentUser.uid}/activity?days=${CONTRIBUTION_DAYS}`,
+          {
             headers: {
               Authorization: `Bearer ${idToken}`,
             },
-          }),
-          fetch(`${fullUrl}/api/users/${currentUser.uid}/activity?days=${CONTRIBUTION_DAYS}`, {
-            headers: {
-              Authorization: `Bearer ${idToken}`,
-            },
-          }),
-        ]);
+          }
+        );
 
-        if (statsResponse.ok) {
-          const data = await statsResponse.json();
-          setUserStats(data);
-        }
-
-        if (activityResponse.ok) {
-          const data = await activityResponse.json();
+        if (response.ok) {
+          const data = await response.json();
           setActivityData(data.activity || []);
           setMaxDailyCount(data.maxCount || 0);
         }
       } catch (error) {
         console.error("Failed to fetch dashboard data:", error);
       } finally {
-        setLoading(false);
+        setActivityLoading(false);
       }
     };
 
-    fetchDashboardData();
+    fetchActivity();
   }, [currentUser]);
 
   useEffect(() => {

@@ -1,8 +1,8 @@
-import { useAuth } from "@/context/AuthContext";
+import { useMemo, useRef } from "react";
+import { useStats } from "@/hooks/useStats";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FiArrowRight } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
-import { useEffect, useMemo, useRef, useState } from "react";
 
 const RANKED_MODES = [15, 30, 60];
 
@@ -29,54 +29,23 @@ const defaultModeStats = (modeSeconds) => ({
 });
 
 export default function StartGame() {
-  const { currentUser } = useAuth();
   const navigate = useNavigate();
-  const [loadingStats, setLoadingStats] = useState(true);
-  const [modeStats, setModeStats] = useState([]);
+  const { stats, loading: loadingStats } = useStats();
 
-  useEffect(() => {
-    const fetchStats = async () => {
-      if (!currentUser) {
-        setLoadingStats(false);
-        return;
-      }
-
-      try {
-        const idToken = await currentUser.getIdToken();
-        const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
-        const fullUrl = serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
-
-        const response = await fetch(`${fullUrl}/api/users/${currentUser.uid}/stats`, {
-          headers: {
-            Authorization: `Bearer ${idToken}`,
-          },
-        });
-
-        if (response.ok) {
-          const payload = await response.json();
-          const byMode = new Map((payload.modeStats || []).map((entry) => [entry.modeSeconds, entry]));
-          setModeStats(
-            RANKED_MODES.map((modeSeconds) => {
-              const entry = byMode.get(modeSeconds);
-              if (!entry) return defaultModeStats(modeSeconds);
-              return {
-                modeSeconds,
-                rating: entry.rating || 800,
-                gamesPlayed: entry.gamesPlayed || 0,
-                averageScore: Number(entry.averageScore || 0),
-              };
-            })
-          );
-        }
-      } catch (error) {
-        console.error("Failed to fetch mode stats:", error);
-      } finally {
-        setLoadingStats(false);
-      }
-    };
-
-    fetchStats();
-  }, [currentUser]);
+  const modeStats = useMemo(() => {
+    if (!stats) return [];
+    const byMode = new Map((stats.modeStats || []).map((entry) => [entry.modeSeconds, entry]));
+    return RANKED_MODES.map((modeSeconds) => {
+      const entry = byMode.get(modeSeconds);
+      if (!entry) return defaultModeStats(modeSeconds);
+      return {
+        modeSeconds,
+        rating: entry.rating || 800,
+        gamesPlayed: entry.gamesPlayed || 0,
+        averageScore: Number(entry.averageScore || 0),
+      };
+    });
+  }, [stats]);
 
   const featuredModes = useMemo(
     () =>
@@ -102,7 +71,7 @@ export default function StartGame() {
 
       <div className="mt-6 grid min-h-0 flex-1 grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {loadingStats
-          ? RANKED_MODES.map((modeSeconds, index) => (
+          ? RANKED_MODES.map((modeSeconds) => (
               <article
                 key={`skeleton-${modeSeconds}`}
                 className="relative flex h-full min-h-[200px] flex-col overflow-hidden rounded-md border border-border/70 bg-card/45 sm:min-h-[220px]"
@@ -118,7 +87,7 @@ export default function StartGame() {
           : null}
 
         {!loadingStats
-          ? featuredModes.map((mode, index) => {
+          ? featuredModes.map((mode) => {
               const backgrounds = MODE_BACKGROUNDS[mode.modeSeconds];
               return <ModeCard
                 key={mode.modeSeconds}

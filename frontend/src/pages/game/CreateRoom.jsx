@@ -1,6 +1,10 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
+import { useStats } from "@/hooks/useStats";
+import { useViewport } from "@/hooks/useViewport";
+import { useIsCoarsePointer } from "@/hooks/useIsCoarsePointer";
+import { usePlayerPreferences } from "@/hooks/usePlayerPreferences";
 import { useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,9 +16,7 @@ import { toast } from "sonner";
 import Confetti from "react-confetti";
 import {
   getSubmitKeyOptionById,
-  loadPlayerPreferences,
   NEXT_WORD_CONDITIONS,
-  PLAYER_PREFERENCES_STORAGE_KEY,
 } from "@/lib/player-preferences";
 import { FiCopy, FiCheck, FiUsers, FiClock, FiHash, FiLogOut, FiPlay, FiSettings, FiPlus, FiTrash2, FiSend } from "react-icons/fi";
 
@@ -107,7 +109,7 @@ const TypingWordDisplay = memo(function TypingWordDisplay({ word, input }) {
 });
 
 export default function CreateRoom() {
-  const { currentUser } = useAuth();
+  const { state: { currentUser } } = useAuth();
   const location = useLocation();
 
   const wsRef = useRef(null);
@@ -140,110 +142,40 @@ export default function CreateRoom() {
   const [teamTypingInput, setTeamTypingInput] = useState("");
   const [gameResult, setGameResult] = useState(null);
   const [copied, setCopied] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
   const [friendsForInvite, setFriendsForInvite] = useState([]);
   const [invitingFriendIds, setInvitingFriendIds] = useState([]);
   const [pendingInviteFriendIds, setPendingInviteFriendIds] = useState([]);
   const [teamNameDrafts, setTeamNameDrafts] = useState({});
   const [teamNameLocks, setTeamNameLocks] = useState({});
-  const [isCoarsePointer, setIsCoarsePointer] = useState(false);
-  const [viewport, setViewport] = useState({ width: 0, height: 0 });
-  const [playerPreferences, setPlayerPreferences] = useState(() => loadPlayerPreferences());
+  const [playerPreferences] = usePlayerPreferences();
+  const isCoarsePointer = useIsCoarsePointer();
+  const viewport = useViewport();
+
+  const { stats: statsPayload, loading: statsLoading } = useStats();
+  const isLoading = statsLoading;
 
   useEffect(() => {
-    const updateViewport = () => {
-      setViewport({ width: window.innerWidth, height: window.innerHeight });
-    };
+    if (statsLoading) return;
 
-    updateViewport();
-    window.addEventListener("resize", updateViewport);
-    return () => {
-      window.removeEventListener("resize", updateViewport);
-    };
-  }, []);
-
-  useEffect(() => {
-    const mediaQuery = window.matchMedia("(pointer: coarse)");
-    const updatePointerType = () => {
-      setIsCoarsePointer(mediaQuery.matches);
-    };
-
-    updatePointerType();
-    mediaQuery.addEventListener("change", updatePointerType);
-    return () => {
-      mediaQuery.removeEventListener("change", updatePointerType);
-    };
-  }, []);
-
-  useEffect(() => {
-    const syncPreferences = () => {
-      setPlayerPreferences(loadPlayerPreferences());
-    };
-
-    syncPreferences();
-    window.addEventListener("storage", syncPreferences);
-
-    return () => {
-      window.removeEventListener("storage", syncPreferences);
-    };
-  }, []);
-
-  useEffect(() => {
-    const handleFocus = () => {
-      const stored = window.localStorage.getItem(PLAYER_PREFERENCES_STORAGE_KEY);
-      if (stored) {
-        setPlayerPreferences(loadPlayerPreferences());
-      }
-    };
-
-    window.addEventListener("focus", handleFocus);
-    return () => {
-      window.removeEventListener("focus", handleFocus);
-    };
-  }, []);
-
-  const fetchUserInfo = useCallback(async () => {
-    if (!currentUser) return;
-
-    try {
-      setIsLoading(true);
-      const idToken = await currentUser.getIdToken();
-      const baseUrl = getServerBaseUrl();
-      const response = await fetch(`${baseUrl}/api/users/${currentUser.uid}/stats`, {
-        headers: {
-          Authorization: `Bearer ${idToken}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error("Stats unavailable");
-      }
-
-      const payload = await response.json();
+    if (statsPayload) {
       setUserInfo({
         username:
-          payload.username ||
-          currentUser.displayName ||
-          currentUser.email?.split("@")[0] ||
+          statsPayload.username ||
+          currentUser?.displayName ||
+          currentUser?.email?.split("@")[0] ||
           "Player",
-        rating: Number.isFinite(payload.rating) ? payload.rating : 800,
-        avatarId: payload.avatarId || "avatar1",
+        rating: Number.isFinite(statsPayload.rating) ? statsPayload.rating : 800,
+        avatarId: statsPayload.avatarId || "avatar1",
       });
-    } catch {
+    } else {
       setUserInfo({
         username:
-          currentUser.displayName || currentUser.email?.split("@")[0] || "Player",
+          currentUser?.displayName || currentUser?.email?.split("@")[0] || "Player",
         rating: 800,
         avatarId: "avatar1",
       });
-    } finally {
-      setIsLoading(false);
     }
-  }, [currentUser]);
-
-  useEffect(() => {
-    fetchUserInfo();
-  }, [fetchUserInfo]);
+  }, [statsPayload, statsLoading, currentUser]);
 
   useEffect(() => {
     userInfoRef.current = userInfo;

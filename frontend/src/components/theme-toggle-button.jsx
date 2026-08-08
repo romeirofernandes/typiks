@@ -1,7 +1,6 @@
-import { useEffect, useState } from "react";
-import { flushSync } from "react-dom";
 import { Moon02Icon, Sun03Icon } from "hugeicons-react";
 
+import { useTheme } from "@/hooks/useTheme";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -11,32 +10,7 @@ export function ThemeToggleButton({
   size = "icon",
   ...props
 }) {
-  const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "light");
-
-  useEffect(() => {
-    if (theme === "dark") {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
-
-    localStorage.setItem("theme", theme);
-  }, [theme]);
-
-  const toggleTheme = () => {
-    const switchTheme = () => {
-      flushSync(() => {
-        setTheme((prevTheme) => (prevTheme === "light" ? "dark" : "light"));
-      });
-    };
-
-    if (!document.startViewTransition) {
-      switchTheme();
-      return;
-    }
-
-    document.startViewTransition(switchTheme);
-  };
+  const { theme, toggleTheme } = useTheme();
 
   return (
     <Button

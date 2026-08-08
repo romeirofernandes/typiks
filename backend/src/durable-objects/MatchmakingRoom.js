@@ -1,6 +1,7 @@
 import { verifyFirebaseIdToken } from '../middleware/firebaseAuth.js';
 import { DEFAULT_MODE_SECONDS, ALLOWED_MODE_SECONDS } from './GameRoom.js';
 import { resolveServerProfiles } from '../utils/serverProfiles.js';
+import { generateEntityId as createId } from '../services/ids.js';
 
 const PENDING_GAME_TTL_MS = 60_000;
 
@@ -94,14 +95,6 @@ export class MatchmakingRoom {
 		}
 	}
 
-	generateEntityId(prefix) {
-		if (typeof crypto?.randomUUID === 'function') {
-			return `${prefix}_${crypto.randomUUID()}`;
-		}
-
-		return `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
-	}
-
 	isSocketOpen(webSocket) {
 		if (!webSocket) return false;
 
@@ -149,7 +142,7 @@ export class MatchmakingRoom {
 	async handleSession(webSocket) {
 		webSocket.accept();
 
-		const sessionId = this.generateEntityId('session');
+		const sessionId = createId("session");
 		this.sessions.set(sessionId, webSocket);
 		this.sessionOrder.set(sessionId, this.nextSessionOrder++);
 
@@ -184,7 +177,7 @@ export class MatchmakingRoom {
 							this.playerToSession.set(playerId, sessionId);
 
 							const modeSeconds = this.normalizeModeSeconds(message.modeSeconds);
-							this.addWaitingPlayer(
+							await this.addWaitingPlayer(
 								playerId,
 								sessionId,
 								this.sanitizeUserInfo(message.userInfo),
@@ -226,7 +219,7 @@ export class MatchmakingRoom {
 		});
 	}
 
-	addWaitingPlayer(playerId, sessionId, userInfo, modeSeconds = DEFAULT_MODE_SECONDS) {
+	async addWaitingPlayer(playerId, sessionId, userInfo, modeSeconds = DEFAULT_MODE_SECONDS) {
 		this.removeWaitingPlayer(playerId);
 
 		const queue = this.getQueueForMode(modeSeconds);
@@ -235,7 +228,7 @@ export class MatchmakingRoom {
 			`Player ${playerId} added to waiting queue (${modeSeconds}s). Queue size: ${queue.size}`
 		);
 
-		this.tryToMatch(modeSeconds);
+		await this.tryToMatch(modeSeconds);
 	}
 
 	removeWaitingPlayer(playerId) {
@@ -250,7 +243,7 @@ export class MatchmakingRoom {
 		}
 	}
 
-	tryToMatch(modeSeconds = DEFAULT_MODE_SECONDS) {
+	async tryToMatch(modeSeconds = DEFAULT_MODE_SECONDS) {
 		const queue = this.getQueueForMode(modeSeconds);
 		if (queue.size >= 2) {
 			const players = Array.from(queue.entries()).slice(0, 2);
@@ -263,12 +256,12 @@ export class MatchmakingRoom {
 				this.waitingPlayersByMode.delete(modeSeconds);
 			}
 
-			this.createMatch(player1Id, player1Data, player2Id, player2Data, modeSeconds);
+			await this.createMatch(player1Id, player1Data, player2Id, player2Data, modeSeconds);
 		}
 	}
 
 	async createMatch(player1Id, player1Data, player2Id, player2Data, modeSeconds = DEFAULT_MODE_SECONDS) {
-		const gameId = this.generateEntityId('game');
+		const gameId = createId("game");
 		const normalizedModeSeconds = this.normalizeModeSeconds(modeSeconds);
 
 		// Opponents see server-trusted profiles from D1, never client-asserted

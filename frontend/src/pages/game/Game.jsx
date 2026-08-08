@@ -5,22 +5,24 @@ import {
 } from "framer-motion";
 import Confetti from "react-confetti";
 import { useLocation, useNavigate } from "react-router-dom";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
+import { useStats } from "@/hooks/useStats";
+import { useViewport } from "@/hooks/useViewport";
+import { useIsCoarsePointer } from "@/hooks/useIsCoarsePointer";
+import { usePlayerPreferences } from "@/hooks/usePlayerPreferences";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { DotLoader } from "@/components/ui/dot-loader";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import {
   getSubmitKeyOptionById,
-  loadPlayerPreferences,
   NEXT_WORD_CONDITIONS,
-  PLAYER_PREFERENCES_STORAGE_KEY,
 } from "@/lib/player-preferences";
 import { FiClock, FiArrowLeft, FiZap, FiTrendingUp, FiCheck, FiX, FiSave } from "react-icons/fi";
 import GuestUpgradePrompt from "@/components/auth/GuestUpgradePrompt";
 
 const Game = () => {
-  const { currentUser } = useAuth();
+  const { state: { currentUser } } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const initialModeSeconds = [15, 30, 60].includes(Number(location.state?.modeSeconds))
@@ -41,14 +43,12 @@ const Game = () => {
   const [postMatchRating, setPostMatchRating] = useState(null);
   const [modeSeconds, setModeSeconds] = useState(initialModeSeconds);
   const [activeGameId, setActiveGameId] = useState(null);
-  const [isCoarsePointer, setIsCoarsePointer] = useState(false);
   const [rematchState, setRematchState] = useState("idle");
   const [incomingRematch, setIncomingRematch] = useState(null);
   const [showGuestUpgrade, setShowGuestUpgrade] = useState(false);
-  const [viewport, setViewport] = useState({ width: 0, height: 0 });
-  const [playerPreferences, setPlayerPreferences] = useState(() =>
-    loadPlayerPreferences()
-  );
+  const [playerPreferences] = usePlayerPreferences();
+  const isCoarsePointer = useIsCoarsePointer();
+  const viewport = useViewport();
   const [userStatsLoaded, setUserStatsLoaded] = useState(false);
   const [userStats, setUserStats] = useState(() => ({
     username:
@@ -111,58 +111,6 @@ const Game = () => {
     }));
   }, [currentUser]);
 
-  useEffect(() => {
-    const updateViewport = () => {
-      setViewport({ width: window.innerWidth, height: window.innerHeight });
-    };
-
-    updateViewport();
-    window.addEventListener("resize", updateViewport);
-    return () => {
-      window.removeEventListener("resize", updateViewport);
-    };
-  }, []);
-
-  useEffect(() => {
-    const mediaQuery = window.matchMedia("(pointer: coarse)");
-    const updatePointerType = () => {
-      setIsCoarsePointer(mediaQuery.matches);
-    };
-
-    updatePointerType();
-    mediaQuery.addEventListener("change", updatePointerType);
-    return () => {
-      mediaQuery.removeEventListener("change", updatePointerType);
-    };
-  }, []);
-
-  useEffect(() => {
-    const syncPreferences = () => {
-      setPlayerPreferences(loadPlayerPreferences());
-    };
-
-    syncPreferences();
-    window.addEventListener("storage", syncPreferences);
-
-    return () => {
-      window.removeEventListener("storage", syncPreferences);
-    };
-  }, []);
-
-  useEffect(() => {
-    const handleFocus = () => {
-      const stored = window.localStorage.getItem(PLAYER_PREFERENCES_STORAGE_KEY);
-      if (stored) {
-        setPlayerPreferences(loadPlayerPreferences());
-      }
-    };
-
-    window.addEventListener("focus", handleFocus);
-    return () => {
-      window.removeEventListener("focus", handleFocus);
-    };
-  }, []);
-
   const submitWordIfCorrect = useCallback(
     (rawInput) => {
       if (gameState !== "playing" || !wsRef.current) return false;
@@ -195,48 +143,23 @@ const Game = () => {
     [currentWord, gameState, words.length]
   );
 
-  const fetchUserStats = useCallback(async () => {
-    if (!currentUser) return;
+  const { stats: fetchedStats, loading: statsLoading } = useStats();
 
-    try {
-      const idToken = await currentUser.getIdToken();
-      const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
-      const fullUrl = serverUrl.startsWith("http")
-        ? serverUrl
-        : `http://${serverUrl}`;
+  useEffect(() => {
+    if (statsLoading) return;
 
-      const response = await fetch(
-        `${fullUrl}/api/users/${currentUser.uid}/stats`,
-        {
-          headers: {
-            Authorization: `Bearer ${idToken}`,
-          },
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        setUserStats(data);
-      } else {
-        setUserStats({
-          username: currentUser.displayName || currentUser.email?.split("@")[0] || "Player",
-          rating: 800,
-          gamesPlayed: 0,
-          gamesWon: 0,
-        });
-      }
-    } catch (error) {
-      console.error("Failed to fetch user stats:", error);
+    if (fetchedStats) {
+      setUserStats(fetchedStats);
+    } else {
       setUserStats({
-        username: currentUser.displayName || currentUser.email?.split("@")[0] || "Player",
+        username: currentUser?.displayName || currentUser?.email?.split("@")[0] || "Player",
         rating: 800,
         gamesPlayed: 0,
         gamesWon: 0,
       });
-    } finally {
-      setUserStatsLoaded(true);
     }
-  }, [currentUser]);
+    setUserStatsLoaded(true);
+  }, [fetchedStats, statsLoading, currentUser]);
 
   const openWebSocket = (path) => {
     const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
@@ -449,13 +372,10 @@ const Game = () => {
   );
 
   useEffect(() => {
-    fetchUserStats();
-
     return () => {
       cleanup();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only run once on mount! fetchUserStats uses latest refs or is stable enough.
+  }, []);
 
   useEffect(() => {
     if (

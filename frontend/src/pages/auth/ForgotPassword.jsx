@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { sendPasswordResetEmail } from "firebase/auth";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft01Icon, Moon02Icon, Sun03Icon } from "hugeicons-react";
@@ -14,51 +14,16 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
-import { flushSync } from "react-dom";
+import { useTheme } from "@/hooks/useTheme";
 import BackgroundGrid from "@/components/landing/BackgroundGrid";
 
 const ForgotPassword = () => {
   const navigate = useNavigate();
-  const [theme, setTheme] = useState(
-    () => localStorage.getItem("theme") || "light"
-  );
+  const { theme, toggleTheme } = useTheme();
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [sent, setSent] = useState(false);
-
-  useEffect(() => {
-    if (theme === "dark") {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
-    localStorage.setItem("theme", theme);
-  }, [theme]);
-
-  const toggleTheme = () => {
-    const switchTheme = () => {
-      flushSync(() => {
-        setTheme((prevTheme) => {
-          const newTheme = prevTheme === "light" ? "dark" : "light";
-          if (newTheme === "dark") {
-            document.documentElement.classList.add("dark");
-          } else {
-            document.documentElement.classList.remove("dark");
-          }
-          localStorage.setItem("theme", newTheme);
-          return newTheme;
-        });
-      });
-    };
-
-    if (!document.startViewTransition) {
-      switchTheme();
-      return;
-    }
-
-    document.startViewTransition(switchTheme);
-  };
 
   const handleSendReset = async (e) => {
     e.preventDefault();

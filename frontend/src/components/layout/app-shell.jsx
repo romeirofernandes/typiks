@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
+import { useStats } from "@/hooks/useStats";
 
 import BackgroundGrid from "@/components/landing/BackgroundGrid";
 import { ThemeToggleButton } from "@/components/theme-toggle-button";
@@ -88,7 +89,7 @@ function SidebarNavButton({
 }
 
 export default function AppShell() {
-  const { currentUser } = useAuth();
+  const { state: { currentUser } } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -107,36 +108,13 @@ export default function AppShell() {
   const presenceReconnectTimerRef = useRef(null);
   const presenceSubscribersRef = useRef(new Set());
 
+  const { stats: sidebarStats } = useStats();
+
   useEffect(() => {
-    const fetchSidebarUsername = async () => {
-      if (!currentUser) {
-        setStatsUsername(null);
-        return;
-      }
-
-      try {
-        const idToken = await currentUser.getIdToken();
-        const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
-        const fullUrl = serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
-
-        const response = await fetch(`${fullUrl}/api/users/${currentUser.uid}/stats`, {
-          headers: {
-            Authorization: `Bearer ${idToken}`,
-          },
-        });
-
-        if (!response.ok) return;
-
-        const payload = await response.json();
-        setStatsUsername(payload?.username || null);
-        setStatsAvatarId(payload?.avatarId || "avatar1");
-      } catch (error) {
-        console.error("Failed to fetch sidebar username:", error);
-      }
-    };
-
-    fetchSidebarUsername();
-  }, [currentUser]);
+    if (!sidebarStats) return;
+    setStatsUsername(sidebarStats?.username ?? null);
+    setStatsAvatarId(sidebarStats?.avatarId || "avatar1");
+  }, [sidebarStats]);
 
   useEffect(() => {
     const handleAvatarPreviewState = (event) => {

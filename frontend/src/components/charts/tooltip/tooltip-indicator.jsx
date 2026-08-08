@@ -1,4 +1,4 @@
-import { motion, useSpring } from "motion/react";
+import { motion, useSpring } from "framer-motion";
 import { chartCssVars } from "../chart-context";
 
 // Faster spring for crosshair - responsive to mouse movement

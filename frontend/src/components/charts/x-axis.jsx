@@ -1,7 +1,7 @@
 import { createPortal } from "react-dom";
 import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
-import { useChart } from "./chart-context";
+import { useChart } from "./use-chart";
 
 function XAxisLabel({
   label,

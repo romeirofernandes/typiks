@@ -11,7 +11,7 @@ import {
   useState,
 } from "react";
 import { cn } from "@/lib/utils";
-import { ChartProvider } from "./chart-context";
+import { ChartProvider } from "./chart-provider";
 import { Line } from "./line";
 import { useChartInteraction } from "./use-chart-interaction";
 

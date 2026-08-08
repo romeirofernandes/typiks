@@ -1,6 +1,7 @@
 import { GridColumns, GridRows } from "@visx/grid";
 import { useId } from "react";
-import { chartCssVars, useChart } from "./chart-context";
+import { chartCssVars } from "./chart-context";
+import { useChart } from "./use-chart";
 
 export function Grid({
   horizontal = true,

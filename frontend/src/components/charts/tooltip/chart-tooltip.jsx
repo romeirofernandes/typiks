@@ -1,7 +1,8 @@
 import { createPortal } from "react-dom";
-import { motion, useSpring } from "motion/react";
+import { motion, useSpring } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
-import { chartCssVars, useChart } from "../chart-context";
+import { chartCssVars } from "../chart-context";
+import { useChart } from "../use-chart";
 import { DateTicker } from "./date-ticker";
 import { TooltipBox } from "./tooltip-box";
 import { TooltipContent } from "./tooltip-content";
