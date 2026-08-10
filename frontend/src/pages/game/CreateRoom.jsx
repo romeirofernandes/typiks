@@ -1570,7 +1570,7 @@ export default function CreateRoom() {
                                 : "border-border/50 bg-input hover:border-border"
                             }`}
                           >
-                            <span className={`font-semibold ${settingsForm.gameMode === mode.id ? "text-primary-foreground" : ""}`}>{mode.label}</span>
+                            <span className={`text-sm font-semibold sm:text-base ${settingsForm.gameMode === mode.id ? "text-primary-foreground" : ""}`}>{mode.label}</span>
                           </button>
                         ))}
                       </div>

@@ -60,7 +60,7 @@ export default function StartGame() {
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex min-h-full min-w-0 flex-col">
       <div className="border-b border-border/70 pb-4">
         <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Ranked Match</p>
         <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">Choose Your Mode</h1>
@@ -71,14 +71,14 @@ export default function StartGame() {
 
       <SharedLayoutBg
         inset={1}
-        className="mt-6 grid min-h-0 flex-1 grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3"
+        className="mt-6 grid min-h-0 grid-cols-1 gap-6 sm:flex-1 sm:grid-cols-2 lg:grid-cols-3"
         pillClassName="rounded-md"
       >
         {loadingStats
           ? RANKED_MODES.map((modeSeconds) => (
               <article
                 key={`skeleton-${modeSeconds}`}
-                className="flex h-full min-h-[200px] flex-col overflow-hidden rounded-md border border-border/70 bg-card/45 sm:min-h-[220px]"
+                className="flex h-full flex-col overflow-hidden rounded-md border border-border/70 bg-card/45"
               >
                 <Skeleton className="absolute inset-0" />
                 <div className="relative z-10 mt-auto flex items-center gap-4 p-3 sm:p-4">
@@ -117,7 +117,7 @@ function ModeCard({ mode, backgrounds, onStart }) {
   return (
     <article
       onClick={onStart}
-      className="group relative flex h-full min-h-[200px] cursor-pointer flex-col overflow-hidden rounded-md bg-transparent sm:min-h-[220px]"
+      className="group relative flex h-full cursor-pointer flex-col overflow-hidden rounded-md bg-transparent max-sm:aspect-[2/3]"
     >
       {backgrounds ? (
         <>
@@ -127,14 +127,14 @@ function ModeCard({ mode, backgrounds, onStart }) {
               alt=""
               loading="eager"
               decoding="async"
-              className="ranked-bg h-full w-full object-fill dark:hidden"
+              className="ranked-bg h-full w-full object-cover object-top sm:object-fill dark:hidden"
             />
             <img
               src={backgrounds.dark}
               alt=""
               loading="eager"
               decoding="async"
-              className="ranked-bg hidden h-full w-full object-fill dark:block"
+              className="ranked-bg hidden h-full w-full object-cover object-top sm:object-fill dark:block"
             />
           </div>
         </>

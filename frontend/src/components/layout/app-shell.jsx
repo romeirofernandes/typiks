@@ -25,7 +25,7 @@ import {
   UserIcon,
   DashboardSquare01Icon
 } from "hugeicons-react";
-import { Bot, DoorOpen, Users } from "lucide-react";
+import { Bot, DoorOpen, Users, Gamepad2 } from "lucide-react";
 
 function SidebarNavButton({
   icon,
@@ -361,6 +361,13 @@ export default function AppShell() {
         onClick: () => navigate("/start-game"),
       },
       {
+        key: "create-room",
+        label: "Unranked Match",
+        icon: DoorOpen,
+        active: location.pathname === "/create-room",
+        onClick: () => navigate("/create-room"),
+      },
+      {
         key: "bot-mode",
         label: "Bot Mode",
         icon: Bot,
@@ -368,11 +375,11 @@ export default function AppShell() {
         onClick: () => navigate("/bot-mode"),
       },
       {
-        key: "create-room",
-        label: "Unranked Match",
-        icon: DoorOpen,
-        active: location.pathname === "/create-room",
-        onClick: () => navigate("/create-room"),
+        key: "freeplay",
+        label: "Free Play",
+        icon: Gamepad2,
+        active: location.pathname === "/freeplay",
+        onClick: () => navigate("/freeplay"),
       },
       {
         key: "friends",

@@ -292,7 +292,7 @@ export default function BotMode() {
   }, [myScore, opponentScore]);
 
   return (
-    <div className="flex h-full flex-col gap-6">
+    <div className="flex min-h-full flex-col gap-6">
       {gameState === "finished" && isWinner && viewport.width > 0 && viewport.height > 0 ? (
         <Confetti
           width={viewport.width}
@@ -374,8 +374,8 @@ export default function BotMode() {
                       <FiCpu className="h-4 w-4" /> Configure Bot
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="relative flex flex-1 flex-col justify-center gap-8">
-                    <div className="mx-auto flex w-full max-w-sm flex-col gap-8">
+                  <CardContent className="relative flex flex-1 flex-col justify-center gap-6 sm:gap-8">
+                    <div className="mx-auto flex w-full max-w-sm flex-col gap-6 sm:gap-8">
                       <div className="space-y-3">
                         <p className="text-xs uppercase tracking-[0.15em] text-muted-foreground">Timer</p>
                         <div className="flex flex-col gap-2.5">
@@ -384,7 +384,7 @@ export default function BotMode() {
                               key={mode}
                               type="button"
                               variant={modeSeconds === mode ? "default" : "outline"}
-                              className={`h-12 w-full justify-start px-4 text-base ${modeSeconds === mode ? "" : "dark:bg-input dark:hover:bg-input hover:scale-[1.02] active:scale-[0.98]"}`}
+                              className={`h-11 w-full justify-start px-4 text-sm sm:h-12 sm:text-base ${modeSeconds === mode ? "" : "dark:bg-input dark:hover:bg-input hover:scale-[1.02] active:scale-[0.98]"}`}
                               onClick={() => setModeSeconds(mode)}
                             >
                               {mode}s
@@ -401,7 +401,7 @@ export default function BotMode() {
                               key={preset.id}
                               type="button"
                               variant={difficulty === preset.id ? "default" : "outline"}
-                              className={`h-12 w-full justify-start px-4 text-base ${difficulty === preset.id ? "" : "dark:bg-input dark:hover:bg-input hover:scale-[1.02] active:scale-[0.98]"}`}
+                              className={`h-11 w-full justify-start px-4 text-sm sm:h-12 sm:text-base ${difficulty === preset.id ? "" : "dark:bg-input dark:hover:bg-input hover:scale-[1.02] active:scale-[0.98]"}`}
                               onClick={() => setDifficulty(preset.id)}
                             >
                               {preset.label}

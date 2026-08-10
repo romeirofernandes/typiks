@@ -188,7 +188,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="flex min-h-full min-w-0 flex-col gap-4">
+    <div className="flex min-h-full min-w-0 flex-col gap-4 xl:h-full">
       <header className="border-b border-border/70 pb-4">
         <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Dashboard</p>
         <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">{greeting}, {username}</h1>
@@ -250,7 +250,7 @@ export default function Dashboard() {
         />
       </section>
 
-      <section className="flex min-w-0 flex-1 flex-col rounded-md border border-border/70 bg-card/30 p-3 sm:p-4">
+      <section className="flex min-w-0 flex-1 flex-col rounded-md border border-border/70 bg-card/30 p-3 sm:p-4 xl:min-h-0">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Rating Growth</p>
           <label className="flex items-center gap-2 text-xs uppercase tracking-[0.12em] text-muted-foreground">

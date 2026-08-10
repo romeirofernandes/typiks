@@ -16,6 +16,7 @@ const Game = lazy(() => import("./pages/game/Game"));
 const Profile = lazy(() => import("./pages/social/Profile"));
 const StartGame = lazy(() => import("./pages/game/StartGame"));
 const BotMode = lazy(() => import("./pages/game/BotMode"));
+const FreePlay = lazy(() => import("./pages/game/FreePlay"));
 const Friends = lazy(() => import("./pages/social/Friends"));
 const CreateRoom = lazy(() => import("./pages/game/CreateRoom"));
 const TheGlobe = lazy(() => import("./pages/social/TheGlobe"));
@@ -48,6 +49,7 @@ export default function App() {
               <Route path="/profile" element={<Profile />} />
               <Route path="/start-game" element={<StartGame />} />
               <Route path="/bot-mode" element={<BotMode />} />
+              <Route path="/freeplay" element={<FreePlay />} />
               <Route path="/friends" element={<Friends />} />
               <Route path="/the-globe" element={<TheGlobe />} />
               <Route path="/create-room" element={<CreateRoom />} />

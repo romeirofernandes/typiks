@@ -45,7 +45,7 @@ export function RatingGrowthChart({ points }) {
 
   if (!chartData.length) {
     return (
-      <div className="flex min-h-56 items-center justify-center rounded-md border border-border/60 bg-background/50 text-sm text-muted-foreground">
+      <div className="flex min-h-56 items-center justify-center rounded-md border border-border/60 bg-background/50 text-sm text-muted-foreground xl:h-full xl:min-h-0 xl:flex-1">
         Play games in selected mode to generate trend.
       </div>
     );
@@ -55,8 +55,8 @@ export function RatingGrowthChart({ points }) {
   const latest = chartData[chartData.length - 1];
 
   return (
-    <div className="space-y-2">
-      <div className="h-[22rem] w-full rounded-md border border-border/60 bg-background/50 p-2 sm:h-[22rem]">
+    <div className="flex min-h-0 flex-1 flex-col gap-2">
+      <div className="h-[22rem] w-full rounded-md border border-border/60 bg-background/50 p-2 xl:h-auto xl:min-h-0 xl:flex-1">
         <LineChart
           data={chartData}
           xDataKey="gameNumber"
