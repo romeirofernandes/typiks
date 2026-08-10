@@ -367,11 +367,7 @@ export default function BotMode() {
                 <Card className="relative flex-1 overflow-hidden">
                   <div
                     aria-hidden="true"
-                    className="pointer-events-none absolute inset-0"
-                    style={{
-                      backgroundImage:
-                        "repeating-linear-gradient(-45deg, var(--border) 0 0.9px, transparent 0.9px 12px)",
-                    }}
+                    className="pointer-events-none absolute inset-0 bg-[repeating-linear-gradient(-45deg,var(--border)_0_0.9px,transparent_0.9px_12px)] dark:bg-[repeating-linear-gradient(-45deg,#1f1f1f_0_0.9px,transparent_0.9px_12px)]"
                   />
                   <CardHeader className="relative">
                     <CardTitle className="flex items-center gap-2">

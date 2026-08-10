@@ -1,7 +1,7 @@
-import { useMemo, useRef } from "react";
+import { useMemo } from "react";
 import { useStats } from "@/hooks/useStats";
 import { Skeleton } from "@/components/ui/skeleton";
-import { FiArrowRight } from "react-icons/fi";
+import { SharedLayoutBg } from "@/components/motion/shared-layout-bg";
 import { useNavigate } from "react-router-dom";
 
 const RANKED_MODES = [15, 30, 60];
@@ -69,12 +69,16 @@ export default function StartGame() {
         </p>
       </div>
 
-      <div className="mt-6 grid min-h-0 flex-1 grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+      <SharedLayoutBg
+        inset={1}
+        className="mt-6 grid min-h-0 flex-1 grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3"
+        pillClassName="rounded-md"
+      >
         {loadingStats
           ? RANKED_MODES.map((modeSeconds) => (
               <article
                 key={`skeleton-${modeSeconds}`}
-                className="relative flex h-full min-h-[200px] flex-col overflow-hidden rounded-md border border-border/70 bg-card/45 sm:min-h-[220px]"
+                className="flex h-full min-h-[200px] flex-col overflow-hidden rounded-md border border-border/70 bg-card/45 sm:min-h-[220px]"
               >
                 <Skeleton className="absolute inset-0" />
                 <div className="relative z-10 mt-auto flex items-center gap-4 p-3 sm:p-4">
@@ -104,61 +108,16 @@ export default function StartGame() {
               />;
             })
           : null}
-      </div>
+      </SharedLayoutBg>
     </div>
   );
 }
 
 function ModeCard({ mode, backgrounds, onStart }) {
-  const cardRef = useRef(null);
-  const fillRef = useRef(null);
-  const textRef = useRef(null);
-  const statsRef = useRef(null);
-  const entrySideRef = useRef("left");
-
-  const handleMouseEnter = (event) => {
-    if (!cardRef.current) return;
-    const rect = cardRef.current.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const fromLeft = x;
-    const fromRight = rect.width - x;
-    const side = fromLeft <= fromRight ? "left" : "right";
-    entrySideRef.current = side;
-    const origin = side === "right" ? "right center" : "left center";
-    if (fillRef.current) {
-      fillRef.current.style.transformOrigin = origin;
-      fillRef.current.style.transform = "scaleX(1)";
-    }
-    if (textRef.current) {
-      textRef.current.style.opacity = "1";
-    }
-    if (statsRef.current) {
-      statsRef.current.style.opacity = "0";
-    }
-  };
-
-  const handleMouseLeave = () => {
-    const side = entrySideRef.current;
-    const origin = side === "right" ? "right center" : "left center";
-    if (fillRef.current) {
-      fillRef.current.style.transformOrigin = origin;
-      fillRef.current.style.transform = "scaleX(0)";
-    }
-    if (textRef.current) {
-      textRef.current.style.opacity = "0";
-    }
-    if (statsRef.current) {
-      statsRef.current.style.opacity = "1";
-    }
-  };
-
   return (
     <article
-      ref={cardRef}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
       onClick={onStart}
-      className="group relative flex h-full min-h-[200px] cursor-pointer flex-col overflow-hidden rounded-md border border-border/70 bg-card/45 sm:min-h-[220px]"
+      className="group relative flex h-full min-h-[200px] cursor-pointer flex-col overflow-hidden rounded-md bg-transparent sm:min-h-[220px]"
     >
       {backgrounds ? (
         <>
@@ -178,28 +137,11 @@ function ModeCard({ mode, backgrounds, onStart }) {
               className="ranked-bg hidden h-full w-full object-fill dark:block"
             />
           </div>
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-background/95 via-background/40 to-transparent" />
         </>
       ) : null}
 
       <div
-        ref={fillRef}
-        aria-hidden
-        className="ranked-fill pointer-events-none absolute inset-0 bg-primary"
-      />
-
-      <div
-        ref={textRef}
-        className="ranked-fill-text pointer-events-none absolute inset-0 z-20 flex items-center justify-center gap-3 text-2xl font-black uppercase tracking-[0.2em] text-primary-foreground sm:text-3xl"
-        style={{ fontFamily: "var(--font-sans)" }}
-      >
-        Start Now
-        <FiArrowRight size={24} className="shrink-0" strokeWidth={2.5} />
-      </div>
-
-      <div
-        ref={statsRef}
-        className="ranked-stats relative z-10 mt-auto p-3 sm:p-4"
+        className="relative z-10 mt-auto p-3 sm:p-4"
       >
         <div className="ml-auto flex w-fit items-center gap-3 rounded-md border border-border/50 bg-background/80 px-3 py-2 backdrop-blur-sm">
           <div className="text-right">
