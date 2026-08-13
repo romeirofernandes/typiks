@@ -1,5 +1,6 @@
 import { useAuth } from "@/hooks/useAuth";
 import { useStats } from "@/hooks/useStats";
+import { motion, useReducedMotion } from "framer-motion";
 import { usePlayerPreferences } from "@/hooks/usePlayerPreferences";
 import { TypeGraph } from "@/components/charts/TypeGraph";
 import GuestUpgradePrompt from "@/components/auth/GuestUpgradePrompt";
@@ -64,6 +65,7 @@ const DEFAULT_PROFILE_STATS = {
 const Profile = () => {
   const { state: { currentUser } } = useAuth();
   const queryClient = useQueryClient();
+  const reduceMotion = useReducedMotion();
   const [isLocationEditing, setIsLocationEditing] = useState(false);
   const [isSavingLocation, setIsSavingLocation] = useState(false);
   const [locationApiReady, setLocationApiReady] = useState(false);
@@ -375,15 +377,30 @@ const Profile = () => {
   return (
     <TooltipProvider delayDuration={100}>
       <div className="flex h-full items-start">
-      <div className="w-full space-y-8">
-        <header className="space-y-2 border-b border-border/60 pb-5">
+      <motion.div
+        initial={{ opacity: 0, y: reduceMotion ? 0 : -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35 }}
+        className="w-full space-y-8"
+      >
+        <motion.header
+          initial={{ opacity: 0, y: reduceMotion ? 0 : 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.25, delay: 0.06 }}
+          className="space-y-2 border-b border-border/60 pb-5"
+        >
           <h1 className="flex items-center gap-2 font-sans text-2xl font-semibold tracking-tight">
             <ViewIcon size={20} />
             Profile
           </h1>
-        </header>
+        </motion.header>
 
-        <section className="grid gap-4 sm:grid-cols-3">
+        <motion.section
+          initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.12 }}
+          className="grid gap-4 sm:grid-cols-3"
+        >
           <div className="rounded-lg border border-border/70 bg-background/40 p-4">
             <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
               Username
@@ -445,9 +462,14 @@ const Profile = () => {
               ) : null}
             </div>
           </div>
-        </section>
+        </motion.section>
 
-        <section className="space-y-4 rounded-lg border border-border/70 bg-background/40 p-4">
+        <motion.section
+          initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.18 }}
+          className="space-y-4 rounded-lg border border-border/70 bg-background/40 p-4"
+        >
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
@@ -504,9 +526,14 @@ const Profile = () => {
               );
             })}
           </div>
-        </section>
+        </motion.section>
 
-        <section className="grid items-stretch gap-6 xl:grid-cols-[minmax(290px,360px)_minmax(0,1fr)]">
+        <motion.section
+          initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.24 }}
+          className="grid items-stretch gap-6 xl:grid-cols-[minmax(290px,360px)_minmax(0,1fr)]"
+        >
           <div className="h-full space-y-5 rounded-lg border border-border/70 bg-background/40 p-4">
             <div>
               <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
@@ -555,9 +582,14 @@ const Profile = () => {
               days={PROFILE_GRAPH_DAYS}
             />
           </div>
-        </section>
+        </motion.section>
 
-        <section className="rounded-lg border border-border/70 bg-background/40 p-4">
+        <motion.section
+          initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.3 }}
+          className="rounded-lg border border-border/70 bg-background/40 p-4"
+        >
           <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_170px_170px]">
             <div className="space-y-2">
               <Label htmlFor="next-word-condition">Next Word Condition</Label>
@@ -629,7 +661,9 @@ const Profile = () => {
                 : ""}
             </p>
           )}
-        </section>
+        </motion.section>
+      </motion.div>
+    </div>
 
         <AlertDialog open={isUsernameDialogOpen} onOpenChange={setIsUsernameDialogOpen}>
           <AlertDialogContent className="max-w-md">
@@ -743,8 +777,6 @@ const Profile = () => {
           open={showConnectAccount}
           onOpenChange={setShowConnectAccount}
         />
-      </div>
-    </div>
     </TooltipProvider>
   );
 };

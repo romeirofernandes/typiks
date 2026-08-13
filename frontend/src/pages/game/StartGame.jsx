@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useStats } from "@/hooks/useStats";
+import { motion, useReducedMotion } from "framer-motion";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SharedLayoutBg } from "@/components/motion/shared-layout-bg";
 import { useNavigate } from "react-router-dom";
@@ -30,6 +31,7 @@ const defaultModeStats = (modeSeconds) => ({
 
 export default function StartGame() {
   const navigate = useNavigate();
+  const reduceMotion = useReducedMotion();
   const { stats, loading: loadingStats } = useStats();
 
   const modeStats = useMemo(() => {
@@ -60,14 +62,24 @@ export default function StartGame() {
   );
 
   return (
-    <div className="flex min-h-full min-w-0 flex-col">
-      <div className="border-b border-border/70 pb-4">
+    <motion.div
+      initial={{ opacity: 0, y: reduceMotion ? 0 : -10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35 }}
+      className="flex min-h-full min-w-0 flex-col"
+    >
+      <motion.div
+        initial={{ opacity: 0, y: reduceMotion ? 0 : 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25, delay: 0.06 }}
+        className="border-b border-border/70 pb-4"
+      >
         <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Ranked Match</p>
         <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">Choose Your Mode</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Choose a timer. Each mode keeps separate rating and score average.
         </p>
-      </div>
+      </motion.div>
 
       <SharedLayoutBg
         inset={1}
@@ -91,32 +103,39 @@ export default function StartGame() {
           : null}
 
         {!loadingStats
-          ? featuredModes.map((mode) => {
+          ? featuredModes.map((mode, index) => {
               const backgrounds = MODE_BACKGROUNDS[mode.modeSeconds];
-              return <ModeCard
-                key={mode.modeSeconds}
-                mode={mode}
-                backgrounds={backgrounds}
-                onStart={() =>
-                  navigate("/game", {
-                    state: {
-                      fromDashboard: true,
-                      modeSeconds: mode.modeSeconds,
-                    },
-                  })
-                }
-              />;
+              return (
+                <ModeCard
+                  key={mode.modeSeconds}
+                  mode={mode}
+                  backgrounds={backgrounds}
+                  delay={0.12 + index * 0.06}
+                  reduceMotion={reduceMotion}
+                  onStart={() =>
+                    navigate("/game", {
+                      state: {
+                        fromDashboard: true,
+                        modeSeconds: mode.modeSeconds,
+                      },
+                    })
+                  }
+                />
+              );
             })
           : null}
       </SharedLayoutBg>
-    </div>
+    </motion.div>
   );
 }
 
-function ModeCard({ mode, backgrounds, onStart }) {
+function ModeCard({ mode, backgrounds, onStart, delay = 0, reduceMotion = false }) {
   return (
-    <article
+    <motion.article
       onClick={onStart}
+      initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, delay }}
       className="group relative flex h-full cursor-pointer flex-col overflow-hidden rounded-md bg-transparent max-sm:aspect-[2/3]"
     >
       {backgrounds ? (
@@ -158,6 +177,6 @@ function ModeCard({ mode, backgrounds, onStart }) {
           {mode.gamesPlayed} games played
         </p>
       </div>
-    </article>
+    </motion.article>
   );
 }

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { motion, useReducedMotion } from "framer-motion";
 import { useAuth } from "@/hooks/useAuth";
 import { useStats } from "@/hooks/useStats";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,7 @@ const TYPEGRAPH_REDUCED_DAYS = 0;
 export default function Dashboard() {
   const { state: { currentUser } } = useAuth();
   const navigate = useNavigate();
+  const reduceMotion = useReducedMotion();
 
   const { stats: userStats, loading: statsLoading } = useStats();
   const [selectedMode, setSelectedMode] = useState(15);
@@ -144,28 +146,53 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="flex min-h-full min-w-0 flex-col gap-4 xl:h-full">
-      <header className="border-b border-border/70 pb-4">
+    <motion.div
+      initial={{ opacity: 0, y: reduceMotion ? 0 : -10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35 }}
+      className="flex min-h-full min-w-0 flex-col gap-4 xl:h-full"
+    >
+      <motion.header
+        initial={{ opacity: 0, y: reduceMotion ? 0 : 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25, delay: 0.06 }}
+        className="border-b border-border/70 pb-4"
+      >
         <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Dashboard</p>
         <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">{greeting}, {username}</h1>
-      </header>
+      </motion.header>
 
-      <section className="grid gap-3 md:grid-cols-3">
+      <motion.section
+        initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, delay: 0.12 }}
+        className="grid gap-3 md:grid-cols-3"
+      >
         <Button className="h-14 text-sm sm:h-16 sm:text-base" onClick={() => navigate("/start-game")}>Start Ranked Match</Button>
         <Button variant="outline" className="h-14 text-sm sm:h-16 sm:text-base" onClick={() => navigate("/create-room")}>Create Friendly Room</Button>
         <Button variant="secondary" className="h-14 text-sm sm:h-16 sm:text-base" onClick={() => navigate("/leaderboard")}>Open Leaderboard</Button>
-      </section>
+      </motion.section>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <motion.section
+        initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, delay: 0.18 }}
+        className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
+      >
         {quickStats.map((stat) => (
           <div key={stat.label} className="rounded-md border border-border/70 bg-card/30 p-3 sm:p-4">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">{stat.label}</p>
             <p className="mt-2 text-2xl font-semibold tabular-nums sm:text-3xl">{stat.value}</p>
           </div>
         ))}
-      </section>
+      </motion.section>
 
-      <section className="grid min-w-0 gap-4 xl:grid-cols-[1.05fr_1.95fr]">
+      <motion.section
+        initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, delay: 0.24 }}
+        className="grid min-w-0 gap-4 xl:grid-cols-[1.05fr_1.95fr]"
+      >
         <div className="rounded-md border border-border/70 bg-card/30 p-3 sm:p-4">
           <div className="flex items-center justify-between">
             <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Mode Ratings</p>
@@ -204,9 +231,14 @@ export default function Dashboard() {
           maxDailyCount={maxDailyCount}
           days={typeGraphDays}
         />
-      </section>
+      </motion.section>
 
-      <section className="flex min-w-0 flex-1 flex-col rounded-md border border-border/70 bg-card/30 p-3 sm:p-4 xl:min-h-0">
+      <motion.section
+        initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, delay: 0.3 }}
+        className="flex min-w-0 flex-1 flex-col rounded-md border border-border/70 bg-card/30 p-3 sm:p-4 xl:min-h-0"
+      >
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Rating Growth</p>
           <label className="flex items-center gap-2 text-xs uppercase tracking-[0.12em] text-muted-foreground">
@@ -224,7 +256,7 @@ export default function Dashboard() {
         </div>
 
         <RatingGrowthChart points={ratingTrend} />
-      </section>
-    </div>
+      </motion.section>
+    </motion.div>
   );
 }

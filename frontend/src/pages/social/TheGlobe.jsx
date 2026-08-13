@@ -15,6 +15,7 @@ import {
 } from "d3";
 import { feature } from "topojson-client";
 import { useQuery } from "@tanstack/react-query";
+import { motion } from "framer-motion";
 
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
@@ -544,7 +545,12 @@ export function GlobeToMapTransform() {
   };
 
   return (
-    <div className="relative isolate flex h-full w-full items-center justify-center">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.35 }}
+      className="relative isolate flex h-full w-full items-center justify-center"
+    >
       <div
         className="pointer-events-none absolute inset-0 -z-10"
         style={{
@@ -651,7 +657,7 @@ export function GlobeToMapTransform() {
           Reset
         </Button>
       </div>
-    </div>
+    </motion.div>
   );
 }
 

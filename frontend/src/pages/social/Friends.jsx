@@ -1,5 +1,6 @@
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
+import { motion, useReducedMotion } from "framer-motion";
 import { useFriends } from "@/hooks/useFriends";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,6 +23,7 @@ import { Delete02Icon, UserIcon, StarIcon, GameController01Icon } from "hugeicon
 export default function Friends() {
   const { state: { currentUser } } = useAuth();
   const navigate = useNavigate();
+  const reduceMotion = useReducedMotion();
 
   const {
     loading,
@@ -70,56 +72,71 @@ export default function Friends() {
   }
 
   return (
-    <div className="flex h-full flex-col gap-5">
-      <div className="border-b border-border/70 pb-5">
+    <motion.div
+      initial={{ opacity: 0, y: reduceMotion ? 0 : -10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35 }}
+      className="flex h-full flex-col gap-5"
+    >
+      <motion.div
+        initial={{ opacity: 0, y: reduceMotion ? 0 : 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25, delay: 0.06 }}
+        className="border-b border-border/70 pb-5"
+      >
         <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Friends</p>
         <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">Friends & Requests</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Add friends by username and manage incoming requests.
         </p>
-      </div>
+      </motion.div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Add Friend</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <Input
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  debouncedSendFriendRequest();
-                }
-              }}
-              placeholder="Search username"
-              maxLength={24}
-            />
-            <Button onClick={debouncedSendFriendRequest} disabled={submitting || !username.trim()}>
-              {submitting ? "Sending..." : "Send Request"}
-            </Button>
-          </div>
+      <motion.div
+        initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, delay: 0.12 }}
+      >
+        <Card>
+          <CardHeader>
+            <CardTitle>Add Friend</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Input
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    debouncedSendFriendRequest();
+                  }
+                }}
+                placeholder="Search username"
+                maxLength={24}
+              />
+              <Button onClick={debouncedSendFriendRequest} disabled={submitting || !username.trim()}>
+                {submitting ? "Sending..." : "Send Request"}
+              </Button>
+            </div>
 
-          {username.trim().length >= 2 ? (
-            <div className="space-y-2 rounded-md border border-border/70 bg-card/30 p-3">
-              {searchingUsers ? (
-                <p className="text-sm text-muted-foreground">Searching users...</p>
-              ) : searchResults.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No matching users found.</p>
-              ) : (
-                searchResults.map((user) => {
-                  const actionLabel = user.isFriend
-                    ? "Friends"
-                    : user.hasOutgoingRequest
-                      ? "Pending"
-                      : user.hasIncomingRequest
-                        ? "Respond"
-                        : "Add";
+            {username.trim().length >= 2 ? (
+              <div className="space-y-2 rounded-md border border-border/70 bg-card/30 p-3">
+                {searchingUsers ? (
+                  <p className="text-sm text-muted-foreground">Searching users...</p>
+                ) : searchResults.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No matching users found.</p>
+                ) : (
+                  searchResults.map((user) => {
+                    const actionLabel = user.isFriend
+                      ? "Friends"
+                      : user.hasOutgoingRequest
+                        ? "Pending"
+                        : user.hasIncomingRequest
+                          ? "Respond"
+                          : "Add";
 
-                  const actionDisabled =
-                    submitting || user.isFriend || user.hasOutgoingRequest || user.hasIncomingRequest;
+                    const actionDisabled =
+                      submitting || user.isFriend || user.hasOutgoingRequest || user.hasIncomingRequest;
 
                   return (
                     <div
@@ -149,18 +166,24 @@ export default function Friends() {
           ) : null}
         </CardContent>
       </Card>
+      </motion.div>
 
-      {feedback ? (
-        <p className="rounded-md border border-border/70 bg-card/40 px-3 py-2 text-sm text-muted-foreground">
-          {feedback}
-        </p>
-      ) : null}
+      <motion.div
+        initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, delay: 0.18 }}
+      >
+        {feedback ? (
+          <p className="rounded-md border border-border/70 bg-card/40 px-3 py-2 text-sm text-muted-foreground">
+            {feedback}
+          </p>
+        ) : null}
 
-      {(incomingRequests.length > 0 || roomInvites.length > 0) ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Notifications</CardTitle>
-          </CardHeader>
+        {(incomingRequests.length > 0 || roomInvites.length > 0) ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Notifications</CardTitle>
+            </CardHeader>
           <CardContent className="space-y-3">
             {incomingRequests.map((request) => (
               <div
@@ -206,8 +229,14 @@ export default function Friends() {
           </CardContent>
         </Card>
       ) : null}
+      </motion.div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <motion.div
+        initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, delay: 0.24 }}
+        className="grid gap-4 lg:grid-cols-2"
+      >
         <Card>
           <CardHeader>
             <CardTitle>Incoming Requests ({incomingRequests.length})</CardTitle>
@@ -276,8 +305,13 @@ export default function Friends() {
             )}
           </CardContent>
         </Card>
-      </div>
+      </motion.div>
 
+      <motion.div
+        initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, delay: 0.3 }}
+      >
       <Card className="flex-1">
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center gap-2 font-sans text-lg">
@@ -355,7 +389,8 @@ export default function Friends() {
           )}
         </CardContent>
       </Card>
+      </motion.div>
 
-    </div>
+    </motion.div>
   );
 }
