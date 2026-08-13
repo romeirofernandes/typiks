@@ -4,7 +4,6 @@ import Confetti from "react-confetti";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useViewport } from "@/hooks/useViewport";
 import { useIsCoarsePointer } from "@/hooks/useIsCoarsePointer";
 import { usePlayerPreferences } from "@/hooks/usePlayerPreferences";
@@ -78,7 +77,6 @@ export default function BotMode() {
   const [opponentScore, setOpponentScore] = useState(0);
   const [timeLeft, setTimeLeft] = useState(30);
   const [input, setInput] = useState("");
-  const [isBooting, setIsBooting] = useState(true);
   const [playerPreferences] = usePlayerPreferences();
   const viewport = useViewport();
   const isCoarsePointer = useIsCoarsePointer();
@@ -125,15 +123,6 @@ export default function BotMode() {
   useEffect(() => {
     return () => {
       clearGameTimers();
-    };
-  }, []);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setIsBooting(false);
-    }, 350);
-    return () => {
-      window.clearTimeout(timer);
     };
   }, []);
 
@@ -336,35 +325,7 @@ export default function BotMode() {
             exit={{ opacity: 0 }}
             className="flex h-full min-h-0 flex-1 flex-col gap-4"
           >
-            {isBooting ? (
-              <Card className="flex-1">
-                <CardHeader>
-                  <Skeleton className="h-6 w-40" />
-                </CardHeader>
-                <CardContent className="flex flex-1 flex-col justify-center gap-8">
-                  <div className="mx-auto flex w-full max-w-sm flex-col gap-8">
-                    <div className="space-y-3">
-                      <Skeleton className="h-3 w-20" />
-                      <div className="flex flex-col gap-2.5">
-                        {MODE_SECONDS.map((mode) => (
-                          <Skeleton key={`timer-skeleton-${mode}`} className="h-12 w-full" />
-                        ))}
-                      </div>
-                    </div>
-                    <div className="space-y-3">
-                      <Skeleton className="h-3 w-24" />
-                      <div className="flex flex-col gap-2.5">
-                        {Object.keys(BOT_DIFFICULTIES).map((id) => (
-                          <Skeleton key={`difficulty-skeleton-${id}`} className="h-12 w-full" />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ) : (
-              <>
-                <Card className="relative flex-1 overflow-hidden">
+            <Card className="relative flex-1 overflow-hidden">
                   <div
                     aria-hidden="true"
                     className="pointer-events-none absolute inset-0 bg-[repeating-linear-gradient(-45deg,var(--border)_0_0.9px,transparent_0.9px_12px)] dark:bg-[repeating-linear-gradient(-45deg,#1f1f1f_0_0.9px,transparent_0.9px_12px)]"
@@ -417,8 +378,6 @@ export default function BotMode() {
                     </Button>
                   </div>
                 </Card>
-              </>
-            )}
           </motion.div>
         ) : null}
 
