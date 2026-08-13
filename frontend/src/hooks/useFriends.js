@@ -1,71 +1,124 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-
-function getServerBaseUrl() {
-  const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
-  return serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
-}
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { apiFetch } from "@/lib/api-client";
+import { meKeys, userKeys } from "@/lib/query-keys";
 
 const ACTION_DEBOUNCE_MS = 300;
+const FRIENDS_REFRESH_MS = 8000;
 
 export function useFriends(currentUser, { onAcceptInvite } = {}) {
-  const [loading, setLoading] = useState(true);
-  const [friends, setFriends] = useState([]);
-  const [incomingRequests, setIncomingRequests] = useState([]);
-  const [outgoingRequests, setOutgoingRequests] = useState([]);
-  const [roomInvites, setRoomInvites] = useState([]);
+  const queryClient = useQueryClient();
   const [username, setUsername] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
-  const [searchingUsers, setSearchingUsers] = useState(false);
   const [feedback, setFeedback] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const presenceRef = useRef({ online: new Map() });
   const sendRequestDebounceRef = useRef(null);
-  const searchDebounceRef = useRef(null);
+  const searchInputRef = useRef(null);
+
+  useEffect(() => {
+    searchInputRef.current = username.trim().toLowerCase();
+    if (searchInputRef.current.length < 2) {
+      setDebouncedSearch("");
+      return;
+    }
+    const timerId = setTimeout(() => {
+      setDebouncedSearch(searchInputRef.current);
+    }, ACTION_DEBOUNCE_MS);
+    return () => clearTimeout(timerId);
+  }, [username]);
+
+  const friendsQuery = useQuery({
+    queryKey: meKeys.friends(),
+    queryFn: () =>
+      apiFetch(currentUser, "/api/users/me/friends").then(
+        ({ data }) => (Array.isArray(data.friends) ? data.friends : [])
+      ),
+    enabled: Boolean(currentUser),
+    staleTime: 30 * 1000,
+    refetchInterval: FRIENDS_REFRESH_MS,
+    refetchOnWindowFocus: true,
+    placeholderData: (prev) => prev,
+  });
+
+  const requestsQuery = useQuery({
+    queryKey: meKeys.friendRequests(),
+    queryFn: async () => {
+      const { data } = await apiFetch(currentUser, "/api/users/me/friend-requests");
+      return {
+        incoming: Array.isArray(data.incoming) ? data.incoming : [],
+        outgoing: Array.isArray(data.outgoing) ? data.outgoing : [],
+      };
+    },
+    enabled: Boolean(currentUser),
+    staleTime: 30 * 1000,
+    refetchInterval: FRIENDS_REFRESH_MS,
+    refetchOnWindowFocus: true,
+    placeholderData: (prev) => prev,
+  });
+
+  const roomInvitesQuery = useQuery({
+    queryKey: meKeys.roomInvites(),
+    queryFn: () =>
+      apiFetch(currentUser, "/api/users/me/room-invites").then(
+        ({ data }) =>
+          Array.isArray(data.invites)
+            ? data.invites.filter((invite) => invite.status === "pending")
+            : []
+      ),
+    enabled: Boolean(currentUser),
+    staleTime: 30 * 1000,
+    refetchInterval: FRIENDS_REFRESH_MS,
+    refetchOnWindowFocus: true,
+    placeholderData: (prev) => prev,
+  });
+
+  const friends = useMemo(() => friendsQuery.data ?? [], [friendsQuery.data]);
+  const incomingRequests = useMemo(
+    () => requestsQuery.data?.incoming ?? [],
+    [requestsQuery.data]
+  );
+  const outgoingRequests = useMemo(
+    () => requestsQuery.data?.outgoing ?? [],
+    [requestsQuery.data]
+  );
+  const roomInvites = useMemo(
+    () => roomInvitesQuery.data ?? [],
+    [roomInvitesQuery.data]
+  );
+
+  const loading =
+    friendsQuery.isPending || requestsQuery.isPending || roomInvitesQuery.isPending;
 
   const fetchFriendsData = useCallback(async () => {
     if (!currentUser) return;
+    await Promise.all([
+      queryClient.refetchQueries({ queryKey: meKeys.friends() }),
+      queryClient.refetchQueries({ queryKey: meKeys.friendRequests() }),
+      queryClient.refetchQueries({ queryKey: meKeys.roomInvites() }),
+    ]);
+  }, [currentUser, queryClient]);
 
-    try {
-      setFeedback("");
-
-      const idToken = await currentUser.getIdToken();
-      const baseUrl = getServerBaseUrl();
-      const headers = {
-        Authorization: `Bearer ${idToken}`,
-      };
-
-      const [friendsRes, requestsRes, roomInvitesRes] = await Promise.all([
-        fetch(`${baseUrl}/api/users/me/friends`, { headers }),
-        fetch(`${baseUrl}/api/users/me/friend-requests`, { headers }),
-        fetch(`${baseUrl}/api/users/me/room-invites`, { headers }),
-      ]);
-
-      if (!friendsRes.ok || !requestsRes.ok || !roomInvitesRes.ok) {
-        throw new Error("Failed to fetch friends data");
-      }
-
-      const friendsData = await friendsRes.json();
-      const requestsData = await requestsRes.json();
-      const invitesData = await roomInvitesRes.json();
-
-      setFriends(Array.isArray(friendsData.friends) ? friendsData.friends : []);
-      setIncomingRequests(Array.isArray(requestsData.incoming) ? requestsData.incoming : []);
-      setOutgoingRequests(Array.isArray(requestsData.outgoing) ? requestsData.outgoing : []);
-      setRoomInvites(
-        Array.isArray(invitesData.invites)
-          ? invitesData.invites.filter((invite) => invite.status === "pending")
-          : []
+  const applyPresence = useCallback(
+    (userId, online) => {
+      queryClient.setQueryData(meKeys.friends(), (old = []) =>
+        old.map((friend) => (friend.id === userId ? { ...friend, online } : friend))
       );
-    } catch (error) {
-      console.error("Failed to load friends:", error);
-      setFeedback("Failed to load friends. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  }, [currentUser]);
-
-  useEffect(() => {
-    fetchFriendsData();
-  }, [fetchFriendsData]);
+      queryClient.setQueryData(meKeys.friendRequests(), (old = {}) => ({
+        incoming: (old?.incoming ?? []).map((request) =>
+          request.senderId === userId ? { ...request, senderOnline: online } : request
+        ),
+        outgoing: (old?.outgoing ?? []).map((request) =>
+          request.receiverId === userId ? { ...request, receiverOnline: online } : request
+        ),
+      }));
+      queryClient.setQueryData(meKeys.roomInvites(), (old = []) =>
+        old.map((invite) =>
+          invite.inviterId === userId ? { ...invite, inviterOnline: online } : invite
+        )
+      );
+    },
+    [queryClient]
+  );
 
   useEffect(() => {
     if (!currentUser) return;
@@ -85,59 +138,32 @@ export function useFriends(currentUser, { onAcceptInvite } = {}) {
       );
     }
 
+    const onlineMap = presenceRef.current.online;
+    friends.forEach((friend) => {
+      if (friend.id in onlineMap) applyPresence(friend.id, onlineMap.get(friend.id));
+    });
+  }, [currentUser, friends, incomingRequests, outgoingRequests, roomInvites, applyPresence]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const onlineMap = presenceRef.current.online;
+
     const handlePresenceUpdate = (event) => {
       const userId = event?.detail?.userId;
       const online = Boolean(event?.detail?.online);
       if (!userId) return;
-
-      setFriends((prev) => prev.map((friend) => (friend.id === userId ? { ...friend, online } : friend)));
-      setIncomingRequests((prev) =>
-        prev.map((request) =>
-          request.senderId === userId ? { ...request, senderOnline: online } : request
-        )
-      );
-      setOutgoingRequests((prev) =>
-        prev.map((request) =>
-          request.receiverId === userId ? { ...request, receiverOnline: online } : request
-        )
-      );
-      setRoomInvites((prev) =>
-        prev.map((invite) =>
-          invite.inviterId === userId ? { ...invite, inviterOnline: online } : invite
-        )
-      );
+      onlineMap.set(userId, online);
+      applyPresence(userId, online);
     };
 
     const handlePresenceSnapshot = (event) => {
-      const onlineMap = event?.detail?.onlineMap;
-      if (!onlineMap || typeof onlineMap !== "object") return;
-
-      setFriends((prev) =>
-        prev.map((friend) =>
-          friend.id in onlineMap ? { ...friend, online: Boolean(onlineMap[friend.id]) } : friend
-        )
-      );
-      setIncomingRequests((prev) =>
-        prev.map((request) =>
-          request.senderId in onlineMap
-            ? { ...request, senderOnline: Boolean(onlineMap[request.senderId]) }
-            : request
-        )
-      );
-      setOutgoingRequests((prev) =>
-        prev.map((request) =>
-          request.receiverId in onlineMap
-            ? { ...request, receiverOnline: Boolean(onlineMap[request.receiverId]) }
-            : request
-        )
-      );
-      setRoomInvites((prev) =>
-        prev.map((invite) =>
-          invite.inviterId in onlineMap
-            ? { ...invite, inviterOnline: Boolean(onlineMap[invite.inviterId]) }
-            : invite
-        )
-      );
+      const snapshot = event?.detail?.onlineMap;
+      if (!snapshot || typeof snapshot !== "object") return;
+      for (const [userId, online] of Object.entries(snapshot)) {
+        onlineMap.set(userId, Boolean(online));
+        applyPresence(userId, Boolean(online));
+      }
     };
 
     window.addEventListener("typiks:presence-update", handlePresenceUpdate);
@@ -147,105 +173,37 @@ export function useFriends(currentUser, { onAcceptInvite } = {}) {
       window.removeEventListener("typiks:presence-update", handlePresenceUpdate);
       window.removeEventListener("typiks:presence-snapshot", handlePresenceSnapshot);
     };
-  }, [currentUser, friends, incomingRequests, outgoingRequests, roomInvites]);
+  }, [currentUser, applyPresence]);
 
-  useEffect(() => {
-    if (!currentUser) return;
-
-    const refresh = () => {
-      fetchFriendsData();
-    };
-
-    const timerId = window.setInterval(refresh, 8000);
-    window.addEventListener("focus", refresh);
-    document.addEventListener("visibilitychange", refresh);
-
-    return () => {
-      window.clearInterval(timerId);
-      window.removeEventListener("focus", refresh);
-      document.removeEventListener("visibilitychange", refresh);
-    };
-  }, [currentUser, fetchFriendsData]);
+  const sendFriendRequestMutation = useMutation({
+    mutationFn: (targetUsername) =>
+      apiFetch(currentUser, "/api/users/me/friend-requests", {
+        method: "POST",
+        body: { username: targetUsername.replace(/\s+/g, " ").trim() },
+      }).then(({ data }) => data),
+    onSuccess: (data) => {
+      setUsername("");
+      setFeedback(data.message || "Friend request sent.");
+      queryClient.invalidateQueries({ queryKey: meKeys.friendRequests() });
+      queryClient.invalidateQueries({ queryKey: userKeys.search("") });
+    },
+    onError: (error) => {
+      setFeedback(error.message || "Failed to send friend request.");
+    },
+  });
 
   const sendFriendRequest = useCallback(
     async (targetUsername = username) => {
       const normalizedUsername = targetUsername.trim();
       if (!currentUser || !normalizedUsername) return;
-
-      try {
-        setSubmitting(true);
-        setFeedback("");
-
-        const idToken = await currentUser.getIdToken();
-        const baseUrl = getServerBaseUrl();
-
-        const response = await fetch(`${baseUrl}/api/users/me/friend-requests`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${idToken}`,
-          },
-          body: JSON.stringify({ username: normalizedUsername }),
-        });
-
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          throw new Error(payload.error || "Could not send friend request");
-        }
-
-        setUsername("");
-        setFeedback(payload.message || "Friend request sent.");
-        await fetchFriendsData();
-      } catch (error) {
-        setFeedback(error.message || "Failed to send friend request.");
-      } finally {
-        setSubmitting(false);
-      }
+      setFeedback("");
+      await sendFriendRequestMutation.mutateAsync(normalizedUsername);
     },
-    [currentUser, fetchFriendsData, username]
-  );
-
-  const searchUsers = useCallback(
-    async (query) => {
-      const normalizedQuery = query.trim().toLowerCase();
-      if (!currentUser || normalizedQuery.length < 2) {
-        setSearchResults([]);
-        setSearchingUsers(false);
-        return;
-      }
-
-      try {
-        setSearchingUsers(true);
-
-        const idToken = await currentUser.getIdToken();
-        const baseUrl = getServerBaseUrl();
-        const response = await fetch(
-          `${baseUrl}/api/users/me/search?query=${encodeURIComponent(normalizedQuery)}`,
-          {
-            headers: {
-              Authorization: `Bearer ${idToken}`,
-            },
-          }
-        );
-
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          throw new Error(payload.error || "Failed to search users");
-        }
-
-        setSearchResults(Array.isArray(payload.users) ? payload.users : []);
-      } catch (error) {
-        console.error("Failed to search users:", error);
-        setSearchResults([]);
-      } finally {
-        setSearchingUsers(false);
-      }
-    },
-    [currentUser]
+    [username, currentUser, sendFriendRequestMutation]
   );
 
   const debouncedSendFriendRequest = useCallback(() => {
-    if (submitting) return;
+    if (sendFriendRequestMutation.isPending) return;
 
     if (sendRequestDebounceRef.current) {
       clearTimeout(sendRequestDebounceRef.current);
@@ -254,124 +212,89 @@ export function useFriends(currentUser, { onAcceptInvite } = {}) {
     sendRequestDebounceRef.current = setTimeout(() => {
       sendFriendRequest();
     }, ACTION_DEBOUNCE_MS);
-  }, [sendFriendRequest, submitting]);
+  }, [sendFriendRequestMutation.isPending, sendFriendRequest]);
 
-  useEffect(() => {
-    if (searchDebounceRef.current) {
-      clearTimeout(searchDebounceRef.current);
-    }
+  const searchQuery = useQuery({
+    queryKey: userKeys.search(debouncedSearch),
+    queryFn: () =>
+      apiFetch(
+        currentUser,
+        `/api/users/me/search?query=${encodeURIComponent(debouncedSearch)}`
+      ).then(({ data }) => (Array.isArray(data.users) ? data.users : [])),
+    enabled: Boolean(currentUser) && debouncedSearch.length >= 2,
+    staleTime: 60 * 1000,
+  });
 
-    if (!username.trim()) {
-      setSearchResults([]);
-      setSearchingUsers(false);
-      return;
-    }
+  const searchResults = debouncedSearch.length >= 2 ? (searchQuery.data ?? []) : [];
+  const searchingUsers = debouncedSearch.length >= 2 && searchQuery.isFetching;
 
-    searchDebounceRef.current = setTimeout(() => {
-      searchUsers(username);
-    }, ACTION_DEBOUNCE_MS);
-  }, [searchUsers, username]);
-
-  useEffect(() => {
-    return () => {
-      if (sendRequestDebounceRef.current) {
-        clearTimeout(sendRequestDebounceRef.current);
+  const respondToRoomInviteMutation = useMutation({
+    mutationFn: ({ inviteId, action }) =>
+      apiFetch(currentUser, `/api/users/me/room-invites/${inviteId}`, {
+        method: "PATCH",
+        body: { action },
+      }).then(({ data }) => data),
+    onSuccess: (data, { action }) => {
+      setFeedback(data.message || "Invite updated.");
+      queryClient.invalidateQueries({ queryKey: meKeys.roomInvites() });
+      if (action === "accept" && data?.invite?.roomCode) {
+        onAcceptInvite?.(data.invite.roomCode);
       }
-      if (searchDebounceRef.current) {
-        clearTimeout(searchDebounceRef.current);
+    },
+    onError: (error) => {
+      setFeedback(error.message || "Failed to respond to room invite.");
+    },
+  });
+
+  const respondToRequestMutation = useMutation({
+    mutationFn: ({ requestId, action }) =>
+      apiFetch(currentUser, `/api/users/me/friend-requests/${requestId}`, {
+        method: "PATCH",
+        body: { action },
+      }).then(({ data }) => data),
+    onSuccess: (data, { action }) => {
+      setFeedback(data.message || "Request updated.");
+      queryClient.invalidateQueries({ queryKey: meKeys.friendRequests() });
+      if (action === "accept") {
+        queryClient.invalidateQueries({ queryKey: meKeys.friends() });
       }
-    };
-  }, []);
+    },
+    onError: (error) => {
+      setFeedback(error.message || "Failed to update request.");
+    },
+  });
+
+  const removeFriendMutation = useMutation({
+    mutationFn: (friendId) =>
+      apiFetch(currentUser, `/api/users/me/friends/${friendId}`, {
+        method: "DELETE",
+      }).then(({ data }) => data),
+    onSuccess: (data) => {
+      setFeedback(data.message || "Friend removed.");
+      queryClient.invalidateQueries({ queryKey: meKeys.friends() });
+      queryClient.invalidateQueries({ queryKey: meKeys.friendRequests() });
+    },
+    onError: (error) => {
+      setFeedback(error.message || "Failed to remove friend.");
+    },
+  });
 
   const respondToRoomInvite = async (inviteId, action) => {
     if (!currentUser || !inviteId) return;
-
-    try {
-      setFeedback("");
-      const idToken = await currentUser.getIdToken();
-      const baseUrl = getServerBaseUrl();
-
-      const response = await fetch(`${baseUrl}/api/users/me/room-invites/${inviteId}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({ action }),
-      });
-
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload.error || "Failed to respond to room invite");
-      }
-
-      setFeedback(payload.message || "Invite updated.");
-
-      if (action === "accept" && payload?.invite?.roomCode) {
-        onAcceptInvite?.(payload.invite.roomCode);
-        return;
-      }
-
-      await fetchFriendsData();
-    } catch (error) {
-      setFeedback(error.message || "Failed to respond to room invite.");
-    }
+    setFeedback("");
+    await respondToRoomInviteMutation.mutateAsync({ inviteId, action });
   };
 
   const respondToRequest = async (requestId, action) => {
     if (!currentUser || !requestId) return;
-
-    try {
-      setFeedback("");
-      const idToken = await currentUser.getIdToken();
-      const baseUrl = getServerBaseUrl();
-
-      const response = await fetch(`${baseUrl}/api/users/me/friend-requests/${requestId}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({ action }),
-      });
-
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload.error || "Failed to update request");
-      }
-
-      setFeedback(payload.message || "Request updated.");
-      await fetchFriendsData();
-    } catch (error) {
-      setFeedback(error.message || "Failed to update request.");
-    }
+    setFeedback("");
+    await respondToRequestMutation.mutateAsync({ requestId, action });
   };
 
   const removeFriend = async (friendId) => {
     if (!currentUser || !friendId) return;
-
-    try {
-      setFeedback("");
-      const idToken = await currentUser.getIdToken();
-      const baseUrl = getServerBaseUrl();
-
-      const response = await fetch(`${baseUrl}/api/users/me/friends/${friendId}`, {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${idToken}`,
-        },
-      });
-
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload.error || "Failed to remove friend");
-      }
-
-      setFeedback(payload.message || "Friend removed.");
-      await fetchFriendsData();
-    } catch (error) {
-      setFeedback(error.message || "Failed to remove friend.");
-    }
+    setFeedback("");
+    await removeFriendMutation.mutateAsync(friendId);
   };
 
   return {
@@ -385,7 +308,7 @@ export function useFriends(currentUser, { onAcceptInvite } = {}) {
     searchResults,
     searchingUsers,
     feedback,
-    submitting,
+    submitting: sendFriendRequestMutation.isPending,
     fetchFriendsData,
     sendFriendRequest,
     debouncedSendFriendRequest,

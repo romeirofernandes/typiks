@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useStats } from "@/hooks/useStats";
 import { useViewport } from "@/hooks/useViewport";
@@ -19,11 +20,8 @@ import {
   NEXT_WORD_CONDITIONS,
 } from "@/lib/player-preferences";
 import { FiCopy, FiCheck, FiUsers, FiClock, FiHash, FiLogOut, FiPlay, FiSettings, FiPlus, FiTrash2, FiSend } from "react-icons/fi";
-
-function getServerBaseUrl() {
-  const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
-  return serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
-}
+import { apiFetch, getServerBaseUrl } from "@/lib/api-client";
+import { meKeys } from "@/lib/query-keys";
 
 function sanitizeRoomCode(rawCode) {
   if (typeof rawCode !== "string") return "";
@@ -142,7 +140,6 @@ export default function CreateRoom() {
   const [teamTypingInput, setTeamTypingInput] = useState("");
   const [gameResult, setGameResult] = useState(null);
   const [copied, setCopied] = useState(false);
-  const [friendsForInvite, setFriendsForInvite] = useState([]);
   const [invitingFriendIds, setInvitingFriendIds] = useState([]);
   const [pendingInviteFriendIds, setPendingInviteFriendIds] = useState([]);
   const [teamNameDrafts, setTeamNameDrafts] = useState({});
@@ -177,33 +174,44 @@ export default function CreateRoom() {
     }
   }, [statsPayload, statsLoading, currentUser]);
 
+  const queryClient = useQueryClient();
+
   useEffect(() => {
     userInfoRef.current = userInfo;
   }, [userInfo]);
 
-  const fetchFriendsForInvite = useCallback(async () => {
-    if (!currentUser) return;
+  const friendsForInviteQuery = useQuery({
+    queryKey: meKeys.friends(),
+    queryFn: () =>
+      apiFetch(currentUser, "/api/users/me/friends").then(
+        ({ data }) => (Array.isArray(data?.friends) ? data.friends : [])
+      ),
+    enabled: Boolean(currentUser),
+    staleTime: 30 * 1000,
+    refetchInterval: 8000,
+    refetchOnWindowFocus: true,
+  });
 
-    try {
-      const idToken = await currentUser.getIdToken();
-      const baseUrl = getServerBaseUrl();
-      const response = await fetch(`${baseUrl}/api/users/me/friends`, {
-        headers: {
-          Authorization: `Bearer ${idToken}`,
-        },
-      });
+  const friendsForInvite = useMemo(
+    () => friendsForInviteQuery.data ?? [],
+    [friendsForInviteQuery.data]
+  );
 
-      if (!response.ok) {
-        throw new Error("Failed to load friends");
-      }
+  const createRoomMutation = useMutation({
+    mutationFn: (settings) =>
+      apiFetch(currentUser, "/api/rooms", {
+        method: "POST",
+        body: settings,
+      }).then(({ data }) => data),
+  });
 
-      const payload = await response.json();
-      setFriendsForInvite(Array.isArray(payload?.friends) ? payload.friends : []);
-    } catch (error) {
-      console.error("Failed to fetch friends for invite:", error);
-      setFriendsForInvite([]);
-    }
-  }, [currentUser]);
+  const sendInviteMutation = useMutation({
+    mutationFn: ({ roomCode: code, inviteeId }) =>
+      apiFetch(currentUser, "/api/users/me/room-invites", {
+        method: "POST",
+        body: { roomCode: code, inviteeId },
+      }).then(({ data }) => data),
+  });
 
   const cleanupSocket = useCallback(() => {
     if (wsRef.current) {
@@ -458,22 +466,7 @@ export default function CreateRoom() {
       };
       setSettingsForm(normalizedSettings);
 
-      const idToken = await currentUser.getIdToken();
-      const baseUrl = getServerBaseUrl();
-
-      const response = await fetch(`${baseUrl}/api/rooms`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify(normalizedSettings),
-      });
-
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload.error || "Failed to create room");
-      }
+      const payload = await createRoomMutation.mutateAsync(normalizedSettings);
 
       setGameResult(null);
       await connectToRoom(payload.roomCode, payload.settings);
@@ -977,24 +970,12 @@ export default function CreateRoom() {
 
     try {
       setInvitingFriendIds((prev) => [...prev, friendId]);
-      const idToken = await currentUser.getIdToken();
-      const baseUrl = getServerBaseUrl();
 
-      const response = await fetch(`${baseUrl}/api/users/me/room-invites`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({ roomCode, inviteeId: friendId }),
-      });
+      await sendInviteMutation.mutateAsync({ roomCode, inviteeId: friendId });
 
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload?.error || "Failed to send invite");
-      }
-
-      setPendingInviteFriendIds((prev) => Array.from(new Set([...prev, friendId])));
+      setPendingInviteFriendIds((prev) =>
+        Array.from(new Set([...prev, friendId]))
+      );
     } catch (error) {
       toast.error(error.message || "Failed to send invite");
     } finally {
@@ -1004,8 +985,8 @@ export default function CreateRoom() {
 
   useEffect(() => {
     if (!isInRoom || !isLeader || !isLobbyState) return;
-    fetchFriendsForInvite();
-  }, [fetchFriendsForInvite, isInRoom, isLeader, isLobbyState]);
+    queryClient.refetchQueries({ queryKey: meKeys.friends() });
+  }, [queryClient, isInRoom, isLeader, isLobbyState]);
 
   useEffect(() => {
     if (!isInRoom || !isLobbyState || friendsForInvite.length === 0) return;
@@ -1024,8 +1005,8 @@ export default function CreateRoom() {
       const online = Boolean(event?.detail?.online);
       if (!userId) return;
 
-      setFriendsForInvite((prev) =>
-        prev.map((friend) => (friend.id === userId ? { ...friend, online } : friend))
+      queryClient.setQueryData(meKeys.friends(), (old = []) =>
+        old.map((friend) => (friend.id === userId ? { ...friend, online } : friend))
       );
     };
 
@@ -1033,9 +1014,11 @@ export default function CreateRoom() {
       const onlineMap = event?.detail?.onlineMap;
       if (!onlineMap || typeof onlineMap !== "object") return;
 
-      setFriendsForInvite((prev) =>
-        prev.map((friend) =>
-          friend.id in onlineMap ? { ...friend, online: Boolean(onlineMap[friend.id]) } : friend
+      queryClient.setQueryData(meKeys.friends(), (old = []) =>
+        old.map((friend) =>
+          friend.id in onlineMap
+            ? { ...friend, online: Boolean(onlineMap[friend.id]) }
+            : friend
         )
       );
     };
@@ -1047,13 +1030,13 @@ export default function CreateRoom() {
       window.removeEventListener("typiks:presence-update", handlePresenceUpdate);
       window.removeEventListener("typiks:presence-snapshot", handlePresenceSnapshot);
     };
-  }, [friendsForInvite, isInRoom, isLobbyState]);
+  }, [friendsForInvite, isInRoom, isLobbyState, queryClient]);
 
   useEffect(() => {
-    if (!isInRoom || !isLobbyState || !currentUser) return;
+    if (!isInRoom || !isLobbyState) return;
 
     const refreshFriends = () => {
-      fetchFriendsForInvite();
+      queryClient.refetchQueries({ queryKey: meKeys.friends() });
     };
 
     const timerId = window.setInterval(refreshFriends, 8000);
@@ -1065,7 +1048,7 @@ export default function CreateRoom() {
       window.removeEventListener("focus", refreshFriends);
       document.removeEventListener("visibilitychange", refreshFriends);
     };
-  }, [currentUser, fetchFriendsForInvite, isInRoom, isLobbyState]);
+  }, [queryClient, isInRoom, isLobbyState]);
 
   useEffect(() => {
     if (!Array.isArray(coopTeams) || coopTeams.length === 0) {

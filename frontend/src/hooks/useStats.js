@@ -1,10 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
-
-function getServerBaseUrl() {
-  const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
-  return serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
-}
+import { apiFetch } from "@/lib/api-client";
+import { userKeys } from "@/lib/query-keys";
 
 /**
  * Fetch the current user's ranked stats via GET /api/users/:uid/stats.
@@ -15,53 +12,20 @@ function getServerBaseUrl() {
  */
 export function useStats({ enabled = true } = {}) {
   const { state: { currentUser } } = useAuth();
-  const [stats, setStats] = useState(null);
-  const [loading, setLoading] = useState(Boolean(enabled && currentUser));
-  const [error, setError] = useState(null);
-  const mountedRef = useRef(true);
+  const uid = currentUser?.uid;
 
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
+  const query = useQuery({
+    queryKey: userKeys.stats(uid),
+    queryFn: () =>
+      apiFetch(currentUser, `/api/users/${uid}/stats`).then(({ data }) => data),
+    enabled: Boolean(enabled && uid),
+    staleTime: 60 * 1000,
+  });
 
-  const refetch = useCallback(async () => {
-    if (!currentUser) return null;
-
-    try {
-      setLoading(true);
-      setError(null);
-      const idToken = await currentUser.getIdToken();
-      const response = await fetch(
-        `${getServerBaseUrl()}/api/users/${currentUser.uid}/stats`,
-        { headers: { Authorization: `Bearer ${idToken}` } }
-      );
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch stats (${response.status})`);
-      }
-
-      const data = await response.json();
-      if (mountedRef.current) {
-        setStats(data);
-        setError(null);
-      }
-      return data;
-    } catch (err) {
-      if (mountedRef.current) setError(err);
-      return null;
-    } finally {
-      if (mountedRef.current) setLoading(false);
-    }
-  }, [currentUser]);
-
-  useEffect(() => {
-    if (enabled) {
-      refetch();
-    }
-  }, [enabled, refetch]);
-
-  return { stats, loading, error, refetch };
+  return {
+    stats: query.data,
+    loading: query.isPending || query.isFetching,
+    error: query.error,
+    refetch: query.refetch,
+  };
 }

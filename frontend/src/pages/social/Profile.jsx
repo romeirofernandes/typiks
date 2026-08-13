@@ -39,12 +39,16 @@ import {
 } from "@/lib/player-preferences";
 import { COUNTRIES } from "@/lib/countries";
 import { ViewIcon } from "hugeicons-react";
-import { useEffect, useState } from "react";import {
+import { useEffect, useState } from "react";
+import {
   FEMALE_AVATAR_IDS,
   MALE_AVATAR_IDS,
   RATING_TIERS,
   getTierByRating,
 } from "@/lib/player-meta";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiFetch } from "@/lib/api-client";
+import { userKeys } from "@/lib/query-keys";
 
 const PROFILE_GRAPH_DAYS = 364;
 const UNSET_OPTION_VALUE = "__unset__";
@@ -59,8 +63,7 @@ const DEFAULT_PROFILE_STATS = {
 
 const Profile = () => {
   const { state: { currentUser } } = useAuth();
-  const [activityData, setActivityData] = useState([]);
-  const [maxCount, setMaxCount] = useState(0);
+  const queryClient = useQueryClient();
   const [isLocationEditing, setIsLocationEditing] = useState(false);
   const [isSavingLocation, setIsSavingLocation] = useState(false);
   const [locationApiReady, setLocationApiReady] = useState(false);
@@ -74,6 +77,43 @@ const Profile = () => {
   const [isSavingUsername, setIsSavingUsername] = useState(false);
   const [usernameError, setUsernameError] = useState("");
   const [showConnectAccount, setShowConnectAccount] = useState(false);
+
+  const activityQuery = useQuery({
+    queryKey: userKeys.activity(currentUser?.uid, PROFILE_GRAPH_DAYS),
+    queryFn: () =>
+      apiFetch(
+        currentUser,
+        `/api/users/${currentUser.uid}/activity?days=${PROFILE_GRAPH_DAYS}`
+      ).then(({ data }) => ({
+        activity: data.activity || [],
+        maxCount: data.maxCount || 0,
+      })),
+    enabled: Boolean(currentUser),
+    staleTime: 60 * 1000,
+  });
+
+  const locationQuery = useQuery({
+    queryKey: userKeys.location(currentUser?.uid),
+    queryFn: () =>
+      apiFetch(currentUser, `/api/users/${currentUser.uid}/location`).then(
+        ({ data }) => ({ country: data?.country || "" })
+      ),
+    enabled: Boolean(currentUser),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const userQuery = useQuery({
+    queryKey: userKeys.detail(currentUser?.uid),
+    queryFn: () =>
+      apiFetch(currentUser, `/api/users/${currentUser.uid}`).then(
+        ({ data }) => data?.user || {}
+      ),
+    enabled: Boolean(currentUser),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const activityData = activityQuery.data?.activity ?? [];
+  const maxCount = activityQuery.data?.maxCount ?? 0;
 
   const username =
     profileStats.username ||
@@ -122,105 +162,86 @@ const Profile = () => {
   }, [stats]);
 
   useEffect(() => {
-    const fetchProfileData = async () => {
-      if (!currentUser) return;
+    const country = locationQuery.data?.country || "";
+    setPlayerPreferences((prev) =>
+      prev.country === country
+        ? prev
+        : savePlayerPreferences({ ...prev, country })
+    );
+  }, [locationQuery.data, setPlayerPreferences]);
 
-      try {
-        const idToken = await currentUser.getIdToken();
-        const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
-        const fullUrl = serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
+  useEffect(() => {
+    if (locationQuery.isSuccess || locationQuery.isError) {
+      setLocationApiReady(true);
+    }
+  }, [locationQuery.isSuccess, locationQuery.isError]);
 
-        const [activityResponse, locationResponse, userResponse] = await Promise.all([
-          fetch(`${fullUrl}/api/users/${currentUser.uid}/activity?days=${PROFILE_GRAPH_DAYS}`, {
-            headers: {
-              Authorization: `Bearer ${idToken}`,
-            },
-          }),
-          fetch(`${fullUrl}/api/users/${currentUser.uid}/location`, {
-            headers: {
-              Authorization: `Bearer ${idToken}`,
-            },
-          }),
-          fetch(`${fullUrl}/api/users/${currentUser.uid}`, {
-            headers: {
-              Authorization: `Bearer ${idToken}`,
-            },
-          }),
-        ]);
+  useEffect(() => {
+    if (!userQuery.data) return;
+    const apiCondition = userQuery.data.nextWordCondition;
+    if (
+      apiCondition === NEXT_WORD_CONDITIONS.auto ||
+      apiCondition === NEXT_WORD_CONDITIONS.manual
+    ) {
+      setPlayerPreferences((prev) =>
+        prev.nextWordCondition === apiCondition
+          ? prev
+          : savePlayerPreferences({ ...prev, nextWordCondition: apiCondition })
+      );
+    }
 
-        if (activityResponse.ok) {
-          const payload = await activityResponse.json();
-          setActivityData(payload.activity || []);
-          setMaxCount(payload.maxCount || 0);
-        }
-
-        if (locationResponse?.ok) {
-          const payload = await locationResponse.json();
-          setPlayerPreferences((prev) =>
-            savePlayerPreferences({
-              ...prev,
-              country: payload.country || "",
-            })
-          );
-        }
-
-        if (userResponse?.ok) {
-          const payload = await userResponse.json();
-          const apiCondition = payload?.user?.nextWordCondition;
-          if (apiCondition === NEXT_WORD_CONDITIONS.auto || apiCondition === NEXT_WORD_CONDITIONS.manual) {
-            setPlayerPreferences((prev) =>
-              savePlayerPreferences({
-                ...prev,
-                nextWordCondition: apiCondition,
-              })
-            );
-          }
-
-          if (payload?.user?.avatarId) {
-            setProfileStats((prev) => ({
-              ...prev,
-              avatarId: payload.user.avatarId,
-            }));
-          }
-        }
-
-        setLocationApiReady(true);
-      } catch (error) {
-        console.error("Failed to fetch profile data:", error);
-      }
-    };
-
-    fetchProfileData();
-  }, [currentUser, setPlayerPreferences]);
+    if (userQuery.data.avatarId) {
+      setProfileStats((prev) => ({
+        ...prev,
+        avatarId: userQuery.data.avatarId,
+      }));
+    }
+  }, [userQuery.data, setPlayerPreferences]);
 
   useEffect(() => {
     setPendingAvatarId(profileStats.avatarId || "avatar1");
   }, [profileStats.avatarId]);
 
+  const persistLocationMutation = useMutation({
+    mutationFn: (country) =>
+      apiFetch(currentUser, `/api/users/${currentUser.uid}/location`, {
+        method: "PATCH",
+        body: { country: country || null },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: userKeys.location(currentUser?.uid),
+      });
+      queryClient.invalidateQueries({
+        queryKey: userKeys.detail(currentUser?.uid),
+      });
+    },
+  });
+
   const persistLocation = async (country) => {
     if (!currentUser || !locationApiReady) return false;
 
     try {
-      const idToken = await currentUser.getIdToken();
-      const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
-      const fullUrl = serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
-
-      await fetch(`${fullUrl}/api/users/${currentUser.uid}/location`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          country: country || null,
-        }),
-      });
+      await persistLocationMutation.mutateAsync(country);
       return true;
     } catch (error) {
       console.error("Failed to persist location:", error);
       return false;
     }
   };
+
+  const persistPreferenceMutation = useMutation({
+    mutationFn: ({ field, value }) =>
+      apiFetch(currentUser, `/api/users/${currentUser.uid}/preferences`, {
+        method: "PATCH",
+        body: { [field]: value },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: userKeys.detail(currentUser?.uid),
+      });
+    },
+  });
 
   const updatePreference = (field, value) => {
     setPlayerPreferences((prev) => {
@@ -233,24 +254,7 @@ const Profile = () => {
     });
 
     if (field === "nextWordCondition" && currentUser) {
-      void (async () => {
-        try {
-          const idToken = await currentUser.getIdToken();
-          const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
-          const fullUrl = serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
-
-          await fetch(`${fullUrl}/api/users/${currentUser.uid}/preferences`, {
-            method: "PATCH",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${idToken}`,
-            },
-            body: JSON.stringify({ nextWordCondition: value }),
-          });
-        } catch (error) {
-          console.error("Failed to persist next word condition:", error);
-        }
-      })();
+      void persistPreferenceMutation.mutateAsync({ field, value });
     }
   };
 
@@ -310,23 +314,10 @@ const Profile = () => {
     setProfileStats((prev) => ({ ...prev, avatarId: pendingAvatarId }));
 
     try {
-      const idToken = await currentUser.getIdToken();
-      const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
-      const fullUrl = serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
-
-      const response = await fetch(`${fullUrl}/api/users/${currentUser.uid}/preferences`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({ avatarId: pendingAvatarId }),
+      await persistPreferenceMutation.mutateAsync({
+        field: "avatarId",
+        value: pendingAvatarId,
       });
-
-      if (!response.ok) {
-        throw new Error("Failed to save avatar");
-      }
-
       setIsAvatarDialogOpen(false);
     } catch (error) {
       console.error("Failed to persist avatar:", error);
@@ -355,35 +346,27 @@ const Profile = () => {
     setUsernameError("");
 
     try {
-      const idToken = await currentUser.getIdToken();
-      const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
-      const fullUrl = serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
-
-      const response = await fetch(`${fullUrl}/api/users/${currentUser.uid}/username`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({ username: value }),
-      });
-
-      if (response.status === 409) {
-        setUsernameError("That username is already taken.");
-        return;
-      }
-
-      if (!response.ok) {
-        throw new Error("Failed to update username");
-      }
-
-      const data = await response.json();
+      const { data } = await apiFetch(
+        currentUser,
+        `/api/users/${currentUser.uid}/username`,
+        {
+          method: "PATCH",
+          body: { username: value },
+        }
+      );
       setProfileStats((prev) => ({ ...prev, username: data.username }));
+      queryClient.invalidateQueries({
+        queryKey: userKeys.detail(currentUser.uid),
+      });
       setIsUsernameDialogOpen(false);
       setUsernameDraft("");
     } catch (error) {
-      console.error("Failed to persist username:", error);
-      setUsernameError("Could not update your username. Please try again.");
+      if (error?.status === 409) {
+        setUsernameError("That username is already taken.");
+      } else {
+        console.error("Failed to persist username:", error);
+        setUsernameError("Could not update your username. Please try again.");
+      }
     } finally {
       setIsSavingUsername(false);
     }

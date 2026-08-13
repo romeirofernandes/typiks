@@ -1,5 +1,6 @@
-const SERVER_URL =
-  import.meta.env.VITE_SERVER_URL || "http://127.0.0.1:8787";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiFetch } from "@/lib/api-client";
+import { meKeys, userKeys } from "@/lib/query-keys";
 
 /**
  * Provision (or update) the current user's profile via POST /api/users.
@@ -12,20 +13,35 @@ const SERVER_URL =
  * still describes the anonymous account and the server cannot detect the
  * upgrade.
  */
-export async function createOrGetUser(user, { body = {}, forceRefresh = false } = {}) {
+export async function createOrGetUser(
+  user,
+  { body = {}, forceRefresh = false } = {}
+) {
   const idToken = await user.getIdToken(forceRefresh);
-  const response = await fetch(`${SERVER_URL}/api/users`, {
+  const { data } = await apiFetch(idToken, "/api/users", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${idToken}`,
-    },
-    body: JSON.stringify(body),
+    body,
   });
+  return data;
+}
 
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
-  }
+/**
+ * Mutation wrapper around createOrGetUser for auth-entry flows
+ * (sign in, sign up, guest login, guest upgrade). Invalidates the
+ * provisioned user's profile/stats queries once the server responds.
+ */
+export function useProvisionUser() {
+  const queryClient = useQueryClient();
 
-  return await response.json();
+  return useMutation({
+    mutationFn: ({ user, body = {}, forceRefresh = false }) =>
+      createOrGetUser(user, { body, forceRefresh }),
+    onSuccess: (data) => {
+      const uid = data?.player?.id;
+      if (uid) {
+        queryClient.invalidateQueries({ queryKey: userKeys.detail(uid) });
+        queryClient.invalidateQueries({ queryKey: meKeys.profile() });
+      }
+    },
+  });
 }

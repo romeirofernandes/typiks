@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   motion,
   AnimatePresence,
@@ -20,6 +21,8 @@ import {
 } from "@/lib/player-preferences";
 import { FiClock, FiArrowLeft, FiZap, FiTrendingUp, FiCheck, FiX, FiSave } from "react-icons/fi";
 import GuestUpgradePrompt from "@/components/auth/GuestUpgradePrompt";
+import { apiFetch } from "@/lib/api-client";
+import { userKeys } from "@/lib/query-keys";
 
 const Game = () => {
   const { state: { currentUser } } = useAuth();
@@ -144,6 +147,28 @@ const Game = () => {
   );
 
   const { stats: fetchedStats, loading: statsLoading } = useStats();
+  const queryClient = useQueryClient();
+
+  const persistGameResultMutation = useMutation({
+    mutationFn: (payload) =>
+      apiFetch(currentUser, `/api/users/${currentUser.uid}/game-result`, {
+        method: "PATCH",
+        body: payload,
+      }).then(({ data }) => data),
+    onSuccess: () => {
+      if (currentUser) {
+        queryClient.invalidateQueries({
+          queryKey: userKeys.stats(currentUser.uid),
+        });
+        queryClient.invalidateQueries({
+          queryKey: userKeys.activity(currentUser.uid, 364),
+        });
+        queryClient.invalidateQueries({
+          queryKey: userKeys.detail(currentUser.uid),
+        });
+      }
+    },
+  });
 
   useEffect(() => {
     if (statsLoading) return;
@@ -613,13 +638,6 @@ const Game = () => {
         return;
       }
 
-      const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
-      const fullUrl = serverUrl.startsWith("http")
-        ? serverUrl
-        : `http://${serverUrl}`;
-
-      const idToken = await currentUser.getIdToken();
-
       // Determine if current user won
       const currentUserResult =
         results.player1.id === currentUser.uid
@@ -641,59 +659,43 @@ const Game = () => {
         return;
       }
 
-      const response = await fetch(
-        `${fullUrl}/api/users/${currentUser.uid}/game-result`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${idToken}`,
-          },
-          body: JSON.stringify({
-            won: currentUserResult.won,
-            isDraw: Boolean(results.isDraw),
-            opponentId: opponentResult.id,
-            score: currentUserResult.score,
-            opponentScore: opponentResult.score,
-            modeSeconds,
-            gameId: persistedGameId,
-          }),
-        }
+      const data = await persistGameResultMutation.mutateAsync({
+        won: currentUserResult.won,
+        isDraw: Boolean(results.isDraw),
+        opponentId: opponentResult.id,
+        score: currentUserResult.score,
+        opponentScore: opponentResult.score,
+        modeSeconds,
+        gameId: persistedGameId,
+      });
+
+      resultPersistedRef.current = true;
+      setPostMatchRating(
+        Number.isFinite(Number(data?.modeStats?.rating))
+          ? Number(data.modeStats.rating)
+          : Number.isFinite(Number(data?.player?.rating))
+            ? Number(data.player.rating)
+            : null
       );
 
-      if (response.ok) {
-        resultPersistedRef.current = true;
-        const data = await response.json();
-        setPostMatchRating(
-          Number.isFinite(Number(data?.modeStats?.rating))
-            ? Number(data.modeStats.rating)
-            : Number.isFinite(Number(data?.player?.rating))
-              ? Number(data.player.rating)
-              : null
-        );
-
-        // Update local user stats for immediate UI update
-        setUserStats((prev) => ({
-          ...prev,
-          ...data.player,
-          modeStats: Array.isArray(prev?.modeStats)
-            ? prev.modeStats.map((mode) =>
-                Number(mode.modeSeconds) === Number(modeSeconds) && data?.modeStats
-                  ? { ...mode, ...data.modeStats }
-                  : mode
-              )
-            : prev?.modeStats,
-          winRate:
-            prev.gamesPlayed > 0 && Number(data.player.gamesPlayed) > 0
-              ? ((Number(data.player.gamesWon) / Number(data.player.gamesPlayed)) * 100).toFixed(1)
-              : prev.gamesPlayed > 0
-                ? ((Number(prev.gamesWon) / Number(prev.gamesPlayed)) * 100).toFixed(1)
-                : 0,
-        }));
-      } else {
-        const errorBody = await response.text();
-        console.error("Failed to persist game results:", response.status, errorBody);
-      }
+      // Update local user stats for immediate UI update
+      setUserStats((prev) => ({
+        ...prev,
+        ...data.player,
+        modeStats: Array.isArray(prev?.modeStats)
+          ? prev.modeStats.map((mode) =>
+              Number(mode.modeSeconds) === Number(modeSeconds) && data?.modeStats
+                ? { ...mode, ...data.modeStats }
+                : mode
+            )
+          : prev?.modeStats,
+        winRate:
+          prev.gamesPlayed > 0 && Number(data.player.gamesPlayed) > 0
+            ? ((Number(data.player.gamesWon) / Number(data.player.gamesPlayed)) * 100).toFixed(1)
+            : prev.gamesPlayed > 0
+              ? ((Number(prev.gamesWon) / Number(prev.gamesPlayed)) * 100).toFixed(1)
+              : 0,
+      }));
     } catch (error) {
       console.error("Failed to update game results:", error);
     }

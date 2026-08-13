@@ -14,9 +14,31 @@ import {
   select,
 } from "d3";
 import { feature } from "topojson-client";
+import { useQuery } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
+import { apiFetch } from "@/lib/api-client";
+import { globeKeys } from "@/lib/query-keys";
+
+const FALLBACK_WORLD = [
+  {
+    type: "Feature",
+    geometry: {
+      type: "Polygon",
+      coordinates: [
+        [
+          [-180, -90],
+          [180, -90],
+          [180, 90],
+          [-180, 90],
+          [-180, -90],
+        ],
+      ],
+    },
+    properties: {},
+  },
+];
 
 function interpolateProjection(raw0, raw1) {
   const mutate = geoProjectionMutator((t) => (x, y) => {
@@ -61,7 +83,6 @@ export function GlobeToMapTransform() {
 
   const [isAnimating, setIsAnimating] = useState(false);
   const [progress, setProgress] = useState([0]);
-  const [worldData, setWorldData] = useState([]);
   const [rotation, setRotation] = useState([0, 0]);
   const [translation, setTranslation] = useState([0, 0]);
   const [isDark, setIsDark] = useState(() => {
@@ -72,7 +93,6 @@ export function GlobeToMapTransform() {
       document.documentElement.classList.contains("dark") || stored === "dark"
     );
   });
-  const [countryMarkers, setCountryMarkers] = useState([]);
   const [projectedMarkers, setProjectedMarkers] = useState([]);
   const [hoveredMarkerId, setHoveredMarkerId] = useState(null);
   const [zoom, setZoom] = useState(1);
@@ -98,113 +118,71 @@ export function GlobeToMapTransform() {
     return () => observer.disconnect();
   }, []);
 
-  useEffect(() => {
-    const loadWorldData = async () => {
+  const worldQuery = useQuery({
+    queryKey: ["world-atlas", "countries-110m"],
+    queryFn: async () => {
       try {
         const response = await fetch(
           "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json"
         );
-        const world = await response.json();
-        const countries = feature(world, world.objects.countries).features;
-        setWorldData(countries);
-      } catch (error) {
-        console.log("[v0] Error loading world data:", error);
-        setWorldData([
-          {
-            type: "Feature",
-            geometry: {
-              type: "Polygon",
-              coordinates: [
-                [
-                  [-180, -90],
-                  [180, -90],
-                  [180, 90],
-                  [-180, 90],
-                  [-180, -90],
-                ],
-              ],
-            },
-            properties: {},
-          },
-        ]);
-      }
-    };
-
-    loadWorldData();
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const fetchCountryRatings = async () => {
-      if (!currentUser) {
-        setCountryMarkers([]);
-        return;
-      }
-
-      try {
-        const token = await currentUser.getIdToken();
-        const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
-        const fullUrl = serverUrl.startsWith("http")
-          ? serverUrl
-          : `http://${serverUrl}`;
-
-        const response = await fetch(
-          `${fullUrl}/api/users/globe/country-ratings?minUsers=1`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
-
         if (!response.ok) {
-          throw new Error(`Failed with ${response.status}`);
+          throw new Error(`Failed to load world atlas (${response.status})`);
         }
-
-        const data = await response.json();
-        if (cancelled) return;
-
-        const markers = Array.isArray(data?.markerCountries)
-          ? data.markerCountries
-              .filter(
-                (item) =>
-                  Number.isFinite(item?.lat) &&
-                  Number.isFinite(item?.lng) &&
-                  typeof item?.country === "string"
-              )
-              .map((item) => ({
-                id: item.country,
-                country: item.country,
-                lat: Number(item.lat),
-                lng: Number(item.lng),
-                avgRating: Number(item.avgRating || 0),
-                avgWinRate: Number.isFinite(Number(item.avgWinRate))
-                  ? Number(item.avgWinRate)
-                  : null,
-                mostPlayedMode: Number(item.mostPlayedMode || 0) || null,
-                userCount: Number(item.userCount || 0),
-              }))
-          : [];
-
-        const shuffled = [...markers];
-        for (let i = shuffled.length - 1; i > 0; i -= 1) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-        }
-
-        setCountryMarkers(shuffled);
+        const world = await response.json();
+        return feature(world, world.objects.countries).features;
       } catch (error) {
-        if (!cancelled) {
-          console.error("Failed to fetch globe markers:", error);
-          setCountryMarkers([]);
-        }
+        console.error("[v0] Error loading world data:", error);
+        return FALLBACK_WORLD;
       }
-    };
+    },
+    staleTime: Infinity,
+  });
 
-    fetchCountryRatings();
-    return () => {
-      cancelled = true;
-    };
-  }, [currentUser]);
+  const worldData = useMemo(
+    () => worldQuery.data ?? FALLBACK_WORLD,
+    [worldQuery.data]
+  );
+
+  const countryRatingsQuery = useQuery({
+    queryKey: globeKeys.countryRatings(),
+    queryFn: () =>
+      apiFetch(
+        currentUser,
+        "/api/users/globe/country-ratings?minUsers=1"
+      ).then(({ data }) => (Array.isArray(data?.markerCountries) ? data.markerCountries : [])),
+    enabled: Boolean(currentUser),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const countryMarkers = useMemo(() => {
+    const markers = (countryRatingsQuery.data ?? [])
+      .filter(
+        (item) =>
+          Number.isFinite(item?.lat) &&
+          Number.isFinite(item?.lng) &&
+          typeof item?.country === "string"
+      )
+      .map((item) => ({
+        id: item.country,
+        country: item.country,
+        lat: Number(item.lat),
+        lng: Number(item.lng),
+        avgRating: Number(item.avgRating || 0),
+        avgWinRate: Number.isFinite(Number(item.avgWinRate))
+          ? Number(item.avgWinRate)
+          : null,
+        mostPlayedMode: Number(item.mostPlayedMode || 0) || null,
+        userCount: Number(item.userCount || 0),
+      }));
+
+    const shuffled = [...markers];
+    for (let i = shuffled.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+
+    return shuffled;
+  }, [countryRatingsQuery.data]);
 
   const markerById = useMemo(() => {
     const next = new Map();

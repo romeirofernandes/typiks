@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { FiSave } from "react-icons/fi";
-import { createOrGetUser } from "@/lib/users-api";
+import { useProvisionUser } from "@/lib/users-api";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -22,6 +22,7 @@ export default function GuestUpgradePrompt({ open, onOpenChange }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState(false);
+  const provisionUser = useProvisionUser();
 
   const resetForm = () => {
     setDone(false);
@@ -42,7 +43,10 @@ export default function GuestUpgradePrompt({ open, onOpenChange }) {
 
       // Force a fresh ID token so the email claim is present and the
       // backend can reconcile the synthetic guest email with the real one.
-      await createOrGetUser(auth.currentUser, { forceRefresh: true });
+      await provisionUser.mutateAsync({
+        user: auth.currentUser,
+        forceRefresh: true,
+      });
       setDone(true);
     } catch (saveError) {
       console.error("Guest upgrade failed:", saveError);

@@ -5,12 +5,13 @@ import { PlayCircleIcon } from "hugeicons-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { auth } from "@/firebase";
-import { createOrGetUser } from "@/lib/users-api";
+import { useProvisionUser } from "@/lib/users-api";
 
 export default function GuestSignInButton({ className, ...props }) {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const provisionUser = useProvisionUser();
 
   const handleGuestLogin = async () => {
     setLoading(true);
@@ -19,7 +20,7 @@ export default function GuestSignInButton({ className, ...props }) {
     try {
       const userCredential = await signInAnonymously(auth);
       // Backend auto-provisions the profile (generated username + avatar).
-      await createOrGetUser(userCredential.user);
+      await provisionUser.mutateAsync({ user: userCredential.user });
       navigate("/dashboard");
     } catch (loginError) {
       console.error("Guest login error:", loginError);

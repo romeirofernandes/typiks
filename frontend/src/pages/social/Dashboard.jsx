@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useStats } from "@/hooks/useStats";
 import { Button } from "@/components/ui/button";
@@ -6,6 +7,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useNavigate } from "react-router-dom";
 import { TypeGraph } from "@/components/charts/TypeGraph";
 import { RatingGrowthChart } from "@/components/charts/RatingGrowthChart";
+import { apiFetch } from "@/lib/api-client";
+import { userKeys } from "@/lib/query-keys";
 
 const MODE_ORDER = [15, 30, 60];
 const CONTRIBUTION_DAYS = 364; // 52 columns x 7 rows
@@ -16,82 +19,35 @@ export default function Dashboard() {
   const navigate = useNavigate();
 
   const { stats: userStats, loading: statsLoading } = useStats();
-  const [activityLoading, setActivityLoading] = useState(true);
-  const [activityData, setActivityData] = useState([]);
-  const [maxDailyCount, setMaxDailyCount] = useState(0);
   const [selectedMode, setSelectedMode] = useState(15);
-  const [ratingTrend, setRatingTrend] = useState([]);
+
+  const activityQuery = useQuery({
+    queryKey: userKeys.activity(currentUser?.uid, CONTRIBUTION_DAYS),
+    queryFn: () =>
+      apiFetch(
+        currentUser,
+        `/api/users/${currentUser.uid}/activity?days=${CONTRIBUTION_DAYS}`
+      ).then(({ data }) => ({ activity: data.activity || [], maxCount: data.maxCount || 0 })),
+    enabled: Boolean(currentUser),
+    staleTime: 60 * 1000,
+  });
+
+  const ratingTrendQuery = useQuery({
+    queryKey: userKeys.ratingTrend(currentUser?.uid, selectedMode),
+    queryFn: () =>
+      apiFetch(
+        currentUser,
+        `/api/users/${currentUser.uid}/rating-trend?modeSeconds=${selectedMode}&limit=120`
+      ).then(({ data }) => data.points || []),
+    enabled: Boolean(currentUser),
+    staleTime: 60 * 1000,
+  });
+
+  const activityData = activityQuery.data?.activity ?? [];
+  const maxDailyCount = activityQuery.data?.maxCount ?? 0;
+  const ratingTrend = ratingTrendQuery.data ?? [];
   const typeGraphDays = Math.max(28, CONTRIBUTION_DAYS - TYPEGRAPH_REDUCED_DAYS);
-  const loading = statsLoading || activityLoading;
-
-  useEffect(() => {
-    const fetchActivity = async () => {
-      if (!currentUser) {
-        setActivityLoading(false);
-        return;
-      }
-
-      try {
-        const idToken = await currentUser.getIdToken();
-        const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
-        const fullUrl = serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
-
-        const response = await fetch(
-          `${fullUrl}/api/users/${currentUser.uid}/activity?days=${CONTRIBUTION_DAYS}`,
-          {
-            headers: {
-              Authorization: `Bearer ${idToken}`,
-            },
-          }
-        );
-
-        if (response.ok) {
-          const data = await response.json();
-          setActivityData(data.activity || []);
-          setMaxDailyCount(data.maxCount || 0);
-        }
-      } catch (error) {
-        console.error("Failed to fetch dashboard data:", error);
-      } finally {
-        setActivityLoading(false);
-      }
-    };
-
-    fetchActivity();
-  }, [currentUser]);
-
-  useEffect(() => {
-    const fetchRatingTrend = async () => {
-      if (!currentUser) return;
-
-      try {
-        const idToken = await currentUser.getIdToken();
-        const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
-        const fullUrl = serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
-
-        const response = await fetch(
-          `${fullUrl}/api/users/${currentUser.uid}/rating-trend?modeSeconds=${selectedMode}&limit=120`,
-          {
-            headers: {
-              Authorization: `Bearer ${idToken}`,
-            },
-          }
-        );
-
-        if (response.ok) {
-          const data = await response.json();
-          setRatingTrend(data.points || []);
-        } else {
-          setRatingTrend([]);
-        }
-      } catch (error) {
-        console.error("Failed to fetch rating trend:", error);
-        setRatingTrend([]);
-      }
-    };
-
-    fetchRatingTrend();
-  }, [currentUser, selectedMode]);
+  const loading = statsLoading || activityQuery.isPending || ratingTrendQuery.isPending;
 
   const now = new Date();
   const currentHour = now.getHours();

@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { motion, useReducedMotion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -6,35 +7,26 @@ import { StarIcon } from "@radix-ui/react-icons";
 import { TbAward } from "react-icons/tb";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { getTierByRating } from "@/lib/player-meta";
+import { apiFetch } from "@/lib/api-client";
+import { leaderboardKeys } from "@/lib/query-keys";
 
 const Leaderboard = () => {
-  const [leaderboard, setLeaderboard] = useState([]);
-  const [loading, setLoading] = useState(true);
   const reduceMotion = useReducedMotion();
 
-  useEffect(() => {
-    const fetchLeaderboard = async () => {
-      try {
-        const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
-        const fullUrl = serverUrl.startsWith("http")
-          ? serverUrl
-          : `http://${serverUrl}`;
+  const leaderboardQuery = useQuery({
+    queryKey: leaderboardKeys.top(),
+    queryFn: () =>
+      apiFetch("/api/users/leaderboard/top").then(
+        ({ data }) => data.leaderboard || []
+      ),
+    staleTime: 5 * 60 * 1000,
+  });
 
-        const response = await fetch(`${fullUrl}/api/users/leaderboard/top`);
-
-        if (response.ok) {
-          const data = await response.json();
-          setLeaderboard(data.leaderboard);
-        }
-      } catch (error) {
-        console.error("Failed to fetch leaderboard:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchLeaderboard();
-  }, []);
+  const leaderboard = useMemo(
+    () => leaderboardQuery.data ?? [],
+    [leaderboardQuery.data]
+  );
+  const loading = leaderboardQuery.isPending;
 
   const getRankIcon = (rank) => {
     switch (rank) {

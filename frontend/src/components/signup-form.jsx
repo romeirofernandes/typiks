@@ -17,6 +17,7 @@ import { ViewIcon, ViewOffIcon } from "hugeicons-react";
 import GoogleLogo from "@/components/icons/GoogleLogo";
 import { getRandomDefaultAvatarId } from "@/lib/player-meta";
 import GuestSignInButton from "@/components/auth/GuestSignInButton";
+import { useProvisionUser } from "@/lib/users-api";
 
 export function SignUpForm({ className, ...props }) {
   const navigate = useNavigate();
@@ -27,34 +28,7 @@ export function SignUpForm({ className, ...props }) {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-
-  const createUserInDB = async (user, username) => {
-    try {
-      const idToken = await user.getIdToken();
-      const response = await fetch(
-        `${
-          import.meta.env.VITE_SERVER_URL || "http://127.0.0.1:8787"
-        }/api/users`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${idToken}`,
-          },
-          body: JSON.stringify({ username, avatarId: getRandomDefaultAvatarId() }),
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error("Failed to create user in DB:", error);
-      throw error;
-    }
-  };
+  const provisionUser = useProvisionUser();
 
   const handleEmailSignUp = async (e) => {
     e.preventDefault();
@@ -70,7 +44,10 @@ export function SignUpForm({ className, ...props }) {
         email,
         password
       );
-      await createUserInDB(userCredential.user, username);
+      await provisionUser.mutateAsync({
+        user: userCredential.user,
+        body: { username, avatarId: getRandomDefaultAvatarId() },
+      });
       navigate("/dashboard");
     } catch (error) {
       console.error("Sign up error:", error);
@@ -88,7 +65,10 @@ export function SignUpForm({ className, ...props }) {
       const displayName =
         result.user.displayName || result.user.email.split("@")[0];
 
-      await createUserInDB(result.user, displayName);
+      await provisionUser.mutateAsync({
+        user: result.user,
+        body: { username: displayName, avatarId: getRandomDefaultAvatarId() },
+      });
       navigate("/dashboard");
     } catch (error) {
       alert(`Google sign-up failed: ${error.message}`);

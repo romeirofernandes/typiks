@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useStats } from "@/hooks/useStats";
 
@@ -26,6 +27,8 @@ import {
   DashboardSquare01Icon
 } from "hugeicons-react";
 import { Bot, DoorOpen, Users, Gamepad2 } from "lucide-react";
+import { apiFetch } from "@/lib/api-client";
+import { meKeys } from "@/lib/query-keys";
 
 function SidebarNavButton({
   icon,
@@ -98,15 +101,32 @@ export default function AppShell() {
   const [isAvatarPreviewOpen, setIsAvatarPreviewOpen] = useState(false);
   const [statsUsername, setStatsUsername] = useState(null);
   const [statsAvatarId, setStatsAvatarId] = useState("avatar1");
-  const [notificationCounts, setNotificationCounts] = useState({
-    pendingFriendRequests: 0,
-    pendingRoomInvites: 0,
-    total: 0,
-  });
   const presenceSocketRef = useRef(null);
   const presencePingTimerRef = useRef(null);
   const presenceReconnectTimerRef = useRef(null);
   const presenceSubscribersRef = useRef(new Set());
+
+  const queryClient = useQueryClient();
+
+  const notificationsQuery = useQuery({
+    queryKey: meKeys.notifications(),
+    queryFn: () =>
+      apiFetch(currentUser, "/api/users/me/notifications").then(({ data }) => ({
+        pendingFriendRequests: Number(data?.pendingFriendRequests || 0),
+        pendingRoomInvites: Number(data?.pendingRoomInvites || 0),
+        total: Number(data?.total || 0),
+      })),
+    enabled: Boolean(currentUser),
+    staleTime: 30 * 1000,
+    refetchInterval: 25000,
+    refetchOnWindowFocus: false,
+  });
+
+  const notificationCounts = notificationsQuery.data ?? {
+    pendingFriendRequests: 0,
+    pendingRoomInvites: 0,
+    total: 0,
+  };
 
   const { stats: sidebarStats } = useStats();
 
@@ -131,7 +151,6 @@ export default function AppShell() {
     if (!currentUser) return;
 
     let isMounted = true;
-    let notificationTimerId = null;
 
     const clearPresenceTimers = () => {
       if (presencePingTimerRef.current) {
@@ -263,7 +282,7 @@ export default function AppShell() {
             }
 
             if (payload.type === "NOTIFICATION_POKE") {
-              void syncPresenceAndNotifications();
+              syncNotifications();
             }
           } catch {
             // no-op
@@ -281,48 +300,20 @@ export default function AppShell() {
       });
     };
 
-    const syncPresenceAndNotifications = async () => {
-      try {
-        const idToken = await currentUser.getIdToken();
-        const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
-        const fullUrl = serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
-
-        const notificationRes = await fetch(`${fullUrl}/api/users/me/notifications`, {
-          headers: {
-            Authorization: `Bearer ${idToken}`,
-          },
-        });
-
-        if (!notificationRes.ok || !isMounted) {
-          return;
-        }
-
-        const payload = await notificationRes.json();
-        if (!isMounted) return;
-
-        setNotificationCounts({
-          pendingFriendRequests: Number(payload?.pendingFriendRequests || 0),
-          pendingRoomInvites: Number(payload?.pendingRoomInvites || 0),
-          total: Number(payload?.total || 0),
-        });
-      } catch (error) {
-        console.error("Failed to sync presence/notifications:", error);
-      }
+    const syncNotifications = () => {
+      if (!isMounted) return;
+      queryClient.invalidateQueries({ queryKey: meKeys.notifications() });
     };
 
     void connectPresenceSocket();
     document.addEventListener("visibilitychange", handleVisibility);
     window.addEventListener("typiks:presence-subscribe", handlePresenceSubscribeEvent);
-    syncPresenceAndNotifications();
-    notificationTimerId = window.setInterval(syncPresenceAndNotifications, 25000);
+    syncNotifications();
 
     return () => {
       isMounted = false;
       document.removeEventListener("visibilitychange", handleVisibility);
       window.removeEventListener("typiks:presence-subscribe", handlePresenceSubscribeEvent);
-      if (notificationTimerId) {
-        window.clearInterval(notificationTimerId);
-      }
       clearPresenceTimers();
       if (presenceSocketRef.current) {
         try {
@@ -333,7 +324,7 @@ export default function AppShell() {
         presenceSocketRef.current = null;
       }
     };
-  }, [currentUser]);
+  }, [currentUser, queryClient]);
 
   const username =
     statsUsername ||
