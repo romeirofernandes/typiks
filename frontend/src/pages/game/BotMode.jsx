@@ -299,13 +299,9 @@ export default function BotMode() {
         className="flex items-center justify-between border-b border-border/50 pb-4"
       >
         <div>
-          <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
-            Bot Match
-          </p>
-          <h2 className="font-sans text-xl font-semibold tracking-tight">Practice Arena</h2>
-          <p className="mt-1 font-mono text-xs uppercase tracking-[0.12em] text-muted-foreground">
-            {modeSeconds}s mode
-          </p>
+          <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Bot Match</p>
+          <h2 className="mt-2 text-2xl font-semibold sm:text-3xl">Practice Arena</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{modeSeconds}s mode</p>
         </div>
 
         {gameState === "playing" ? (

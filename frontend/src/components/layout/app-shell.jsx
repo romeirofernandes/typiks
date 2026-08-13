@@ -5,6 +5,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useStats } from "@/hooks/useStats";
 
 import BackgroundGrid from "@/components/landing/BackgroundGrid";
+import { SharedLayoutBg } from "@/components/motion/shared-layout-bg";
 import { ThemeToggleButton } from "@/components/theme-toggle-button";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,6 +40,7 @@ function SidebarNavButton({
   badgeCount = 0,
   avatarId = null,
   muted = false,
+  highlight = false,
 }) {
   const Icon = icon;
 
@@ -46,14 +48,15 @@ function SidebarNavButton({
     <div className={cn("group relative flex", !expanded && "justify-center")}>
       <Button
         type="button"
-        variant={active ? "secondary" : "ghost"}
+        variant="ghost"
         onClick={onClick}
         aria-label={label}
         className={cn(
           "h-11 border border-transparent transition-colors",
           expanded ? "w-full justify-start px-3" : "size-11 justify-center",
           !active && "hover:border-border/70",
-          muted && "pointer-events-none opacity-55 saturate-0"
+          muted && "pointer-events-none opacity-55 saturate-0",
+          highlight && !muted && "bg-primary/40 text-foreground hover:bg-primary/50 dark:bg-primary/30 dark:hover:bg-primary/40"
         )}
       >
         {avatarId ? (
@@ -398,6 +401,11 @@ export default function AppShell() {
     [location.pathname, navigate, notificationCounts.pendingFriendRequests, notificationCounts.pendingRoomInvites]
   );
 
+  const activeNavKey = useMemo(
+    () => navItems.find((item) => item.active)?.key ?? "",
+    [navItems]
+  );
+
   const handleProfile = () => {
     navigate("/profile");
   };
@@ -442,18 +450,26 @@ export default function AppShell() {
                   </Button>
                 </div>
 
-                <nav className="flex flex-col gap-2 px-2" aria-label="Sidebar actions">
-                  {navItems.map((item) => (
-                    <SidebarNavButton
-                      key={item.key}
-                      icon={item.icon}
-                      label={item.label}
-                      active={item.active}
-                      expanded={expanded}
-                      onClick={item.onClick}
-                      badgeCount={item.badgeCount}
-                    />
-                  ))}
+                <nav className="flex flex-col px-2" aria-label="Sidebar actions">
+                  <SharedLayoutBg
+                    activeKey={activeNavKey}
+                    inset={0}
+                    className="flex flex-col gap-2"
+                    pillClassName="rounded-md"
+                    pillContainerClassName="bg-secondary"
+                  >
+                    {navItems.map((item) => (
+                      <SidebarNavButton
+                        key={item.key}
+                        icon={item.icon}
+                        label={item.label}
+                        active={item.active}
+                        expanded={expanded}
+                        onClick={item.onClick}
+                        badgeCount={item.badgeCount}
+                      />
+                    ))}
+                  </SharedLayoutBg>
                 </nav>
               </div>
 
@@ -480,15 +496,12 @@ export default function AppShell() {
                 {expanded ? (
                   <Button
                     type="button"
-                    variant={
-                      isAvatarPreviewOpen
-                        ? "ghost"
-                        : location.pathname === "/profile"
-                        ? "secondary"
-                        : "ghost"
-                    }
+                    variant="ghost"
                     onClick={handleProfile}
-                    className="h-11 w-full justify-start px-2.5"
+                    className={cn(
+                      "h-11 w-full justify-start px-2.5",
+                      !isAvatarPreviewOpen && "bg-primary/40 text-foreground hover:bg-primary/50 dark:bg-primary/30 dark:hover:bg-primary/40"
+                    )}
                   >
                     <UserAvatar avatarId={statsAvatarId} username={username} size="md" plain />
                       <span className="ml-1 truncate text-sm font-medium">{username}</span>
@@ -501,6 +514,7 @@ export default function AppShell() {
                     expanded={expanded}
                     onClick={handleProfile}
                     muted={isAvatarPreviewOpen}
+                    highlight={!isAvatarPreviewOpen}
                   />
                 )}
 
@@ -543,21 +557,29 @@ export default function AppShell() {
                     </SheetHeader>
 
                     <div className="flex h-full flex-col justify-between p-3">
-                      <nav className="flex flex-col gap-2" aria-label="Mobile sidebar actions">
-                        {navItems.map((item) => (
-                          <SidebarNavButton
-                            key={item.key}
-                            icon={item.icon}
-                            label={item.label}
-                            active={item.active}
-                            expanded
-                            onClick={() => {
-                              item.onClick();
-                              setMobileOpen(false);
-                            }}
-                            badgeCount={item.badgeCount}
-                          />
-                        ))}
+                      <nav className="flex flex-col" aria-label="Mobile sidebar actions">
+                        <SharedLayoutBg
+                          activeKey={activeNavKey}
+                          inset={0}
+                          className="flex flex-col gap-2"
+                          pillClassName="rounded-md"
+                          pillContainerClassName="bg-secondary"
+                        >
+                          {navItems.map((item) => (
+                            <SidebarNavButton
+                              key={item.key}
+                              icon={item.icon}
+                              label={item.label}
+                              active={item.active}
+                              expanded
+                              onClick={() => {
+                                item.onClick();
+                                setMobileOpen(false);
+                              }}
+                              badgeCount={item.badgeCount}
+                            />
+                          ))}
+                        </SharedLayoutBg>
                       </nav>
 
                       <div className="flex flex-col gap-2 border-t border-border/80 pt-3">

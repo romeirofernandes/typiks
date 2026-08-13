@@ -39,7 +39,6 @@ import {
   SUBMIT_KEY_OPTIONS,
 } from "@/lib/player-preferences";
 import { COUNTRIES } from "@/lib/countries";
-import { ViewIcon } from "hugeicons-react";
 import { useEffect, useState } from "react";
 import {
   FEMALE_AVATAR_IDS,
@@ -381,18 +380,16 @@ const Profile = () => {
         initial={{ opacity: 0, y: reduceMotion ? 0 : -10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35 }}
-        className="w-full space-y-8"
+        className="w-full space-y-6"
       >
         <motion.header
           initial={{ opacity: 0, y: reduceMotion ? 0 : 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.25, delay: 0.06 }}
-          className="space-y-2 border-b border-border/60 pb-5"
+          className="border-b border-border/70 pb-4"
         >
-          <h1 className="flex items-center gap-2 font-sans text-2xl font-semibold tracking-tight">
-            <ViewIcon size={20} />
-            Profile
-          </h1>
+          <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Account</p>
+          <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">Profile</h1>
         </motion.header>
 
         <motion.section
@@ -401,11 +398,11 @@ const Profile = () => {
           transition={{ duration: 0.3, delay: 0.12 }}
           className="grid gap-4 sm:grid-cols-3"
         >
-          <div className="rounded-lg border border-border/70 bg-background/40 p-4">
+          <div className="rounded-lg border border-border/70 bg-background/40 p-3">
             <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
               Username
             </p>
-            <div className="mt-2 flex items-center justify-between gap-3">
+            <div className="mt-1 flex items-center justify-between gap-3">
               <p className="font-sans text-lg font-semibold">{username}</p>
               <Button
                 type="button"
@@ -420,16 +417,16 @@ const Profile = () => {
               </Button>
             </div>
           </div>
-          <div className="rounded-lg border border-border/70 bg-background/40 p-4">
+          <div className="rounded-lg border border-border/70 bg-background/40 p-3">
             <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
               Avatar
             </p>
-            <div className="mt-2 flex items-center justify-between gap-3">
+            <div className="mt-1 flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <UserAvatar
                   avatarId={profileStats.avatarId}
                   username={username}
-                  size="lg"
+                  size="md"
                   expandOnClick
                 />
                 <p className="text-sm text-muted-foreground">{profileStats.avatarId}</p>
@@ -443,11 +440,11 @@ const Profile = () => {
               </Button>
             </div>
           </div>
-          <div className="rounded-lg border border-border/70 bg-background/40 p-4">
+          <div className="rounded-lg border border-border/70 bg-background/40 p-3">
             <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
               Email
             </p>
-            <div className="mt-2 flex items-center justify-between gap-3">
+            <div className="mt-1 flex items-center justify-between gap-3">
               <p className="break-all text-sm text-foreground">
                 {currentUser?.email || "No email available"}
               </p>

@@ -10,6 +10,7 @@ export function SharedLayoutBg({
   pillClassName,
   pillContainerClassName,
   inset = 20,
+  activeKey = null,
 }) {
   const containerRef = useRef(null);
   const activeRef = useRef(null);
@@ -57,8 +58,10 @@ export function SharedLayoutBg({
   }, [measure]);
 
   const handleMouseLeave = (event) => {
-    activeRef.current = null;
-    setBounds(null);
+    if (activeKey == null) {
+      activeRef.current = null;
+      setBounds(null);
+    }
     onMouseLeave?.(event);
   };
 
@@ -90,14 +93,26 @@ export function SharedLayoutBg({
       {Children.map(children, (child, index) => {
         if (child === null || child === undefined) return child;
         const key = child.key ?? index;
+        const isActive = activeKey != null && key === activeKey;
         return (
           <div
             key={key}
+            ref={
+              isActive
+                ? (node) => {
+                    activeRef.current = node;
+                  }
+                : undefined
+            }
             className="relative"
-            onMouseEnter={(event) => {
-              activeRef.current = event.currentTarget;
-              measure();
-            }}
+            onMouseEnter={
+              activeKey == null
+                ? (event) => {
+                    activeRef.current = event.currentTarget;
+                    measure();
+                  }
+                : undefined
+            }
           >
             {child}
           </div>
