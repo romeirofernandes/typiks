@@ -98,7 +98,7 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="flex min-h-full min-w-0 flex-col gap-4">
+      <div className="flex min-h-full min-w-0 flex-col gap-4 xl:h-full">
         <header className="border-b border-border/70 pb-4">
           <Skeleton className="h-3 w-24" />
           <Skeleton className="mt-2 h-8 w-64" />
@@ -112,34 +112,34 @@ export default function Dashboard() {
 
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {Array.from({ length: 4 }).map((_, idx) => (
-            <div key={idx} className="rounded-md border border-border/70 bg-card/30 p-4 sm:p-5">
+            <div key={idx} className="rounded-md border border-border/70 bg-card/30 p-3">
               <Skeleton className="h-3 w-24" />
-              <Skeleton className="mt-2 h-8 w-20" />
+              <Skeleton className="mt-2 h-7 w-20" />
             </div>
           ))}
         </section>
 
         <section className="grid gap-4 xl:grid-cols-[1.05fr_1.95fr]">
-          <div className="rounded-md border border-border/70 bg-card/30 p-4">
+          <div className="rounded-md border border-border/70 bg-card/30 p-3">
             <Skeleton className="h-3 w-28" />
-            <div className="mt-3 space-y-2">
+            <div className="mt-2 space-y-2">
               {Array.from({ length: 4 }).map((_, idx) => (
-                <Skeleton key={idx} className="h-12 w-full" />
+                <Skeleton key={idx} className="h-9 w-full" />
               ))}
             </div>
           </div>
           <div className="rounded-md border border-border/70 bg-card/30 p-4">
             <Skeleton className="h-4 w-28" />
-            <Skeleton className="mt-4 h-[240px] w-full" />
+            <Skeleton className="mt-4 h-[110px] w-full" />
           </div>
         </section>
 
         <section className="flex flex-1 flex-col rounded-md border border-border/70 bg-card/30 p-4">
-          <div className="mb-3 flex items-center justify-between">
+          <div className="mb-2 flex items-center justify-between">
             <Skeleton className="h-3 w-28" />
             <Skeleton className="h-7 w-20" />
           </div>
-          <Skeleton className="h-[260px] w-full" />
+          <Skeleton className="h-[130px] w-full" />
         </section>
       </div>
     );

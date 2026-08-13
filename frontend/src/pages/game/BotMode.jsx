@@ -237,7 +237,10 @@ export default function BotMode() {
 
   const handleInputChange = (event) => {
     const maxLength = currentWord.length;
-    const nextValue = String(event.target.value || "").replace(/\s/g, "").slice(0, maxLength);
+    const nextValue = String(event.target.value || "")
+      .replace(/\s/g, "")
+      .slice(0, maxLength)
+      .toLowerCase();
     setInput(nextValue);
 
     if (isAutoAdvanceEnabled) {
@@ -505,7 +508,7 @@ export default function BotMode() {
                   autoFocus={!isCoarsePointer}
                   autoCapitalize="none"
                   autoCorrect="off"
-                  autoComplete="off"
+                  autoComplete="one-time-code"
                   spellCheck={false}
                   inputMode="text"
                   enterKeyHint="go"

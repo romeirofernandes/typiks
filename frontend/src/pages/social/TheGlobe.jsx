@@ -107,6 +107,8 @@ export function GlobeToMapTransform() {
     lastY: 0,
   });
 
+  const touchRef = useRef({ pinchStartDist: 0, pinchStartZoom: 1 });
+
   const width = 800;
   const height = 500;
 
@@ -261,8 +263,6 @@ export function GlobeToMapTransform() {
 
     if (!dragRef.current.active) return;
 
-    const dx = x - dragRef.current.lastX;
-    const dy = y - dragRef.current.lastY;
     const totalDx = x - dragRef.current.startX;
     const totalDy = y - dragRef.current.startY;
 
@@ -270,24 +270,7 @@ export function GlobeToMapTransform() {
       dragRef.current.moved = true;
     }
 
-    const t = progress[0] / 100;
-
-    if (t < 0.5) {
-      const sensitivity = 0.5;
-      setRotation((prev) => [
-        prev[0] + dx * sensitivity,
-        Math.max(-90, Math.min(90, prev[1] - dy * sensitivity)),
-      ]);
-    } else {
-      const sensitivityMap = 0.25;
-      setRotation((prev) => [
-        prev[0] + dx * sensitivityMap,
-        Math.max(-90, Math.min(90, prev[1] - dy * sensitivityMap)),
-      ]);
-    }
-
-    dragRef.current.lastX = x;
-    dragRef.current.lastY = y;
+    rotateByDrag(x, y);
   };
 
   const handleMouseUp = (event) => {
@@ -311,6 +294,92 @@ export function GlobeToMapTransform() {
   const handleWheel = (event) => {
     event.preventDefault();
     setZoom((prev) => clamp(prev + (event.deltaY > 0 ? -0.08 : 0.08), 0.6, 2.5));
+  };
+
+  const getTouchPoint = (touch) => {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) return null;
+    return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
+  };
+
+  const rotateByDrag = (x, y) => {
+    const dx = x - dragRef.current.lastX;
+    const dy = y - dragRef.current.lastY;
+    const totalDx = x - dragRef.current.startX;
+    const totalDy = y - dragRef.current.startY;
+
+    if (Math.hypot(totalDx, totalDy) > 4) {
+      dragRef.current.moved = true;
+    }
+
+    const t = progress[0] / 100;
+    if (t < 0.5) {
+      const sensitivity = 0.5;
+      setRotation((prev) => [
+        prev[0] + dx * sensitivity,
+        Math.max(-90, Math.min(90, prev[1] - dy * sensitivity)),
+      ]);
+    } else {
+      const sensitivityMap = 0.25;
+      setRotation((prev) => [
+        prev[0] + dx * sensitivityMap,
+        Math.max(-90, Math.min(90, prev[1] - dy * sensitivityMap)),
+      ]);
+    }
+
+    dragRef.current.lastX = x;
+    dragRef.current.lastY = y;
+  };
+
+  const handleTouchStart = (event) => {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    if (event.touches.length === 1) {
+      const point1 = getTouchPoint(event.touches[0]);
+      if (!point1) return;
+      dragRef.current.active = true;
+      dragRef.current.moved = false;
+      dragRef.current.startX = point1.x;
+      dragRef.current.startY = point1.y;
+      dragRef.current.lastX = point1.x;
+      dragRef.current.lastY = point1.y;
+      touchRef.current.pinchStartDist = 0;
+    } else if (event.touches.length === 2) {
+      dragRef.current.active = false;
+      const a = getTouchPoint(event.touches[0]);
+      const b = getTouchPoint(event.touches[1]);
+      if (!a || !b) return;
+      touchRef.current.pinchStartDist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      touchRef.current.pinchStartZoom = zoom;
+    }
+  };
+
+  const handleTouchMove = (event) => {
+    if (event.touches.length === 2) {
+      const a = getTouchPoint(event.touches[0]);
+      const b = getTouchPoint(event.touches[1]);
+      if (!a || !b || !touchRef.current.pinchStartDist) return;
+      const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      const next = clamp(
+        touchRef.current.pinchStartZoom * (dist / touchRef.current.pinchStartDist),
+        0.6,
+        2.5
+      );
+      setZoom(next);
+      return;
+    }
+
+    if (event.touches.length === 1 && dragRef.current.active) {
+      const point = getTouchPoint(event.touches[0]);
+      if (!point) return;
+      rotateByDrag(point.x, point.y);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    dragRef.current.active = false;
+    touchRef.current.pinchStartDist = 0;
   };
 
   useEffect(() => {
@@ -467,7 +536,7 @@ export function GlobeToMapTransform() {
       .attr("stroke-width", 1)
       .attr("opacity", 1);
 
-    const fitScale = Math.max(
+    const fitScale = Math.min(
       width > 0 ? svgRef.current.clientWidth / width : 1,
       height > 0 ? svgRef.current.clientHeight / height : 1
     );
@@ -562,8 +631,8 @@ export function GlobeToMapTransform() {
       <svg
         ref={svgRef}
         viewBox={`0 0 ${width} ${height}`}
-        className="h-full w-full cursor-grab bg-transparent active:cursor-grabbing"
-        preserveAspectRatio="xMidYMid slice"
+        className="h-full w-full touch-none cursor-grab bg-transparent active:cursor-grabbing"
+        preserveAspectRatio="xMidYMid meet"
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
@@ -572,6 +641,10 @@ export function GlobeToMapTransform() {
           setHoveredMarkerId(null);
         }}
         onWheel={handleWheel}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
       />
 
       <div className="pointer-events-none absolute inset-0 z-10">

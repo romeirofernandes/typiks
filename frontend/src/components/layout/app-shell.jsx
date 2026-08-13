@@ -3,6 +3,7 @@ import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useStats } from "@/hooks/useStats";
+import { useVisualViewportHeight } from "@/hooks/useVisualViewportHeight";
 
 import BackgroundGrid from "@/components/landing/BackgroundGrid";
 import { SharedLayoutBg } from "@/components/motion/shared-layout-bg";
@@ -98,6 +99,7 @@ export default function AppShell() {
   const { state: { currentUser } } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const visualViewportHeight = useVisualViewportHeight();
 
   const [expanded, setExpanded] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -422,7 +424,7 @@ export default function AppShell() {
   return (
     <BackgroundGrid>
       <div className="min-h-svh text-foreground font-mono antialiased">
-        <div className="h-svh w-full p-3">
+        <div className="h-svh w-full p-3" style={{ height: visualViewportHeight }}>
           <div className="flex h-full w-full flex-col gap-3 lg:flex-row">
             <aside
               className={cn(

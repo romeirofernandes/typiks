@@ -853,7 +853,7 @@ export default function CreateRoom() {
 
     const rawValue = String(event.target.value || "");
     const maxLength = currentWord.length;
-    const nextValue = rawValue.replace(/\s/g, "").slice(0, maxLength);
+    const nextValue = rawValue.replace(/\s/g, "").slice(0, maxLength).toLowerCase();
     if (nextValue === gameInput) return;
     setGameInput(nextValue);
 
@@ -1251,7 +1251,7 @@ export default function CreateRoom() {
                 autoFocus={!isCoarsePointer}
                 autoCapitalize="none"
                 autoCorrect="off"
-                autoComplete="off"
+                autoComplete="one-time-code"
                 spellCheck={false}
                 inputMode="text"
                 enterKeyHint="go"
@@ -2247,7 +2247,7 @@ export default function CreateRoom() {
                       autoFocus={!isCoarsePointer}
                       autoCapitalize="none"
                       autoCorrect="off"
-                      autoComplete="off"
+                      autoComplete="one-time-code"
                       spellCheck={false}
                       inputMode="text"
                       enterKeyHint="go"

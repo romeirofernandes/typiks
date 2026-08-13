@@ -720,7 +720,10 @@ const Game = () => {
 
   const handleInputChange = (e) => {
     const maxLength = currentWord.length;
-    const nextValue = String(e.target.value || "").replace(/\s/g, "").slice(0, maxLength);
+    const nextValue = String(e.target.value || "")
+      .replace(/\s/g, "")
+      .slice(0, maxLength)
+      .toLowerCase();
     setInput(nextValue);
 
     if (isAutoAdvanceEnabled) {
@@ -1082,7 +1085,7 @@ const Game = () => {
                     autoFocus={!isCoarsePointer}
                     autoCapitalize="none"
                     autoCorrect="off"
-                    autoComplete="off"
+                    autoComplete="one-time-code"
                     spellCheck={false}
                     inputMode="text"
                     enterKeyHint="go"
