@@ -1,6 +1,6 @@
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
-import { motion, useReducedMotion } from "framer-motion";
+import { m, useReducedMotion } from "framer-motion";
 import { useFriends } from "@/hooks/useFriends";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,123 +20,80 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Delete02Icon, UserIcon, StarIcon, GameController01Icon } from "hugeicons-react";
 
-export default function Friends() {
-  const { state: { currentUser } } = useAuth();
-  const navigate = useNavigate();
-  const reduceMotion = useReducedMotion();
-
-  const {
-    loading,
-    friends,
-    incomingRequests,
-    outgoingRequests,
-    roomInvites,
-    username,
-    setUsername,
-    searchResults,
-    searchingUsers,
-    feedback,
-    submitting,
-    debouncedSendFriendRequest,
-    sendFriendRequest,
-    respondToRoomInvite,
-    respondToRequest,
-    removeFriend,
-  } = useFriends(currentUser, {
-    onAcceptInvite: (roomCode) => {
-      navigate("/create-room", {
-        state: {
-          joinRoomCode: roomCode,
-          fromInvite: true,
-        },
-      });
-    },
-  });
-
-  if (loading) {
-    return (
-      <div className="flex h-full flex-col gap-5">
-        <div className="border-b border-border/70 pb-5">
-          <Skeleton className="h-3 w-16" />
-          <Skeleton className="mt-2 h-8 w-56" />
-          <Skeleton className="mt-1 h-4 w-72" />
-        </div>
-        <Skeleton className="h-44 w-full" />
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Skeleton className="h-60 w-full" />
-          <Skeleton className="h-60 w-full" />
-        </div>
-        <Skeleton className="h-80 w-full" />
-      </div>
-    );
-  }
-
+function FriendsHeader({ reduceMotion }) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: reduceMotion ? 0 : -10 }}
+    <m.div
+      initial={{ opacity: 0, y: reduceMotion ? 0 : 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35 }}
-      className="flex h-full flex-col gap-5"
+      transition={{ duration: 0.25, delay: 0.06 }}
+      className="border-b border-border/70 pb-5"
     >
-      <motion.div
-        initial={{ opacity: 0, y: reduceMotion ? 0 : 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.25, delay: 0.06 }}
-        className="border-b border-border/70 pb-5"
-      >
-        <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Friends</p>
-        <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">Friends & Requests</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Add friends by username and manage incoming requests.
-        </p>
-      </motion.div>
+      <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Friends</p>
+      <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">Friends & Requests</h1>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Add friends by username and manage incoming requests.
+      </p>
+    </m.div>
+  );
+}
 
-      <motion.div
-        initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3, delay: 0.12 }}
-      >
-        <Card>
-          <CardHeader>
-            <CardTitle>Add Friend</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <Input
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    debouncedSendFriendRequest();
-                  }
-                }}
-                placeholder="Search username"
-                maxLength={24}
-              />
-              <Button onClick={debouncedSendFriendRequest} disabled={submitting || !username.trim()}>
-                {submitting ? "Sending..." : "Send Request"}
-              </Button>
-            </div>
+function AddFriendCard({
+  reduceMotion,
+  username,
+  setUsername,
+  debouncedSendFriendRequest,
+  submitting,
+  searchingUsers,
+  searchResults,
+  sendFriendRequest,
+}) {
+  return (
+    <m.div
+      initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, delay: 0.12 }}
+    >
+      <Card>
+        <CardHeader>
+          <CardTitle>Add Friend</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <Input
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  debouncedSendFriendRequest();
+                }
+              }}
+              placeholder="Search username"
+              maxLength={24}
+            />
+            <Button onClick={debouncedSendFriendRequest} disabled={submitting || !username.trim()}>
+              {submitting ? "Sending..." : "Send Request"}
+            </Button>
+          </div>
 
-            {username.trim().length >= 2 ? (
-              <div className="space-y-2 rounded-md border border-border/70 bg-card/30 p-3">
-                {searchingUsers ? (
-                  <p className="text-sm text-muted-foreground">Searching users...</p>
-                ) : searchResults.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No matching users found.</p>
-                ) : (
-                  searchResults.map((user) => {
-                    const actionLabel = user.isFriend
-                      ? "Friends"
-                      : user.hasOutgoingRequest
-                        ? "Pending"
-                        : user.hasIncomingRequest
-                          ? "Respond"
-                          : "Add";
+          {username.trim().length >= 2 ? (
+            <div className="space-y-2 rounded-md border border-border/70 bg-card/30 p-3">
+              {searchingUsers ? (
+                <p className="text-sm text-muted-foreground">Searching users...</p>
+              ) : searchResults.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No matching users found.</p>
+              ) : (
+                searchResults.map((user) => {
+                  const actionLabel = user.isFriend
+                    ? "Friends"
+                    : user.hasOutgoingRequest
+                      ? "Pending"
+                      : user.hasIncomingRequest
+                        ? "Respond"
+                        : "Add";
 
-                    const actionDisabled =
-                      submitting || user.isFriend || user.hasOutgoingRequest || user.hasIncomingRequest;
+                  const actionDisabled =
+                    submitting || user.isFriend || user.hasOutgoingRequest || user.hasIncomingRequest;
 
                   return (
                     <div
@@ -166,24 +123,35 @@ export default function Friends() {
           ) : null}
         </CardContent>
       </Card>
-      </motion.div>
+    </m.div>
+  );
+}
 
-      <motion.div
-        initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3, delay: 0.18 }}
-      >
-        {feedback ? (
-          <p className="rounded-md border border-border/70 bg-card/40 px-3 py-2 text-sm text-muted-foreground">
-            {feedback}
-          </p>
-        ) : null}
+function NotificationsCard({
+  reduceMotion,
+  feedback,
+  incomingRequests,
+  roomInvites,
+  respondToRequest,
+  respondToRoomInvite,
+}) {
+  return (
+    <m.div
+      initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, delay: 0.18 }}
+    >
+      {feedback ? (
+        <p className="rounded-md border border-border/70 bg-card/40 px-3 py-2 text-sm text-muted-foreground">
+          {feedback}
+        </p>
+      ) : null}
 
-        {(incomingRequests.length > 0 || roomInvites.length > 0) ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>Notifications</CardTitle>
-            </CardHeader>
+      {(incomingRequests.length > 0 || roomInvites.length > 0) ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Notifications</CardTitle>
+          </CardHeader>
           <CardContent className="space-y-3">
             {incomingRequests.map((request) => (
               <div
@@ -229,89 +197,97 @@ export default function Friends() {
           </CardContent>
         </Card>
       ) : null}
-      </motion.div>
+    </m.div>
+  );
+}
 
-      <motion.div
-        initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3, delay: 0.24 }}
-        className="grid gap-4 lg:grid-cols-2"
-      >
-        <Card>
-          <CardHeader>
-            <CardTitle>Incoming Requests ({incomingRequests.length})</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {incomingRequests.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No incoming requests.</p>
-            ) : (
-              incomingRequests.map((request) => (
-                <div
-                  key={request.id}
-                  className="flex flex-col gap-2 rounded-md border border-border/70 bg-card/30 p-3"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="inline-flex items-center gap-2 font-semibold">
-                      <UserAvatar avatarId={request.senderAvatarId} username={request.senderUsername} size="sm" />
-                      <span>{request.senderUsername}</span>
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Rating: {request.senderRating} • {request.senderOnline ? "Online" : "Offline"}
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button size="sm" onClick={() => respondToRequest(request.id, "accept")}>
-                      Accept
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => respondToRequest(request.id, "reject")}
-                    >
-                      Decline
-                    </Button>
-                  </div>
-                </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Outgoing Requests ({outgoingRequests.length})</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {outgoingRequests.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No pending outgoing requests.</p>
-            ) : (
-              outgoingRequests.map((request) => (
-                <div
-                  key={request.id}
-                  className="flex items-center justify-between rounded-md border border-border/70 bg-card/30 p-3"
-                >
-                  <div>
-                    <p className="inline-flex items-center gap-2 font-semibold">
-                      <UserAvatar avatarId={request.receiverAvatarId} username={request.receiverUsername} size="sm" />
-                      <span>{request.receiverUsername}</span>
-                    </p>
-                    <p className="text-xs text-muted-foreground">Waiting for response</p>
-                  </div>
+function RequestsGrid({ reduceMotion, incomingRequests, outgoingRequests, respondToRequest }) {
+  return (
+    <m.div
+      initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, delay: 0.24 }}
+      className="grid gap-4 lg:grid-cols-2"
+    >
+      <Card>
+        <CardHeader>
+          <CardTitle>Incoming Requests ({incomingRequests.length})</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {incomingRequests.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No incoming requests.</p>
+          ) : (
+            incomingRequests.map((request) => (
+              <div
+                key={request.id}
+                className="flex flex-col gap-2 rounded-md border border-border/70 bg-card/30 p-3"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <p className="inline-flex items-center gap-2 font-semibold">
+                    <UserAvatar avatarId={request.senderAvatarId} username={request.senderUsername} size="sm" />
+                    <span>{request.senderUsername}</span>
+                  </p>
                   <p className="text-xs text-muted-foreground">
-                    Rating: {request.receiverRating} • {request.receiverOnline ? "Online" : "Offline"}
+                    Rating: {request.senderRating} • {request.senderOnline ? "Online" : "Offline"}
                   </p>
                 </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
-      </motion.div>
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={() => respondToRequest(request.id, "accept")}>
+                    Accept
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => respondToRequest(request.id, "reject")}
+                  >
+                    Decline
+                  </Button>
+                </div>
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
 
-      <motion.div
-        initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3, delay: 0.3 }}
-      >
+      <Card>
+        <CardHeader>
+          <CardTitle>Outgoing Requests ({outgoingRequests.length})</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {outgoingRequests.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No pending outgoing requests.</p>
+          ) : (
+            outgoingRequests.map((request) => (
+              <div
+                key={request.id}
+                className="flex items-center justify-between rounded-md border border-border/70 bg-card/30 p-3"
+              >
+                <div>
+                  <p className="inline-flex items-center gap-2 font-semibold">
+                    <UserAvatar avatarId={request.receiverAvatarId} username={request.receiverUsername} size="sm" />
+                    <span>{request.receiverUsername}</span>
+                  </p>
+                  <p className="text-xs text-muted-foreground">Waiting for response</p>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Rating: {request.receiverRating} • {request.receiverOnline ? "Online" : "Offline"}
+                </p>
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
+    </m.div>
+  );
+}
+
+function FriendsList({ reduceMotion, friends, removeFriend }) {
+  return (
+    <m.div
+      initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, delay: 0.3 }}
+    >
       <Card className="flex-1">
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center gap-2 font-sans text-lg">
@@ -389,8 +365,94 @@ export default function Friends() {
           )}
         </CardContent>
       </Card>
-      </motion.div>
+    </m.div>
+  );
+}
 
-    </motion.div>
+export default function Friends() {
+  const { state: { currentUser } } = useAuth();
+  const navigate = useNavigate();
+  const reduceMotion = useReducedMotion();
+
+  const {
+    loading,
+    friends,
+    incomingRequests,
+    outgoingRequests,
+    roomInvites,
+    username,
+    setUsername,
+    searchResults,
+    searchingUsers,
+    feedback,
+    submitting,
+    debouncedSendFriendRequest,
+    sendFriendRequest,
+    respondToRoomInvite,
+    respondToRequest,
+    removeFriend,
+  } = useFriends(currentUser, {
+    onAcceptInvite: (roomCode) => {
+      navigate("/create-room", {
+        state: {
+          joinRoomCode: roomCode,
+          fromInvite: true,
+        },
+      });
+    },
+  });
+
+  if (loading) {
+    return (
+      <div className="flex h-full flex-col gap-5">
+        <div className="border-b border-border/70 pb-5">
+          <Skeleton className="h-3 w-16" />
+          <Skeleton className="mt-2 h-8 w-56" />
+          <Skeleton className="mt-1 h-4 w-72" />
+        </div>
+        <Skeleton className="h-44 w-full" />
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Skeleton className="h-60 w-full" />
+          <Skeleton className="h-60 w-full" />
+        </div>
+        <Skeleton className="h-80 w-full" />
+      </div>
+    );
+  }
+
+  return (
+    <m.div
+      initial={{ opacity: 0, y: reduceMotion ? 0 : -10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35 }}
+      className="flex h-full flex-col gap-5"
+    >
+      <FriendsHeader reduceMotion={reduceMotion} />
+      <AddFriendCard
+        reduceMotion={reduceMotion}
+        username={username}
+        setUsername={setUsername}
+        debouncedSendFriendRequest={debouncedSendFriendRequest}
+        submitting={submitting}
+        searchingUsers={searchingUsers}
+        searchResults={searchResults}
+        sendFriendRequest={sendFriendRequest}
+      />
+      <NotificationsCard
+        reduceMotion={reduceMotion}
+        feedback={feedback}
+        incomingRequests={incomingRequests}
+        roomInvites={roomInvites}
+        respondToRequest={respondToRequest}
+        respondToRoomInvite={respondToRoomInvite}
+      />
+      <RequestsGrid
+        reduceMotion={reduceMotion}
+        incomingRequests={incomingRequests}
+        outgoingRequests={outgoingRequests}
+        respondToRequest={respondToRequest}
+      />
+      <FriendsList reduceMotion={reduceMotion} friends={friends} removeFriend={removeFriend} />
+    </m.div>
   );
 }

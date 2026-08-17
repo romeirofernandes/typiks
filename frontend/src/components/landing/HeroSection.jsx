@@ -3,14 +3,15 @@ import { Button } from "@/components/ui/button";
 import { Keyboard } from "@/components/ui/keyboard";
 import { useAuth } from "@/hooks/useAuth";
 
+function scrollToTestimonials(e) {
+  e?.preventDefault?.();
+  const el = document.getElementById("testimonials");
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 export default function HeroSection() {
   const { state: { currentUser } } = useAuth();
-  const scrollToTestimonials = (e) => {
-    e?.preventDefault?.();
-    const el = document.getElementById("testimonials");
-    if (!el) return;
-    el.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
 
   return (
     <section className="min-h-screen flex items-center justify-center pt-32 pb-8 px-4 [font-family:var(--font-sans)] normal-case overflow-hidden">

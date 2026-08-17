@@ -15,7 +15,7 @@ import {
 } from "d3";
 import { feature } from "topojson-client";
 import { useQuery } from "@tanstack/react-query";
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
@@ -78,7 +78,7 @@ function colorFromIndex(index) {
   return { base, alpha };
 }
 
-export function GlobeToMapTransform() {
+function useGlobeTransform() {
   const { state: { currentUser } } = useAuth();
   const svgRef = useRef(null);
 
@@ -158,25 +158,30 @@ export function GlobeToMapTransform() {
   });
 
   const countryMarkers = useMemo(() => {
-    const markers = (countryRatingsQuery.data ?? [])
-      .filter(
-        (item) =>
-          Number.isFinite(item?.lat) &&
-          Number.isFinite(item?.lng) &&
-          typeof item?.country === "string"
-      )
-      .map((item) => ({
-        id: item.country,
-        country: item.country,
-        lat: Number(item.lat),
-        lng: Number(item.lng),
-        avgRating: Number(item.avgRating || 0),
-        avgWinRate: Number.isFinite(Number(item.avgWinRate))
-          ? Number(item.avgWinRate)
-          : null,
-        mostPlayedMode: Number(item.mostPlayedMode || 0) || null,
-        userCount: Number(item.userCount || 0),
-      }));
+    const markers = (countryRatingsQuery.data ?? []).flatMap((item) => {
+      if (
+        !Number.isFinite(item?.lat) ||
+        !Number.isFinite(item?.lng) ||
+        typeof item?.country !== "string"
+      ) {
+        return [];
+      }
+
+      return [
+        {
+          id: item.country,
+          country: item.country,
+          lat: Number(item.lat),
+          lng: Number(item.lng),
+          avgRating: Number(item.avgRating || 0),
+          avgWinRate: Number.isFinite(Number(item.avgWinRate))
+            ? Number(item.avgWinRate)
+            : null,
+          mostPlayedMode: Number(item.mostPlayedMode || 0) || null,
+          userCount: Number(item.userCount || 0),
+        },
+      ];
+    });
 
     const shuffled = [...markers];
     for (let i = shuffled.length - 1; i > 0; i -= 1) {
@@ -289,6 +294,11 @@ export function GlobeToMapTransform() {
     }
 
     dragRef.current.active = false;
+  };
+
+  const handleMouseLeave = () => {
+    dragRef.current.active = false;
+    setHoveredMarkerId(null);
   };
 
   const handleWheel = (event) => {
@@ -545,27 +555,27 @@ export function GlobeToMapTransform() {
     const offsetX = (svgRef.current.clientWidth - renderWidth) / 2;
     const offsetY = (svgRef.current.clientHeight - renderHeight) / 2;
 
-    const projected = countryMarkers
-      .map((marker) => {
-        const point = projection([marker.lng, marker.lat]);
-        if (!point || !Number.isFinite(point[0]) || !Number.isFinite(point[1])) {
-          return null;
-        }
+    const projected = countryMarkers.flatMap((marker) => {
+      const point = projection([marker.lng, marker.lat]);
+      if (!point || !Number.isFinite(point[0]) || !Number.isFinite(point[1])) {
+        return [];
+      }
 
-        const isFrontFacing =
-          t >= 0.55 ||
-          geoDistance([marker.lng, marker.lat], [-rotation[0], -rotation[1]]) <=
-            Math.PI / 2;
+      const isFrontFacing =
+        t >= 0.55 ||
+        geoDistance([marker.lng, marker.lat], [-rotation[0], -rotation[1]]) <=
+          Math.PI / 2;
 
-        if (!isFrontFacing) return null;
+      if (!isFrontFacing) return [];
 
-        return {
+      return [
+        {
           ...marker,
           x: offsetX + point[0] * fitScale,
           y: offsetY + point[1] * fitScale,
-        };
-      })
-      .filter(Boolean);
+        },
+      ];
+    });
 
     setProjectedMarkers(projected);
   }, [
@@ -613,124 +623,241 @@ export function GlobeToMapTransform() {
     setHoveredMarkerId(null);
   };
 
+  const handleZoomIn = () => setZoom((prev) => clamp(prev + 0.12, 0.6, 2.5));
+  const handleZoomOut = () => setZoom((prev) => clamp(prev - 0.12, 0.6, 2.5));
+
+  return {
+    svgRef,
+    width,
+    height,
+    isDark,
+    projectedMarkers,
+    markerColorMap,
+    activeMarker,
+    activeMarkerUserCount,
+    isAnimating,
+    progress,
+    handleMouseDown,
+    handleMouseMove,
+    handleMouseUp,
+    handleMouseLeave,
+    handleWheel,
+    handleTouchStart,
+    handleTouchMove,
+    handleTouchEnd,
+    handleAnimate,
+    handleReset,
+    handleZoomIn,
+    handleZoomOut,
+  };
+}
+
+function GlobeBackground({ isDark }) {
   return (
-    <motion.div
+    <div
+      className="pointer-events-none absolute inset-0 -z-10"
+      style={{
+        background: isDark
+          ? "radial-gradient(125% 125% at 50% 10%, #000000 40%, #072607 100%)"
+          : "radial-gradient(125% 125% at 50% 10%, #ffffff 40%, color-mix(in oklab, var(--primary) 55%, white) 100%)",
+      }}
+    />
+  );
+}
+
+function GlobeInteractiveSvg({
+  svgRef,
+  width,
+  height,
+  onMouseDown,
+  onMouseMove,
+  onMouseUp,
+  onMouseLeave,
+  onWheel,
+  onTouchStart,
+  onTouchMove,
+  onTouchEnd,
+}) {
+  return (
+    <svg
+      ref={svgRef}
+      viewBox={`0 0 ${width} ${height}`}
+      className="h-full w-full touch-none cursor-grab bg-transparent active:cursor-grabbing"
+      preserveAspectRatio="xMidYMid meet"
+      onMouseDown={onMouseDown}
+      onMouseMove={onMouseMove}
+      onMouseUp={onMouseUp}
+      onMouseLeave={onMouseLeave}
+      onWheel={onWheel}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+      onTouchCancel={onTouchEnd}
+    />
+  );
+}
+
+function GlobeMarkersLayer({ projectedMarkers, markerColorMap }) {
+  return (
+    <div className="pointer-events-none absolute inset-0 z-10">
+      {projectedMarkers.map((marker) => {
+        const colorToken = markerColorMap.get(marker.id);
+        return (
+          <div
+            key={marker.id}
+            className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
+            style={{ left: marker.x, top: marker.y }}
+          >
+            <span
+              className="block size-2.5 rotate-45 border border-background/60 shadow-sm"
+              style={{
+                background: colorToken?.base || "var(--primary)",
+                opacity: colorToken?.alpha || 0.85,
+              }}
+            />
+            <span
+              className="absolute left-1/2 top-1/2 size-5 -translate-x-1/2 -translate-y-1/2 rounded-full border"
+              style={{
+                borderColor: colorToken?.base || "var(--primary)",
+                opacity: 0.3,
+              }}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function GlobeActiveMarkerTooltip({ activeMarker, activeMarkerUserCount }) {
+  if (!activeMarker) return null;
+
+  return (
+    <div
+      className="pointer-events-none absolute z-20 w-64 -translate-x-1/2 -translate-y-[calc(100%+12px)] rounded-md border border-border/70 bg-background/95 px-3 py-2.5 text-xs leading-tight text-foreground shadow-md backdrop-blur-sm"
+      style={{ left: activeMarker.x, top: activeMarker.y }}
+    >
+      <div className="mb-1 truncate text-xs font-semibold">{activeMarker.country}</div>
+      <div className="tabular-nums text-muted-foreground">
+        Average rating: {Math.round(activeMarker.avgRating)}
+      </div>
+      <div className="tabular-nums text-muted-foreground">
+        Average win rate: {Number.isFinite(activeMarker.avgWinRate) ? `${Math.round(activeMarker.avgWinRate)}%` : "N/A"}
+      </div>
+      <div className="tabular-nums text-muted-foreground">
+        Most played mode: {activeMarker.mostPlayedMode ? `${activeMarker.mostPlayedMode}s` : "N/A"}
+      </div>
+      <div className="tabular-nums text-muted-foreground">
+        Players: {Number.isFinite(activeMarkerUserCount) ? activeMarkerUserCount.toLocaleString() : "N/A"}
+      </div>
+    </div>
+  );
+}
+
+function GlobeControls({
+  isAnimating,
+  progress,
+  onAnimate,
+  onZoomIn,
+  onZoomOut,
+  onReset,
+}) {
+  return (
+    <div className="absolute bottom-4 right-4 z-20 flex gap-2">
+      <Button
+        onClick={onAnimate}
+        disabled={isAnimating}
+        className="min-w-[120px] cursor-pointer rounded"
+      >
+        {isAnimating
+          ? "Animating..."
+          : progress[0] === 0
+            ? "Unroll Globe"
+            : "Roll to Globe"}
+      </Button>
+      <Button
+        onClick={onZoomIn}
+        variant="outline"
+        className="min-w-[42px] cursor-pointer rounded"
+      >
+        +
+      </Button>
+      <Button
+        onClick={onZoomOut}
+        variant="outline"
+        className="min-w-[42px] cursor-pointer rounded"
+      >
+        -
+      </Button>
+      <Button
+        onClick={onReset}
+        variant="outline"
+        className="min-w-[80px] cursor-pointer rounded"
+      >
+        Reset
+      </Button>
+    </div>
+  );
+}
+
+export function GlobeToMapTransform() {
+  const {
+    svgRef,
+    width,
+    height,
+    isDark,
+    projectedMarkers,
+    markerColorMap,
+    activeMarker,
+    activeMarkerUserCount,
+    isAnimating,
+    progress,
+    handleMouseDown,
+    handleMouseMove,
+    handleMouseUp,
+    handleMouseLeave,
+    handleWheel,
+    handleTouchStart,
+    handleTouchMove,
+    handleTouchEnd,
+    handleAnimate,
+    handleReset,
+    handleZoomIn,
+    handleZoomOut,
+  } = useGlobeTransform();
+
+  return (
+    <m.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.35 }}
       className="relative isolate flex h-full w-full items-center justify-center"
     >
-      <div
-        className="pointer-events-none absolute inset-0 -z-10"
-        style={{
-          background: isDark
-            ? "radial-gradient(125% 125% at 50% 10%, #000000 40%, #072607 100%)"
-            : "radial-gradient(125% 125% at 50% 10%, #ffffff 40%, color-mix(in oklab, var(--primary) 55%, white) 100%)",
-        }}
-      />
-      <svg
-        ref={svgRef}
-        viewBox={`0 0 ${width} ${height}`}
-        className="h-full w-full touch-none cursor-grab bg-transparent active:cursor-grabbing"
-        preserveAspectRatio="xMidYMid meet"
+      <GlobeBackground isDark={isDark} />
+      <GlobeInteractiveSvg
+        svgRef={svgRef}
+        width={width}
+        height={height}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        onMouseLeave={() => {
-          dragRef.current.active = false;
-          setHoveredMarkerId(null);
-        }}
+        onMouseLeave={handleMouseLeave}
         onWheel={handleWheel}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
-        onTouchCancel={handleTouchEnd}
       />
-
-      <div className="pointer-events-none absolute inset-0 z-10">
-        {projectedMarkers.map((marker) => {
-          const colorToken = markerColorMap.get(marker.id);
-          return (
-            <div
-              key={marker.id}
-              className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
-              style={{ left: marker.x, top: marker.y }}
-            >
-              <span
-                className="block size-2.5 rotate-45 border border-background/60 shadow-sm"
-                style={{
-                  background: colorToken?.base || "var(--primary)",
-                  opacity: colorToken?.alpha || 0.85,
-                }}
-              />
-              <span
-                className="absolute left-1/2 top-1/2 size-5 -translate-x-1/2 -translate-y-1/2 rounded-full border"
-                style={{
-                  borderColor: colorToken?.base || "var(--primary)",
-                  opacity: 0.3,
-                }}
-              />
-            </div>
-          );
-        })}
-      </div>
-
-      {activeMarker ? (
-        <div
-          className="pointer-events-none absolute z-20 w-64 -translate-x-1/2 -translate-y-[calc(100%+12px)] rounded-md border border-border/70 bg-background/95 px-3 py-2.5 text-xs leading-tight text-foreground shadow-md backdrop-blur-sm"
-          style={{ left: activeMarker.x, top: activeMarker.y }}
-        >
-          <div className="mb-1 truncate text-xs font-semibold">{activeMarker.country}</div>
-          <div className="tabular-nums text-muted-foreground">
-            Average rating: {Math.round(activeMarker.avgRating)}
-          </div>
-          <div className="tabular-nums text-muted-foreground">
-            Average win rate: {Number.isFinite(activeMarker.avgWinRate) ? `${Math.round(activeMarker.avgWinRate)}%` : "N/A"}
-          </div>
-          <div className="tabular-nums text-muted-foreground">
-            Most played mode: {activeMarker.mostPlayedMode ? `${activeMarker.mostPlayedMode}s` : "N/A"}
-          </div>
-          <div className="tabular-nums text-muted-foreground">
-            Players: {Number.isFinite(activeMarkerUserCount) ? activeMarkerUserCount.toLocaleString() : "N/A"}
-          </div>
-        </div>
-      ) : null}
-
-      <div className="absolute bottom-4 right-4 z-20 flex gap-2">
-        <Button
-          onClick={handleAnimate}
-          disabled={isAnimating}
-          className="min-w-[120px] cursor-pointer rounded"
-        >
-          {isAnimating
-            ? "Animating..."
-            : progress[0] === 0
-              ? "Unroll Globe"
-              : "Roll to Globe"}
-        </Button>
-        <Button
-          onClick={() => setZoom((prev) => clamp(prev + 0.12, 0.6, 2.5))}
-          variant="outline"
-          className="min-w-[42px] cursor-pointer rounded"
-        >
-          +
-        </Button>
-        <Button
-          onClick={() => setZoom((prev) => clamp(prev - 0.12, 0.6, 2.5))}
-          variant="outline"
-          className="min-w-[42px] cursor-pointer rounded"
-        >
-          -
-        </Button>
-        <Button
-          onClick={handleReset}
-          variant="outline"
-          className="min-w-[80px] cursor-pointer rounded"
-        >
-          Reset
-        </Button>
-      </div>
-    </motion.div>
+      <GlobeMarkersLayer projectedMarkers={projectedMarkers} markerColorMap={markerColorMap} />
+      <GlobeActiveMarkerTooltip activeMarker={activeMarker} activeMarkerUserCount={activeMarkerUserCount} />
+      <GlobeControls
+        isAnimating={isAnimating}
+        progress={progress}
+        onAnimate={handleAnimate}
+        onZoomIn={handleZoomIn}
+        onZoomOut={handleZoomOut}
+        onReset={handleReset}
+      />
+    </m.div>
   );
 }
 

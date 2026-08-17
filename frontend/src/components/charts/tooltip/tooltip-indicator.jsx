@@ -1,4 +1,5 @@
-import { motion, useSpring } from "framer-motion";
+import { m, useSpring } from "framer-motion";
+import { useEffect } from "react";
 import { chartCssVars } from "../chart-context";
 
 // Faster spring for crosshair - responsive to mouse movement
@@ -41,7 +42,9 @@ export function TooltipIndicator({
 
   const animatedX = useSpring(x - pixelWidth / 2, crosshairSpringConfig);
 
-  animatedX.set(x - pixelWidth / 2);
+  useEffect(() => {
+    animatedX.set(x - pixelWidth / 2);
+  }, [animatedX, x, pixelWidth]);
 
   if (!visible) {
     return null;
@@ -60,7 +63,7 @@ export function TooltipIndicator({
           <stop offset="100%" style={{ stopColor: colorEdge, stopOpacity: edgeOpacity }} />
         </linearGradient>
       </defs>
-      <motion.rect
+      <m.rect
         fill={`url(#${gradientId})`}
         height={height}
         width={pixelWidth}

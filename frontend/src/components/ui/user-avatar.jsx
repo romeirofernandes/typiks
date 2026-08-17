@@ -1,4 +1,4 @@
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { getAvatarPath, normalizeAvatarId } from "@/lib/player-meta";
 import { useEffect, useState } from "react";
@@ -60,7 +60,7 @@ export function UserAvatar({
 
   return (
     <>
-    <motion.button
+    <m.button
       type="button"
       onClick={() => setIsOpen(true)}
       aria-label={`Open ${username} avatar`}
@@ -77,18 +77,24 @@ export function UserAvatar({
         loading="lazy"
         decoding="async"
       />
-    </motion.button>
+    </m.button>
 
     <AnimatePresence>
       {isOpen ? (
-        <motion.div
+        <m.div
           className="fixed inset-0 z-[120] flex items-center justify-center bg-black/55 p-4"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           onClick={() => setIsOpen(false)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.stopPropagation();
+              setIsOpen(false);
+            }
+          }}
         >
-          <motion.button
+          <m.button
             type="button"
             onClick={(event) => {
               event.stopPropagation();
@@ -105,8 +111,8 @@ export function UserAvatar({
               alt={`${username} avatar full`}
               className="h-full w-full object-cover"
             />
-          </motion.button>
-        </motion.div>
+          </m.button>
+        </m.div>
       ) : null}
     </AnimatePresence>
     </>

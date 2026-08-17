@@ -37,11 +37,13 @@ function normalizeSubmitKeyIds(rawSubmitKeyIds, rawSingleSubmitKeyId) {
     : DEFAULT_PLAYER_PREFERENCES.submitKeyIds;
 
   const normalized = [];
+  const seen = new Set();
 
   for (const candidate of source) {
     const option = SUBMIT_KEY_OPTIONS.find((entry) => entry.id === candidate);
     if (!option) continue;
-    if (normalized.includes(option.id)) continue;
+    if (seen.has(option.id)) continue;
+    seen.add(option.id);
     normalized.push(option.id);
     if (normalized.length === 2) break;
   }

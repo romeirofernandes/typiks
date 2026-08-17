@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+// react-doctor-disable-next-line no-flush-sync -- required by document.startViewTransition: React docs mandate flushSync inside the transition callback so the theme class is committed before the cross-fade snapshot is taken
 import { flushSync } from "react-dom";
 
 export function useTheme() {

@@ -1,5 +1,5 @@
 import React from "react";
-import { motion, useReducedMotion } from "framer-motion";
+import { m, useReducedMotion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
@@ -14,22 +14,22 @@ const WaitingRoom = () => {
   return (
     <div className="flex h-full min-h-[60vh] items-center justify-center p-4">
       <div className="w-full max-w-md">
-        <motion.div
+        <m.div
           initial={{ opacity: 0, y: reduceMotion ? 0 : -10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35 }}
         >
           <Card className="overflow-hidden border-border/50 bg-card/80 backdrop-blur-sm">
             <CardHeader className="pb-6 text-center">
-              <motion.div
+              <m.div
                 initial={{ opacity: 0, y: reduceMotion ? 0 : 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.25, delay: 0.06 }}
                 className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/20"
               >
                 <FiZap className="h-8 w-8 text-primary" />
-              </motion.div>
-              <motion.div
+              </m.div>
+              <m.div
                 initial={{ opacity: 0, y: reduceMotion ? 0 : 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.25, delay: 0.1 }}
@@ -38,11 +38,11 @@ const WaitingRoom = () => {
                 <p className="mt-1 text-sm text-muted-foreground">
                   Setting up the arena...
                 </p>
-              </motion.div>
+              </m.div>
             </CardHeader>
             <CardContent className="space-y-6 py-8 text-center">
               {/* Animated Loader */}
-              <motion.div
+              <m.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ duration: 0.25, delay: 0.16 }}
@@ -53,10 +53,10 @@ const WaitingRoom = () => {
                   className="scale-150"
                   dotClassName="bg-muted-foreground/30 [&.active]:bg-primary"
                 />
-              </motion.div>
+              </m.div>
 
               {/* Status Messages */}
-              <motion.div
+              <m.div
                 initial={{ opacity: 0, y: reduceMotion ? 0 : 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.25, delay: 0.22 }}
@@ -66,17 +66,17 @@ const WaitingRoom = () => {
                   Entering Room
                 </p>
                 <div className="mx-auto h-1 max-w-[200px] rounded-full bg-primary/30">
-                  <motion.div
-                    initial={{ width: "0%" }}
-                    animate={{ width: "100%" }}
+                  <m.div
+                    initial={{ scaleX: 0 }}
+                    animate={{ scaleX: 1 }}
                     transition={{ duration: 2, ease: "easeInOut" }}
-                    className="h-full rounded-full bg-primary"
+                    className="h-full w-full origin-left rounded-full bg-primary"
                   />
                 </div>
-              </motion.div>
+              </m.div>
 
               {/* Action Button */}
-              <motion.div
+              <m.div
                 initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.3, delay: 0.3 }}
@@ -88,13 +88,13 @@ const WaitingRoom = () => {
                   Enter Game
                   <FiArrowRight className="h-4 w-4" />
                 </Button>
-              </motion.div>
+              </m.div>
             </CardContent>
           </Card>
-        </motion.div>
+        </m.div>
 
         {/* Background decoration */}
-        <motion.div
+        <m.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 0.5 }}
           transition={{ delay: 0.4 }}
@@ -102,7 +102,7 @@ const WaitingRoom = () => {
         >
           <div className="absolute -left-1/4 -top-1/4 h-1/2 w-1/2 rounded-full bg-primary/5 blur-3xl" />
           <div className="absolute -bottom-1/4 -right-1/4 h-1/2 w-1/2 rounded-full bg-chart-3/5 blur-3xl" />
-        </motion.div>
+        </m.div>
       </div>
     </div>
   );

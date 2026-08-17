@@ -1,4 +1,5 @@
-import { motion, useSpring } from "framer-motion";
+import { m, useSpring } from "framer-motion";
+import { useEffect } from "react";
 import { chartCssVars } from "../chart-context";
 
 // Faster spring to stay in sync with indicator
@@ -16,15 +17,17 @@ export function TooltipDot({
   const animatedX = useSpring(x, crosshairSpringConfig);
   const animatedY = useSpring(y, crosshairSpringConfig);
 
-  animatedX.set(x);
-  animatedY.set(y);
+  useEffect(() => {
+    animatedX.set(x);
+    animatedY.set(y);
+  }, [animatedX, animatedY, x, y]);
 
   if (!visible) {
     return null;
   }
 
   return (
-    <motion.circle
+    <m.circle
       cx={animatedX}
       cy={animatedY}
       fill={color}

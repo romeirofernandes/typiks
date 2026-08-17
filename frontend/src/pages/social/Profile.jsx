@@ -1,6 +1,6 @@
 import { useAuth } from "@/hooks/useAuth";
 import { useStats } from "@/hooks/useStats";
-import { motion, useReducedMotion } from "framer-motion";
+import { m, useReducedMotion } from "framer-motion";
 import { usePlayerPreferences } from "@/hooks/usePlayerPreferences";
 import { TypeGraph } from "@/components/charts/TypeGraph";
 import GuestUpgradePrompt from "@/components/auth/GuestUpgradePrompt";
@@ -61,13 +61,11 @@ const DEFAULT_PROFILE_STATS = {
   avatarId: "avatar1",
 };
 
-const Profile = () => {
+function useProfileSettings() {
   const { state: { currentUser } } = useAuth();
   const queryClient = useQueryClient();
-  const reduceMotion = useReducedMotion();
   const [isLocationEditing, setIsLocationEditing] = useState(false);
   const [isSavingLocation, setIsSavingLocation] = useState(false);
-  const [locationApiReady, setLocationApiReady] = useState(false);
   const [profileStats, setProfileStats] = useState(DEFAULT_PROFILE_STATS);
   const [isAvatarDialogOpen, setIsAvatarDialogOpen] = useState(false);
   const [pendingAvatarId, setPendingAvatarId] = useState("avatar1");
@@ -172,12 +170,6 @@ const Profile = () => {
   }, [locationQuery.data, setPlayerPreferences]);
 
   useEffect(() => {
-    if (locationQuery.isSuccess || locationQuery.isError) {
-      setLocationApiReady(true);
-    }
-  }, [locationQuery.isSuccess, locationQuery.isError]);
-
-  useEffect(() => {
     if (!userQuery.data) return;
     const apiCondition = userQuery.data.nextWordCondition;
     if (
@@ -199,9 +191,10 @@ const Profile = () => {
     }
   }, [userQuery.data, setPlayerPreferences]);
 
-  useEffect(() => {
+  const openAvatarDialog = () => {
     setPendingAvatarId(profileStats.avatarId || "avatar1");
-  }, [profileStats.avatarId]);
+    setIsAvatarDialogOpen(true);
+  };
 
   const persistLocationMutation = useMutation({
     mutationFn: (country) =>
@@ -220,7 +213,7 @@ const Profile = () => {
   });
 
   const persistLocation = async (country) => {
-    if (!currentUser || !locationApiReady) return false;
+    if (!currentUser || !(locationQuery.isSuccess || locationQuery.isError)) return false;
 
     try {
       await persistLocationMutation.mutateAsync(country);
@@ -255,7 +248,11 @@ const Profile = () => {
     });
 
     if (field === "nextWordCondition" && currentUser) {
-      void persistPreferenceMutation.mutateAsync({ field, value });
+      void persistPreferenceMutation
+        .mutateAsync({ field, value })
+        .catch(() => {
+          // optimistic local update persists on next render; failure leaves the local value
+        });
     }
   };
 
@@ -373,402 +370,628 @@ const Profile = () => {
     }
   };
 
+  return {
+    reducerMotion: useReducedMotion(),
+    currentUser,
+    username,
+    profileStats,
+    currentTier,
+    nextTier,
+    tierProgressPercent,
+    playerPreferences,
+    submitKeyOne,
+    submitKeyTwo,
+    activityData,
+    maxCount,
+    isLocationEditing,
+    setIsLocationEditing,
+    isSavingLocation,
+    handleCountryChange,
+    handleSaveLocation,
+    openAvatarDialog,
+    isAvatarDialogOpen,
+    setIsAvatarDialogOpen,
+    pendingAvatarId,
+    setPendingAvatarId,
+    isSavingAvatar,
+    handleSaveAvatar,
+    isUsernameDialogOpen,
+    setIsUsernameDialogOpen,
+    usernameDraft,
+    setUsernameDraft,
+    usernameError,
+    isSavingUsername,
+    handleSaveUsername,
+    updatePreference,
+    updateSubmitKey,
+    showConnectAccount,
+    setShowConnectAccount,
+  };
+}
+
+function ProfileHeader({ reduceMotion }) {
+  return (
+    <m.header
+      initial={{ opacity: 0, y: reduceMotion ? 0 : 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25, delay: 0.06 }}
+      className="border-b border-border/70 pb-4"
+    >
+      <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Account</p>
+      <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">Profile</h1>
+    </m.header>
+  );
+}
+
+function ProfileIdentitySection({
+  reduceMotion,
+  currentUser,
+  username,
+  profileStats,
+  openAvatarDialog,
+  setUsernameDraft,
+  setUsernameError,
+  setIsUsernameDialogOpen,
+  setShowConnectAccount,
+}) {
+  const openUsernameDialog = () => {
+    setUsernameDraft(username);
+    setUsernameError("");
+    setIsUsernameDialogOpen(true);
+  };
+
+  return (
+    <m.section
+      initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, delay: 0.12 }}
+      className="grid gap-4 sm:grid-cols-3"
+    >
+      <div className="rounded-lg border border-border/70 bg-background/40 p-3">
+        <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
+          Username
+        </p>
+        <div className="mt-1 flex items-center justify-between gap-3">
+          <p className="font-sans text-lg font-semibold">{username}</p>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={openUsernameDialog}
+          >
+            Change
+          </Button>
+        </div>
+      </div>
+      <div className="rounded-lg border border-border/70 bg-background/40 p-3">
+        <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
+          Avatar
+        </p>
+        <div className="mt-1 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <UserAvatar
+              avatarId={profileStats.avatarId}
+              username={username}
+              size="md"
+              expandOnClick
+            />
+            <p className="text-sm text-muted-foreground">{profileStats.avatarId}</p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={openAvatarDialog}
+          >
+            Change
+          </Button>
+        </div>
+      </div>
+      <div className="rounded-lg border border-border/70 bg-background/40 p-3">
+        <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
+          Email
+        </p>
+        <div className="mt-1 flex items-center justify-between gap-3">
+          <p className="break-all text-sm text-foreground">
+            {currentUser?.email || "No email available"}
+          </p>
+          {!currentUser?.email ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowConnectAccount(true)}
+            >
+              Connect account
+            </Button>
+          ) : null}
+        </div>
+      </div>
+    </m.section>
+  );
+}
+
+function ProfileTierSection({
+  reduceMotion,
+  currentTier,
+  nextTier,
+  tierProgressPercent,
+  profileStats,
+}) {
+  return (
+    <m.section
+      initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, delay: 0.18 }}
+      className="space-y-4 rounded-lg border border-border/70 bg-background/40 p-4"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
+            Tier Progression
+          </p>
+          <h2 className="mt-1 text-lg font-semibold">{currentTier.label}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{currentTier.description}</p>
+        </div>
+        <div className="text-right">
+          <p className="text-sm text-muted-foreground">Rating</p>
+          <p className="font-mono text-2xl font-bold tabular-nums">{profileStats.rating}</p>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full rounded-full bg-primary transition-[width]"
+            style={{ width: `${tierProgressPercent}%` }}
+          />
+        </div>
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>{currentTier.min} floor</span>
+          <span>
+            {nextTier
+              ? `${Math.max(0, nextTier.min - Number(profileStats.rating || 0))} to ${nextTier.label}`
+              : "Top tier reached"}
+          </span>
+        </div>
+      </div>
+
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {RATING_TIERS.map((tier) => {
+          const active = tier.label === currentTier.label;
+          return (
+            <Tooltip key={tier.label}>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className={`rounded-md border px-3 py-2 text-left transition-colors ${
+                    active
+                      ? `${tier.color} ring-1 ring-primary/20`
+                      : "border-border/70 bg-card/30 hover:bg-card/50"
+                  }`}
+                >
+                  <p className="text-sm font-semibold">{tier.label}</p>
+                  <p className="text-xs text-muted-foreground">{tier.min}+</p>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent sideOffset={6} className="max-w-64">
+                {tier.description}
+              </TooltipContent>
+            </Tooltip>
+          );
+        })}
+      </div>
+    </m.section>
+  );
+}
+
+function ProfileLocationSection({
+  reduceMotion,
+  playerPreferences,
+  handleCountryChange,
+  isLocationEditing,
+  setIsLocationEditing,
+  isSavingLocation,
+  handleSaveLocation,
+  activityData,
+  maxCount,
+}) {
+  return (
+    <m.section
+      initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, delay: 0.24 }}
+      className="grid items-stretch gap-6 xl:grid-cols-[minmax(290px,360px)_minmax(0,1fr)]"
+    >
+      <div className="h-full space-y-5 rounded-lg border border-border/70 bg-background/40 p-4">
+        <div>
+          <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
+            For The Globe
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <Label htmlFor="country-select">Country</Label>
+            <SearchableSelect
+              id="country-select"
+              value={playerPreferences.country || ""}
+              onValueChange={handleCountryChange}
+              options={COUNTRIES.map((c) => ({ value: c, label: c }))}
+              placeholder="Select country"
+              disabled={!isLocationEditing}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsLocationEditing(true)}
+              disabled={isLocationEditing || isSavingLocation}
+            >
+              Edit
+            </Button>
+            <Button
+              type="button"
+              onClick={handleSaveLocation}
+              disabled={!isLocationEditing || isSavingLocation}
+            >
+              {isSavingLocation ? "Saving..." : "Save"}
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      <div className="h-full rounded-lg border border-border/70 bg-background/40 p-4">
+        <TypeGraph
+          title="Type Graph"
+          activityData={activityData}
+          maxDailyCount={maxCount}
+          days={PROFILE_GRAPH_DAYS}
+        />
+      </div>
+    </m.section>
+  );
+}
+
+function ProfilePreferencesSection({
+  reduceMotion,
+  playerPreferences,
+  updatePreference,
+  submitKeyOne,
+  submitKeyTwo,
+  updateSubmitKey,
+}) {
+  return (
+    <m.section
+      initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, delay: 0.3 }}
+      className="rounded-lg border border-border/70 bg-background/40 p-4"
+    >
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(220px,1fr)_170px_170px]">
+        <div className="min-w-0 space-y-2">
+          <Label htmlFor="next-word-condition">Next Word Condition</Label>
+          <Select
+            value={playerPreferences.nextWordCondition}
+            onValueChange={(value) =>
+              updatePreference("nextWordCondition", value)
+            }
+          >
+            <SelectTrigger id="next-word-condition">
+              <SelectValue className="min-w-0 flex-1 truncate" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NEXT_WORD_CONDITIONS.manual}>Use submit key</SelectItem>
+              <SelectItem value={NEXT_WORD_CONDITIONS.auto}>
+                Auto-advance when word is correct
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="min-w-0 space-y-2">
+          <Label htmlFor="submit-key-one">Key 1</Label>
+          <Select
+            value={submitKeyOne}
+            onValueChange={(value) => updateSubmitKey(0, value)}
+            disabled={playerPreferences.nextWordCondition !== NEXT_WORD_CONDITIONS.manual}
+          >
+            <SelectTrigger id="submit-key-one">
+              <SelectValue className="min-w-0 flex-1 truncate" />
+            </SelectTrigger>
+            <SelectContent>
+              {SUBMIT_KEY_OPTIONS.map((option) => (
+                <SelectItem key={option.id} value={option.id}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="min-w-0 space-y-2">
+          <Label htmlFor="submit-key-two">Key 2</Label>
+          <Select
+            value={submitKeyTwo}
+            onValueChange={(value) => updateSubmitKey(1, value)}
+            disabled={playerPreferences.nextWordCondition !== NEXT_WORD_CONDITIONS.manual}
+          >
+            <SelectTrigger id="submit-key-two">
+              <SelectValue placeholder="Not set" className="min-w-0 flex-1 truncate" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={UNSET_OPTION_VALUE}>Not set</SelectItem>
+              {SUBMIT_KEY_OPTIONS.flatMap((option) =>
+                option.id === submitKeyOne
+                  ? []
+                  : [
+                      <SelectItem key={option.id} value={option.id}>
+                        {option.label}
+                      </SelectItem>,
+                    ]
+              )}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {playerPreferences.nextWordCondition === NEXT_WORD_CONDITIONS.manual && (
+        <p className="mt-3 text-xs text-muted-foreground">
+          Active submit keys: {getSubmitKeyOptionById(submitKeyOne).label}
+          {submitKeyTwo !== UNSET_OPTION_VALUE
+            ? `, ${getSubmitKeyOptionById(submitKeyTwo).label}`
+            : ""}
+        </p>
+      )}
+    </m.section>
+  );
+}
+
+function UsernameDialog({
+  isUsernameDialogOpen,
+  setIsUsernameDialogOpen,
+usernameDraft,
+    setUsernameDraft,
+    usernameError,
+    setUsernameError,
+    isSavingUsername,
+  handleSaveUsername,
+}) {
+  return (
+    <AlertDialog open={isUsernameDialogOpen} onOpenChange={setIsUsernameDialogOpen}>
+      <AlertDialogContent className="max-w-md">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Change username</AlertDialogTitle>
+          <AlertDialogDescription>
+            Choose a unique username. It must be 3-24 characters and can only
+            contain letters, numbers, dots, dashes or underscores.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSaveUsername();
+          }}
+          className="space-y-3"
+        >
+          <div className="space-y-1">
+            <Label htmlFor="profile-username">Username</Label>
+            <Input
+              id="profile-username"
+              type="text"
+              value={usernameDraft}
+              onChange={(e) => {
+                setUsernameDraft(e.target.value);
+                setUsernameError("");
+              }}
+              minLength={3}
+              maxLength={24}
+              autoComplete="off"
+            />
+          </div>
+          {usernameError ? (
+            <p className="text-xs text-destructive">{usernameError}</p>
+          ) : null}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSavingUsername}>Cancel</AlertDialogCancel>
+            <Button type="submit" disabled={isSavingUsername}>
+              {isSavingUsername ? "Saving..." : "Save Username"}
+            </Button>
+          </AlertDialogFooter>
+        </form>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+function AvatarDialog({
+  isAvatarDialogOpen,
+  setIsAvatarDialogOpen,
+  pendingAvatarId,
+  setPendingAvatarId,
+  username,
+  isSavingAvatar,
+  handleSaveAvatar,
+}) {
+  return (
+    <AlertDialog open={isAvatarDialogOpen} onOpenChange={setIsAvatarDialogOpen}>
+      <AlertDialogContent className="max-w-2xl">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Choose your avatar</AlertDialogTitle>
+        </AlertDialogHeader>
+
+        <div className="space-y-4">
+          <div>
+            <p className="mb-2 text-xs uppercase tracking-[0.12em] text-muted-foreground">Male</p>
+            <div className="grid grid-cols-5 gap-2">
+              {MALE_AVATAR_IDS.map((avatarId) => {
+                const selected = pendingAvatarId === avatarId;
+                return (
+                  <button
+                    key={avatarId}
+                    type="button"
+                    onClick={() => setPendingAvatarId(avatarId)}
+                    className={`rounded-md border p-2 transition-colors ${
+                      selected
+                        ? "border-primary bg-primary/10"
+                        : "border-border/70 bg-card/30 hover:bg-card/50"
+                    }`}
+                  >
+                    <UserAvatar avatarId={avatarId} username={username} className="mx-auto" />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <p className="mb-2 text-xs uppercase tracking-[0.12em] text-muted-foreground">Female</p>
+            <div className="grid grid-cols-5 gap-2">
+              {FEMALE_AVATAR_IDS.map((avatarId) => {
+                const selected = pendingAvatarId === avatarId;
+                return (
+                  <button
+                    key={avatarId}
+                    type="button"
+                    onClick={() => setPendingAvatarId(avatarId)}
+                    className={`rounded-md border p-2 transition-colors ${
+                      selected
+                        ? "border-primary bg-primary/10"
+                        : "border-border/70 bg-card/30 hover:bg-card/50"
+                    }`}
+                  >
+                    <UserAvatar avatarId={avatarId} username={username} className="mx-auto" />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={isSavingAvatar}>Cancel</AlertDialogCancel>
+          <AlertDialogAction onClick={handleSaveAvatar} disabled={isSavingAvatar}>
+            {isSavingAvatar ? "Saving..." : "Save Avatar"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+const Profile = () => {
+  const {
+    reducerMotion,
+    currentUser,
+    username,
+    profileStats,
+    currentTier,
+    nextTier,
+    tierProgressPercent,
+    playerPreferences,
+    submitKeyOne,
+    submitKeyTwo,
+    activityData,
+    maxCount,
+    isLocationEditing,
+    setIsLocationEditing,
+    isSavingLocation,
+    handleCountryChange,
+    handleSaveLocation,
+    openAvatarDialog,
+    isAvatarDialogOpen,
+    setIsAvatarDialogOpen,
+    pendingAvatarId,
+    setPendingAvatarId,
+    isSavingAvatar,
+    handleSaveAvatar,
+    isUsernameDialogOpen,
+    setIsUsernameDialogOpen,
+    usernameDraft,
+    setUsernameDraft,
+    usernameError,
+    setUsernameError,
+    isSavingUsername,
+    handleSaveUsername,
+    updatePreference,
+    updateSubmitKey,
+    showConnectAccount,
+    setShowConnectAccount,
+  } = useProfileSettings();
+
   return (
     <TooltipProvider delayDuration={100}>
       <div className="flex h-full items-start">
-      <motion.div
-        initial={{ opacity: 0, y: reduceMotion ? 0 : -10 }}
+      <m.div
+        initial={{ opacity: 0, y: reducerMotion ? 0 : -10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35 }}
         className="w-full space-y-6"
       >
-        <motion.header
-          initial={{ opacity: 0, y: reduceMotion ? 0 : 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.25, delay: 0.06 }}
-          className="border-b border-border/70 pb-4"
-        >
-          <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Account</p>
-          <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">Profile</h1>
-        </motion.header>
+        <ProfileHeader reduceMotion={reducerMotion} />
 
-        <motion.section
-          initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: 0.12 }}
-          className="grid gap-4 sm:grid-cols-3"
-        >
-          <div className="rounded-lg border border-border/70 bg-background/40 p-3">
-            <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
-              Username
-            </p>
-            <div className="mt-1 flex items-center justify-between gap-3">
-              <p className="font-sans text-lg font-semibold">{username}</p>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setUsernameDraft(username);
-                  setUsernameError("");
-                  setIsUsernameDialogOpen(true);
-                }}
-              >
-                Change
-              </Button>
-            </div>
-          </div>
-          <div className="rounded-lg border border-border/70 bg-background/40 p-3">
-            <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
-              Avatar
-            </p>
-            <div className="mt-1 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <UserAvatar
-                  avatarId={profileStats.avatarId}
-                  username={username}
-                  size="md"
-                  expandOnClick
-                />
-                <p className="text-sm text-muted-foreground">{profileStats.avatarId}</p>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsAvatarDialogOpen(true)}
-              >
-                Change
-              </Button>
-            </div>
-          </div>
-          <div className="rounded-lg border border-border/70 bg-background/40 p-3">
-            <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
-              Email
-            </p>
-            <div className="mt-1 flex items-center justify-between gap-3">
-              <p className="break-all text-sm text-foreground">
-                {currentUser?.email || "No email available"}
-              </p>
-              {!currentUser?.email ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setShowConnectAccount(true)}
-                >
-                  Connect account
-                </Button>
-              ) : null}
-            </div>
-          </div>
-        </motion.section>
+        <ProfileIdentitySection
+          reduceMotion={reducerMotion}
+          currentUser={currentUser}
+          username={username}
+          profileStats={profileStats}
+          openAvatarDialog={openAvatarDialog}
+          setUsernameDraft={setUsernameDraft}
+          setUsernameError={setUsernameError}
+          setIsUsernameDialogOpen={setIsUsernameDialogOpen}
+          setShowConnectAccount={setShowConnectAccount}
+        />
 
-        <motion.section
-          initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: 0.18 }}
-          className="space-y-4 rounded-lg border border-border/70 bg-background/40 p-4"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
-                Tier Progression
-              </p>
-              <h2 className="mt-1 text-lg font-semibold">{currentTier.label}</h2>
-              <p className="mt-1 text-sm text-muted-foreground">{currentTier.description}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-sm text-muted-foreground">Rating</p>
-              <p className="font-mono text-2xl font-bold tabular-nums">{profileStats.rating}</p>
-            </div>
-          </div>
+        <ProfileTierSection
+          reduceMotion={reducerMotion}
+          currentTier={currentTier}
+          nextTier={nextTier}
+          tierProgressPercent={tierProgressPercent}
+          profileStats={profileStats}
+        />
 
-          <div className="space-y-2">
-            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full rounded-full bg-primary transition-all"
-                style={{ width: `${tierProgressPercent}%` }}
-              />
-            </div>
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>{currentTier.min} floor</span>
-              <span>
-                {nextTier
-                  ? `${Math.max(0, nextTier.min - Number(profileStats.rating || 0))} to ${nextTier.label}`
-                  : "Top tier reached"}
-              </span>
-            </div>
-          </div>
+        <ProfileLocationSection
+          reduceMotion={reducerMotion}
+          playerPreferences={playerPreferences}
+          handleCountryChange={handleCountryChange}
+          isLocationEditing={isLocationEditing}
+          setIsLocationEditing={setIsLocationEditing}
+          isSavingLocation={isSavingLocation}
+          handleSaveLocation={handleSaveLocation}
+          activityData={activityData}
+          maxCount={maxCount}
+        />
 
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {RATING_TIERS.map((tier) => {
-              const active = tier.label === currentTier.label;
-              return (
-                <Tooltip key={tier.label}>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      className={`rounded-md border px-3 py-2 text-left transition-colors ${
-                        active
-                          ? `${tier.color} ring-1 ring-primary/20`
-                          : "border-border/70 bg-card/30 hover:bg-card/50"
-                      }`}
-                    >
-                      <p className="text-sm font-semibold">{tier.label}</p>
-                      <p className="text-xs text-muted-foreground">{tier.min}+</p>
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent sideOffset={6} className="max-w-64">
-                    {tier.description}
-                  </TooltipContent>
-                </Tooltip>
-              );
-            })}
-          </div>
-        </motion.section>
-
-        <motion.section
-          initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: 0.24 }}
-          className="grid items-stretch gap-6 xl:grid-cols-[minmax(290px,360px)_minmax(0,1fr)]"
-        >
-          <div className="h-full space-y-5 rounded-lg border border-border/70 bg-background/40 p-4">
-            <div>
-              <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
-                For The Globe
-              </p>
-            </div>
-
-            <div className="space-y-3">
-              <div className="space-y-2">
-                <Label htmlFor="country-select">Country</Label>
-                <SearchableSelect
-                  id="country-select"
-                  value={playerPreferences.country || ""}
-                  onValueChange={handleCountryChange}
-                  options={COUNTRIES.map((c) => ({ value: c, label: c }))}
-                  placeholder="Select country"
-                  disabled={!isLocationEditing}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 pt-1">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setIsLocationEditing(true)}
-                  disabled={isLocationEditing || isSavingLocation}
-                >
-                  Edit
-                </Button>
-                <Button
-                  type="button"
-                  onClick={handleSaveLocation}
-                  disabled={!isLocationEditing || isSavingLocation}
-                >
-                  {isSavingLocation ? "Saving..." : "Save"}
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          <div className="h-full rounded-lg border border-border/70 bg-background/40 p-4">
-            <TypeGraph
-              title="Type Graph"
-              activityData={activityData}
-              maxDailyCount={maxCount}
-              days={PROFILE_GRAPH_DAYS}
-            />
-          </div>
-        </motion.section>
-
-        <motion.section
-          initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: 0.3 }}
-          className="rounded-lg border border-border/70 bg-background/40 p-4"
-        >
-          <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_170px_170px]">
-            <div className="space-y-2">
-              <Label htmlFor="next-word-condition">Next Word Condition</Label>
-              <Select
-                value={playerPreferences.nextWordCondition}
-                onValueChange={(value) =>
-                  updatePreference("nextWordCondition", value)
-                }
-              >
-                <SelectTrigger id="next-word-condition">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NEXT_WORD_CONDITIONS.manual}>Use submit key</SelectItem>
-                  <SelectItem value={NEXT_WORD_CONDITIONS.auto}>
-                    Auto-advance when word is correct
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="submit-key-one">Key 1</Label>
-              <Select
-                value={submitKeyOne}
-                onValueChange={(value) => updateSubmitKey(0, value)}
-                disabled={playerPreferences.nextWordCondition !== NEXT_WORD_CONDITIONS.manual}
-              >
-                <SelectTrigger id="submit-key-one">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {SUBMIT_KEY_OPTIONS.map((option) => (
-                    <SelectItem key={option.id} value={option.id}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="submit-key-two">Key 2</Label>
-              <Select
-                value={submitKeyTwo}
-                onValueChange={(value) => updateSubmitKey(1, value)}
-                disabled={playerPreferences.nextWordCondition !== NEXT_WORD_CONDITIONS.manual}
-              >
-                <SelectTrigger id="submit-key-two">
-                  <SelectValue placeholder="Not set" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={UNSET_OPTION_VALUE}>Not set</SelectItem>
-                  {SUBMIT_KEY_OPTIONS.filter((option) => option.id !== submitKeyOne).map((option) => (
-                    <SelectItem key={option.id} value={option.id}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {playerPreferences.nextWordCondition === NEXT_WORD_CONDITIONS.manual && (
-            <p className="mt-3 text-xs text-muted-foreground">
-              Active submit keys: {getSubmitKeyOptionById(submitKeyOne).label}
-              {submitKeyTwo !== UNSET_OPTION_VALUE
-                ? `, ${getSubmitKeyOptionById(submitKeyTwo).label}`
-                : ""}
-            </p>
-          )}
-        </motion.section>
-      </motion.div>
+        <ProfilePreferencesSection
+          reduceMotion={reducerMotion}
+          playerPreferences={playerPreferences}
+          updatePreference={updatePreference}
+          submitKeyOne={submitKeyOne}
+          submitKeyTwo={submitKeyTwo}
+          updateSubmitKey={updateSubmitKey}
+        />
+      </m.div>
     </div>
 
-        <AlertDialog open={isUsernameDialogOpen} onOpenChange={setIsUsernameDialogOpen}>
-          <AlertDialogContent className="max-w-md">
-            <AlertDialogHeader>
-              <AlertDialogTitle>Change username</AlertDialogTitle>
-              <AlertDialogDescription>
-                Choose a unique username. It must be 3-24 characters and can only
-                contain letters, numbers, dots, dashes or underscores.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
+        <UsernameDialog
+          isUsernameDialogOpen={isUsernameDialogOpen}
+          setIsUsernameDialogOpen={setIsUsernameDialogOpen}
+          usernameDraft={usernameDraft}
+          setUsernameDraft={setUsernameDraft}
+          usernameError={usernameError}
+          isSavingUsername={isSavingUsername}
+          handleSaveUsername={handleSaveUsername}
+        />
 
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleSaveUsername();
-              }}
-              className="space-y-3"
-            >
-              <div className="space-y-1">
-                <Label htmlFor="profile-username">Username</Label>
-                <Input
-                  id="profile-username"
-                  type="text"
-                  value={usernameDraft}
-                  onChange={(e) => {
-                    setUsernameDraft(e.target.value);
-                    setUsernameError("");
-                  }}
-                  minLength={3}
-                  maxLength={24}
-                  autoComplete="off"
-                />
-              </div>
-              {usernameError ? (
-                <p className="text-xs text-destructive">{usernameError}</p>
-              ) : null}
-              <AlertDialogFooter>
-                <AlertDialogCancel disabled={isSavingUsername}>Cancel</AlertDialogCancel>
-                <Button type="submit" disabled={isSavingUsername}>
-                  {isSavingUsername ? "Saving..." : "Save Username"}
-                </Button>
-              </AlertDialogFooter>
-            </form>
-          </AlertDialogContent>
-        </AlertDialog>
-
-        <AlertDialog open={isAvatarDialogOpen} onOpenChange={setIsAvatarDialogOpen}>
-          <AlertDialogContent className="max-w-2xl">
-            <AlertDialogHeader>
-              <AlertDialogTitle>Choose your avatar</AlertDialogTitle>
-            </AlertDialogHeader>
-
-            <div className="space-y-4">
-              <div>
-                <p className="mb-2 text-xs uppercase tracking-[0.12em] text-muted-foreground">Male</p>
-                <div className="grid grid-cols-5 gap-2">
-                  {MALE_AVATAR_IDS.map((avatarId) => {
-                    const selected = pendingAvatarId === avatarId;
-                    return (
-                      <button
-                        key={avatarId}
-                        type="button"
-                        onClick={() => setPendingAvatarId(avatarId)}
-                        className={`rounded-md border p-2 transition-colors ${
-                          selected
-                            ? "border-primary bg-primary/10"
-                            : "border-border/70 bg-card/30 hover:bg-card/50"
-                        }`}
-                      >
-                        <UserAvatar avatarId={avatarId} username={username} className="mx-auto" />
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div>
-                <p className="mb-2 text-xs uppercase tracking-[0.12em] text-muted-foreground">Female</p>
-                <div className="grid grid-cols-5 gap-2">
-                  {FEMALE_AVATAR_IDS.map((avatarId) => {
-                    const selected = pendingAvatarId === avatarId;
-                    return (
-                      <button
-                        key={avatarId}
-                        type="button"
-                        onClick={() => setPendingAvatarId(avatarId)}
-                        className={`rounded-md border p-2 transition-colors ${
-                          selected
-                            ? "border-primary bg-primary/10"
-                            : "border-border/70 bg-card/30 hover:bg-card/50"
-                        }`}
-                      >
-                        <UserAvatar avatarId={avatarId} username={username} className="mx-auto" />
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={isSavingAvatar}>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleSaveAvatar} disabled={isSavingAvatar}>
-                {isSavingAvatar ? "Saving..." : "Save Avatar"}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        <AvatarDialog
+          isAvatarDialogOpen={isAvatarDialogOpen}
+          setIsAvatarDialogOpen={setIsAvatarDialogOpen}
+          pendingAvatarId={pendingAvatarId}
+          setPendingAvatarId={setPendingAvatarId}
+          username={username}
+          isSavingAvatar={isSavingAvatar}
+          handleSaveAvatar={handleSaveAvatar}
+        />
 
         <GuestUpgradePrompt
           open={showConnectAccount}

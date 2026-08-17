@@ -1,10 +1,12 @@
 import { curveNatural } from "@visx/curve";
 import { LinePath } from "@visx/shape";
 
-import { motion, useMotionTemplate, useSpring } from "framer-motion";
+import { m, useMotionTemplate, useSpring } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { chartCssVars } from "./chart-context";
 import { useChart } from "./use-chart";
+
+const SPRING_CONFIG = { stiffness: 180, damping: 28 };
 
 export function Line({
   dataKey,
@@ -128,9 +130,8 @@ export function Line({
   ]);
 
   // Springs for smooth highlight animation (both offset AND segment length)
-  const springConfig = { stiffness: 180, damping: 28 };
-  const offsetSpring = useSpring(0, springConfig);
-  const segmentLengthSpring = useSpring(0, springConfig);
+  const offsetSpring = useSpring(0, SPRING_CONFIG);
+  const segmentLengthSpring = useSpring(0, SPRING_CONFIG);
 
   // Update springs when segment bounds change
   useEffect(() => {
@@ -188,7 +189,7 @@ export function Line({
       )}
       {/* Main line with clip path */}
       <g clipPath={animate ? `url(#grow-clip-${dataKey})` : undefined}>
-        <motion.g
+        <m.g
           animate={{ opacity: isHovering && showHighlight ? 0.3 : 1 }}
           initial={{ opacity: 1 }}
           transition={{ duration: 0.4, ease: "easeInOut" }}>
@@ -201,11 +202,11 @@ export function Line({
             strokeWidth={strokeWidth}
             x={(d) => xScale(xAccessor(d)) ?? 0}
             y={getY} />
-        </motion.g>
+        </m.g>
       </g>
       {/* Highlight segment on hover */}
       {showHighlight && isHovering && isLoaded && pathRef.current && (
-        <motion.path
+        <m.path
           animate={{ opacity: 1 }}
           d={pathRef.current.getAttribute("d") || ""}
           exit={{ opacity: 0 }}

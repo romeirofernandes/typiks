@@ -1,5 +1,5 @@
-import { motion, useSpring } from "framer-motion";
-import { useMemo, useRef } from "react";
+import { m, useSpring } from "framer-motion";
+import { useEffect, useMemo, useRef } from "react";
 
 const TICKER_ITEM_HEIGHT = 24;
 
@@ -49,16 +49,21 @@ export function DateTicker({
   const dayY = useSpring(0, { stiffness: 400, damping: 35 });
   const monthY = useSpring(0, { stiffness: 400, damping: 35 });
 
-  dayY.set(-currentIndex * TICKER_ITEM_HEIGHT);
+  useEffect(() => {
+    dayY.set(-currentIndex * TICKER_ITEM_HEIGHT);
+  }, [currentIndex, dayY]);
 
-  if (currentMonthIndex >= 0) {
+  useEffect(() => {
+    if (currentMonthIndex < 0) {
+      return;
+    }
     const isFirstRender = prevMonthIndexRef.current === -1;
     const monthChanged = prevMonthIndexRef.current !== currentMonthIndex;
     if (isFirstRender || monthChanged) {
       monthY.set(-currentMonthIndex * TICKER_ITEM_HEIGHT);
       prevMonthIndexRef.current = currentMonthIndex;
     }
-  }
+  }, [currentMonthIndex, monthY]);
 
   if (!visible || labels.length === 0) {
     return null;
@@ -71,7 +76,7 @@ export function DateTicker({
         <div className="flex items-center justify-center gap-1">
           {/* Month stack */}
           <div className="relative h-6 overflow-hidden">
-            <motion.div className="flex flex-col" style={{ y: monthY }}>
+            <m.div className="flex flex-col" style={{ y: monthY }}>
               {monthIndices.uniqueMonths.map((month) => (
                 <div className="flex h-6 shrink-0 items-center justify-center" key={month}>
                   <span className="whitespace-nowrap font-medium text-sm">
@@ -79,12 +84,12 @@ export function DateTicker({
                   </span>
                 </div>
               ))}
-            </motion.div>
+            </m.div>
           </div>
 
           {/* Day stack */}
           <div className="relative h-6 overflow-hidden">
-            <motion.div className="flex flex-col" style={{ y: dayY }}>
+            <m.div className="flex flex-col" style={{ y: dayY }}>
               {parsedLabels.map((label) => (
                 <div
                   className="flex h-6 shrink-0 items-center justify-center"
@@ -94,7 +99,7 @@ export function DateTicker({
                   </span>
                 </div>
               ))}
-            </motion.div>
+            </m.div>
           </div>
         </div>
       </div>

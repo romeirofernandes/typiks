@@ -22,7 +22,7 @@ import {
   IconVolume2,
   IconVolume3,
 } from "@tabler/icons-react";
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useWebHaptics } from "web-haptics/react";
 
 // Size configuration scale factors
@@ -123,6 +123,7 @@ function KeyboardProvider({
   const [pressedKeys, setPressedKeys] = useState(new Set());
   const [lastPressedKey, setLastPressedKey] = useState(null);
 
+  // react-doctor-disable-next-line no-fetch-in-effect -- static audio asset loaded into an AudioContext; effect owns the fetch, cancels via the `cancelled` flag, and closes the context on cleanup (asset load, not a data query)
   useEffect(() => {
     if (!enableSound || !soundUrl) {
       audioBufferRef.current = null;
@@ -289,18 +290,21 @@ function KeyboardProvider({
     };
   }, [disableNativeBehavior, pressKey, releaseKey]);
 
+  const contextValue = useMemo(
+    () => ({
+      themeName: theme,
+      pressedKeys,
+      lastPressedKey,
+      triggerPointerHaptic,
+      pressKey,
+      releaseKey,
+      releaseAllKeys,
+    }),
+    [theme, pressedKeys, lastPressedKey, triggerPointerHaptic, pressKey, releaseKey, releaseAllKeys]
+  );
+
   return (
-    <KeyboardContext.Provider
-      value={{
-        themeName: theme,
-        pressedKeys,
-        lastPressedKey,
-        triggerPointerHaptic,
-        pressKey,
-        releaseKey,
-        releaseAllKeys,
-      }}
-    >
+    <KeyboardContext.Provider value={contextValue}>
       {children}
     </KeyboardContext.Provider>
   );
@@ -707,7 +711,7 @@ function Key({ width = 50, children, className, keyCode, dims }) {
 // Keyboard constants
 // -----------------------------------------------------------------------------
 
-export let KEYCODE = ((function (KEYCODE) {
+const KEYCODE = ((function (KEYCODE) {
   KEYCODE["Escape"] = "Escape";
   KEYCODE["F1"] = "F1";
   KEYCODE["F2"] = "F2";

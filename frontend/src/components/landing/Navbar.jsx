@@ -4,6 +4,12 @@ import { Moon02Icon, Sun03Icon } from "hugeicons-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/useTheme";
 
+function scrollToSection(sectionId) {
+  const el = document.getElementById(sectionId);
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 export default function Navbar() {
   const { state: { currentUser } } = useAuth();
   const { theme, toggleTheme } = useTheme();
@@ -16,12 +22,6 @@ export default function Navbar() {
     window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
-
-  const scrollToSection = (sectionId) => {
-    const el = document.getElementById(sectionId);
-    if (!el) return;
-    el.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
 
   return (
     <header className="fixed top-6 left-0 right-0 z-50 flex justify-center px-4 w-full">

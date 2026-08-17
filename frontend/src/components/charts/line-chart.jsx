@@ -98,9 +98,10 @@ function ChartInner({
 
   const xScale = useMemo(() => {
     if (xScaleType === "linear") {
-      const values = data
-        .map((d) => xAccessor(d))
-        .filter((value) => Number.isFinite(value));
+      const values = data.flatMap((d) => {
+        const value = xAccessor(d);
+        return Number.isFinite(value) ? [value] : [];
+      });
 
       const minValue = values.length ? Math.min(...values) : 0;
       const maxValue = values.length ? Math.max(...values) : 1;

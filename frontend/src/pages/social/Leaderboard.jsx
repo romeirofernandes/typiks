@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { motion, useReducedMotion } from "framer-motion";
+import { m, useReducedMotion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StarIcon } from "@radix-ui/react-icons";
@@ -9,6 +9,31 @@ import { UserAvatar } from "@/components/ui/user-avatar";
 import { getTierByRating } from "@/lib/player-meta";
 import { apiFetch } from "@/lib/api-client";
 import { leaderboardKeys } from "@/lib/query-keys";
+
+function getRankIcon(rank) {
+  switch (rank) {
+    case 1:
+      return <TbAward className="h-5 w-5 text-chart-1" />;
+    case 2:
+      return <TbAward className="h-5 w-5 text-chart-2" />;
+    case 3:
+      return <TbAward className="h-5 w-5 text-chart-3" />;
+    default:
+      return null;
+  }
+}
+
+function getRatingColor(rating) {
+  if (rating >= 1600) return "text-chart-5";
+  if (rating >= 1400) return "text-chart-4";
+  if (rating >= 1200) return "text-chart-3";
+  if (rating >= 1000) return "text-chart-2";
+  return "text-muted-foreground";
+}
+
+function getRatingBadge(rating) {
+  return getTierByRating(rating);
+}
 
 const Leaderboard = () => {
   const reduceMotion = useReducedMotion();
@@ -27,29 +52,6 @@ const Leaderboard = () => {
     [leaderboardQuery.data]
   );
   const loading = leaderboardQuery.isPending;
-
-  const getRankIcon = (rank) => {
-    switch (rank) {
-      case 1:
-        return <TbAward className="h-5 w-5 text-chart-1" />;
-      case 2:
-        return <TbAward className="h-5 w-5 text-chart-2" />;
-      case 3:
-        return <TbAward className="h-5 w-5 text-chart-3" />;
-      default:
-        return null;
-    }
-  };
-
-  const getRatingColor = (rating) => {
-    if (rating >= 1600) return "text-chart-5";
-    if (rating >= 1400) return "text-chart-4";
-    if (rating >= 1200) return "text-chart-3";
-    if (rating >= 1000) return "text-chart-2";
-    return "text-muted-foreground";
-  };
-
-  const getRatingBadge = (rating) => getTierByRating(rating);
 
   const topThree = useMemo(
     () => leaderboard.filter((player) => player.rank <= 3).sort((a, b) => a.rank - b.rank),
@@ -117,7 +119,7 @@ const Leaderboard = () => {
   return (
     <div className="min-h-[78svh] text-foreground">
       <div className="space-y-5">
-        <motion.div
+        <m.div
           initial={{ opacity: 0, y: reduceMotion ? 0 : -10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35 }}
@@ -138,7 +140,7 @@ const Leaderboard = () => {
             <>
               <div className="grid gap-2 sm:hidden">
                 {mobilePodium.map((player, index) => (
-                  <motion.div
+                  <m.div
                     key={`mobile-${player.username}`}
                     initial={{ opacity: 0, y: reduceMotion ? 0 : 8 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -159,13 +161,13 @@ const Leaderboard = () => {
                     <p className={`mt-1 text-sm font-medium tabular-nums ${getRatingColor(player.rating)}`}>
                       {player.rating} rating
                     </p>
-                  </motion.div>
+                  </m.div>
                 ))}
               </div>
 
               <div className="hidden gap-2 sm:grid sm:grid-cols-3 sm:items-end">
                 {podium.map((player, index) => (
-                <motion.div
+                <m.div
                   key={player.username}
                   initial={{ opacity: 0, y: reduceMotion ? 0 : 8 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -198,14 +200,14 @@ const Leaderboard = () => {
                   >
                     {player.rating} rating
                   </p>
-                </motion.div>
+                </m.div>
                 ))}
               </div>
             </>
           ) : null}
-        </motion.div>
+        </m.div>
 
-        <motion.div
+        <m.div
           initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35, delay: 0.08 }}
@@ -242,7 +244,7 @@ const Leaderboard = () => {
                         const badge = getRatingBadge(player.rating);
 
                         return (
-                          <motion.tr
+                          <m.tr
                             key={player.username}
                             initial={{ opacity: 0, x: reduceMotion ? 0 : -8 }}
                             animate={{ opacity: 1, x: 0 }}
@@ -289,7 +291,7 @@ const Leaderboard = () => {
                             <td className="px-4 py-3 text-right font-medium tabular-nums">
                               {player.winRate}%
                             </td>
-                          </motion.tr>
+                          </m.tr>
                         );
                       })}
                     </tbody>
@@ -298,7 +300,7 @@ const Leaderboard = () => {
               )}
             </CardContent>
           </Card>
-        </motion.div>
+        </m.div>
 
       </div>
     </div>

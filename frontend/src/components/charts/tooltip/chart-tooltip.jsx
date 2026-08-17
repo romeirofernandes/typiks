@@ -1,5 +1,5 @@
 import { createPortal } from "react-dom";
-import { motion, useSpring } from "framer-motion";
+import { m, useSpring } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
 import { chartCssVars } from "../chart-context";
 import { useChart } from "../use-chart";
@@ -41,7 +41,7 @@ export function ChartTooltip({
 
   const [mounted, setMounted] = useState(false);
 
-  // Only render portals on client side after mount
+  // react-doctor-disable-next-line rendering-hydration-no-flicker -- intentional mount gate: portal tooltip must wait for layout to measure container bounds, client-only SPA (no SSR)
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -60,7 +60,9 @@ export function ChartTooltip({
   // Animated crosshair position
   const animatedX = useSpring(xWithMargin, crosshairSpringConfig);
 
-  animatedX.set(xWithMargin);
+  useEffect(() => {
+    animatedX.set(xWithMargin);
+  }, [animatedX, xWithMargin]);
 
   // Generate rows from lines
   const tooltipRows = useMemo(() => {
@@ -195,7 +197,7 @@ export function ChartTooltip({
 
       {/* Date/Category Ticker - only show for vertical charts */}
       {showDatePill && dateLabels.length > 0 && visible && !isHorizontal && (
-        <motion.div
+        <m.div
           className="pointer-events-none absolute z-50"
           style={{
             left: animatedX,
@@ -206,7 +208,7 @@ export function ChartTooltip({
             currentIndex={tooltipData?.index ?? 0}
             labels={dateLabels}
             visible={visible} />
-        </motion.div>
+        </m.div>
       )}
     </>
   );

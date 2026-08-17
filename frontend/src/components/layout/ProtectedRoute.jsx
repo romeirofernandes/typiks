@@ -1,7 +1,7 @@
 import React from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { Navigate } from "react-router-dom";
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 
 const ProtectedRoute = ({ children }) => {
   const { state: { currentUser, loading } } = useAuth();
@@ -9,7 +9,7 @@ const ProtectedRoute = ({ children }) => {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <motion.div
+        <m.div
           animate={{ rotate: 360 }}
           transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
           className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full"

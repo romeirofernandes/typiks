@@ -1,10 +1,12 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
+const EMPTY_OPTIONS = [];
+
 function SearchableSelect({
   value,
   onValueChange,
-  options = [],
+  options = EMPTY_OPTIONS,
   placeholder = "Select...",
   disabled = false,
   className,
@@ -35,7 +37,8 @@ function SearchableSelect({
     if (open) {
       setQuery("");
       setHighlightedIndex(0);
-      setTimeout(() => inputRef.current?.focus(), 0);
+      const focusTimer = setTimeout(() => inputRef.current?.focus(), 0);
+      return () => clearTimeout(focusTimer);
     }
   }, [open]);
 
@@ -121,6 +124,7 @@ function SearchableSelect({
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Search..."
+              aria-label="Search options"
               className="w-full rounded-sm bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-muted-foreground"
             />
           </div>

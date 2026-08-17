@@ -60,14 +60,15 @@ export async function apiFetch(
     signal: options.signal,
   });
 
-  const payload = await response.json().catch(() => ({}));
-
   if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
     const error = new Error(payload?.error || `Request failed (${response.status})`);
     error.status = response.status;
     error.payload = payload;
     throw error;
   }
+
+  const payload = await response.json().catch(() => ({}));
 
   return { data: payload };
 }

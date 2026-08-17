@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useReducer } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  motion,
+  m,
   AnimatePresence,
 } from "framer-motion";
 import Confetti from "react-confetti";
@@ -24,30 +24,237 @@ import GuestUpgradePrompt from "@/components/auth/GuestUpgradePrompt";
 import { apiFetch } from "@/lib/api-client";
 import { userKeys } from "@/lib/query-keys";
 
-const Game = () => {
+function openWebSocket(path) {
+  const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
+  const httpUrl = serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
+  const wsBaseUrl = httpUrl
+    .replace(/^http:/i, "ws:")
+    .replace(/^https:/i, "wss:")
+    .replace(/\/$/, "");
+  return new WebSocket(new URL(path, wsBaseUrl));
+}
+
+function formatTime(seconds) {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
+}
+
+function getRatingColor(rating) {
+  if (rating >= 1600) return "text-chart-5";
+  if (rating >= 1400) return "text-chart-4";
+  if (rating >= 1200) return "text-chart-3";
+  if (rating >= 1000) return "text-chart-2";
+  return "text-muted-foreground";
+}
+
+const GAME_INITIAL_STATE = {
+  gameState: "waiting",
+  connectionError: null,
+  opponent: null,
+  countdown: null,
+  words: [],
+  currentWordIndex: 0,
+  opponentWordIndex: 0,
+  myScore: 0,
+  opponentScore: 0,
+  timeLeft: 60,
+  input: "",
+  gameResults: null,
+  postMatchRating: null,
+  modeSeconds: 60,
+  rematchState: "idle",
+  incomingRematch: null,
+};
+
+function buildInitialGameState(modeSeconds) {
+  return { ...GAME_INITIAL_STATE, modeSeconds };
+}
+
+function gameReducer(state, action) {
+  switch (action.type) {
+    case "CONNECTION_CLEAR":
+      return { ...state, connectionError: null };
+
+    case "CONNECTION_ERROR":
+      return {
+        ...state,
+        connectionError: { title: action.title, message: action.message },
+        gameState: "error",
+      };
+
+    case "SET_GAME_STATE":
+      return { ...state, gameState: action.gameState };
+
+    case "MATCH_FOUND":
+      return {
+        ...state,
+        rematchState: "idle",
+        incomingRematch: null,
+        postMatchRating: null,
+        gameState: "countdown",
+        modeSeconds: action.modeSeconds,
+        opponent: action.opponent,
+        input: "",
+      };
+
+    case "MATCH_ABORTED":
+      return {
+        ...state,
+        rematchState: "idle",
+        incomingRematch: null,
+        postMatchRating: null,
+        opponent: null,
+        input: "",
+        gameState: "waiting",
+      };
+
+    case "COUNTDOWN":
+      return { ...state, countdown: action.count };
+
+    case "GAME_START":
+      return {
+        ...state,
+        modeSeconds: action.modeSeconds,
+        words: action.words,
+        timeLeft: action.timeLeft,
+        gameState: "playing",
+        countdown: null,
+        myScore: 0,
+        opponentScore: 0,
+        currentWordIndex: 0,
+        opponentWordIndex: 0,
+        input: "",
+      };
+
+    case "PLAYER_PROGRESS":
+      return {
+        ...state,
+        myScore: action.myScore,
+        currentWordIndex: action.currentWordIndex,
+        opponentScore: action.opponentScore,
+        opponentWordIndex: action.opponentWordIndex,
+      };
+
+    case "GAME_RESUMED":
+      return {
+        ...state,
+        modeSeconds: action.modeSeconds,
+        opponent: action.opponent,
+        words: action.words,
+        myScore: action.myScore,
+        currentWordIndex: action.currentWordIndex,
+        opponentScore: action.opponentScore,
+        opponentWordIndex: action.opponentWordIndex,
+        countdown:
+          action.status === "playing" ? null : state.countdown,
+        timeLeft:
+          action.status === "playing" ? action.timeLeft : state.timeLeft,
+        gameState:
+          action.status === "playing"
+            ? "playing"
+            : action.status === "countdown"
+              ? "countdown"
+              : "waiting",
+      };
+
+    case "GAME_END":
+      return {
+        ...state,
+        rematchState: "idle",
+        incomingRematch: null,
+        modeSeconds: action.modeSeconds,
+        gameResults: action.results,
+        input: "",
+        gameState: "finished",
+      };
+
+    case "OPPONENT_DISCONNECTED":
+      return {
+        ...state,
+        rematchState: "idle",
+        incomingRematch: null,
+        postMatchRating: null,
+        input: "",
+        gameState: "finished",
+        gameResults: action.results,
+      };
+
+    case "REMATCH_PENDING":
+      return { ...state, rematchState: "pending" };
+
+    case "REMATCH_REQUESTED":
+      return { ...state, incomingRematch: action.incomingRematch };
+
+    case "REMATCH_DECLINED":
+      return { ...state, rematchState: "declined", incomingRematch: null };
+
+    case "REMATCH_TIMEOUT":
+      return { ...state, rematchState: "timeout", incomingRematch: null };
+
+    case "REMATCH_UNAVAILABLE":
+      return { ...state, rematchState: "unavailable", incomingRematch: null };
+
+    case "SET_REMATCH_STATE":
+      return { ...state, rematchState: action.rematchState };
+
+    case "CLEAR_INCOMING_REMATCH":
+      return { ...state, incomingRematch: null };
+
+    case "TICK":
+      return { ...state, timeLeft: action.timeLeft };
+
+    case "INPUT_CHANGE":
+      return { ...state, input: action.input };
+
+    case "SUBMIT_SUCCESS":
+      return {
+        ...state,
+        myScore: state.myScore + 1,
+        currentWordIndex: Math.min(
+          state.currentWordIndex + 1,
+          state.words.length
+        ),
+        input: "",
+      };
+
+    case "SET_POST_MATCH_RATING":
+      return { ...state, postMatchRating: action.postMatchRating };
+
+    default:
+      return state;
+  }
+}
+
+function useGameSession() {
   const { state: { currentUser } } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const initialModeSeconds = [15, 30, 60].includes(Number(location.state?.modeSeconds))
     ? Number(location.state.modeSeconds)
     : 60;
-  const [gameState, setGameState] = useState("waiting");
-  const [connectionError, setConnectionError] = useState(null);
-  const [opponent, setOpponent] = useState(null);
-  const [countdown, setCountdown] = useState(null);
-  const [words, setWords] = useState([]);
-  const [currentWordIndex, setCurrentWordIndex] = useState(0);
-  const [opponentWordIndex, setOpponentWordIndex] = useState(0);
-  const [myScore, setMyScore] = useState(0);
-  const [opponentScore, setOpponentScore] = useState(0);
-  const [timeLeft, setTimeLeft] = useState(60);
-  const [input, setInput] = useState("");
-  const [gameResults, setGameResults] = useState(null);
-  const [postMatchRating, setPostMatchRating] = useState(null);
-  const [modeSeconds, setModeSeconds] = useState(initialModeSeconds);
-  const [activeGameId, setActiveGameId] = useState(null);
-  const [rematchState, setRematchState] = useState("idle");
-  const [incomingRematch, setIncomingRematch] = useState(null);
+  const [
+    {
+      gameState,
+      connectionError,
+      opponent,
+      countdown,
+      words,
+      currentWordIndex,
+      opponentWordIndex,
+      myScore,
+      opponentScore,
+      timeLeft,
+      input,
+      gameResults,
+      postMatchRating,
+      modeSeconds,
+      rematchState,
+      incomingRematch,
+    },
+    dispatch,
+  ] = useReducer(gameReducer, initialModeSeconds, buildInitialGameState);
+  const activeGameIdRef = useRef(null);
   const [showGuestUpgrade, setShowGuestUpgrade] = useState(false);
   const [playerPreferences] = usePlayerPreferences();
   const isCoarsePointer = useIsCoarsePointer();
@@ -61,8 +268,10 @@ const Game = () => {
     gamesPlayed: 0,
     gamesWon: 0,
   }));
+  const handleWebSocketMessageRef = useRef(null);
   const inputRef = useRef(null);
   const timerRef = useRef(null);
+  const timeLeftRef = useRef(60);
   const wsRef = useRef(null);
   const wsKindRef = useRef(null); // "queue" | "game" | null
   const matchAbortedRef = useRef(false);
@@ -83,9 +292,8 @@ const Game = () => {
   const activeSubmitKeys = activeSubmitKeyIds.map((id) => getSubmitKeyOptionById(id));
   const activeSubmitKeySet = new Set(activeSubmitKeys.map((option) => option.key));
   const activeSubmitLabel = activeSubmitKeys.map((option) => option.label).join(" / ");
-  
 
-  const cleanup = () => {
+  const cleanup = useCallback(() => {
     connectAttemptRef.current += 1;
 
     if (wsRef.current) {
@@ -100,7 +308,7 @@ const Game = () => {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
-  };
+  }, []);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -138,12 +346,10 @@ const Game = () => {
         return false;
       }
 
-      setMyScore((prev) => prev + 1);
-      setCurrentWordIndex((prev) => Math.min(prev + 1, words.length));
-      setInput("");
+      dispatch({ type: "SUBMIT_SUCCESS" });
       return true;
     },
-    [currentWord, gameState, words.length]
+    [currentWord, gameState]
   );
 
   const { stats: fetchedStats, loading: statsLoading } = useStats();
@@ -186,16 +392,6 @@ const Game = () => {
     setUserStatsLoaded(true);
   }, [fetchedStats, statsLoading, currentUser]);
 
-  const openWebSocket = (path) => {
-    const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
-    const httpUrl = serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
-    const wsBaseUrl = httpUrl
-      .replace(/^http:/i, "ws:")
-      .replace(/^https:/i, "wss:")
-      .replace(/\/$/, "");
-    return new WebSocket(new URL(path, wsBaseUrl));
-  };
-
   const connectQueue = useCallback(async () => {
     if (!userStats || !currentUser) return;
     if (isConnectingRef.current) return;
@@ -214,7 +410,7 @@ const Game = () => {
     const attemptId = ++connectAttemptRef.current;
 
     try {
-      setConnectionError(null);
+      dispatch({ type: "CONNECTION_CLEAR" });
       const idToken = await currentUser.getIdToken();
 
       if (attemptId !== connectAttemptRef.current) {
@@ -233,7 +429,7 @@ const Game = () => {
         }
 
         isConnectingRef.current = false;
-        setGameState("waiting");
+        dispatch({ type: "SET_GAME_STATE", gameState: "waiting" });
 
         // Join the matchmaking queue with proper user info
         websocket.send(
@@ -253,7 +449,7 @@ const Game = () => {
       websocket.onmessage = (event) => {
         if (wsRef.current !== websocket) return;
         const message = JSON.parse(event.data);
-        handleWebSocketMessage(message);
+        handleWebSocketMessageRef.current(message);
       };
 
       websocket.onclose = (event) => {
@@ -278,20 +474,20 @@ const Game = () => {
 
         const reason = String(event?.reason || "");
         if (event?.code === 1000 && /replaced by newer session/i.test(reason)) {
-          setConnectionError({
+          dispatch({
+            type: "CONNECTION_ERROR",
             title: "Session Replaced",
             message:
               "This session was replaced by a newer one (another tab/device). Close other sessions and try again.",
           });
-          setGameState("error");
           return;
         }
 
-        setConnectionError({
+        dispatch({
+          type: "CONNECTION_ERROR",
           title: "Connection Lost",
           message: "Could not connect to the game server.",
         });
-        setGameState("error");
       };
 
       websocket.onerror = (error) => {
@@ -303,8 +499,7 @@ const Game = () => {
       isConnectingRef.current = false;
       console.error("Failed to connect WebSocket:", error);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser, modeSeconds, queueRating, userStats]); // note: handleWebSocketMessage is omitted as it's structurally bound to the latest render by design or handled
+  }, [currentUser, modeSeconds, queueRating, userStats]);
 
   const connectToGame = useCallback(
     async (gameId) => {
@@ -315,7 +510,7 @@ const Game = () => {
       const attemptId = ++connectAttemptRef.current;
 
       try {
-        setConnectionError(null);
+        dispatch({ type: "CONNECTION_CLEAR" });
         const idToken = await currentUser.getIdToken();
 
         if (attemptId !== connectAttemptRef.current) {
@@ -352,7 +547,7 @@ const Game = () => {
         websocket.onmessage = (event) => {
           if (wsRef.current !== websocket) return;
           const message = JSON.parse(event.data);
-          handleWebSocketMessage(message);
+          handleWebSocketMessageRef.current(message);
         };
 
         websocket.onclose = (event) => {
@@ -375,11 +570,11 @@ const Game = () => {
             return;
           }
 
-          setConnectionError({
+          dispatch({
+            type: "CONNECTION_ERROR",
             title: "Connection Lost",
             message: "Could not connect to the game server.",
           });
-          setGameState("error");
         };
 
         websocket.onerror = (error) => {
@@ -392,7 +587,6 @@ const Game = () => {
         console.error("Failed to connect to game:", error);
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [currentUser, queueRating, userStats]
   );
 
@@ -400,8 +594,9 @@ const Game = () => {
     return () => {
       cleanup();
     };
-  }, []);
+  }, [cleanup]);
 
+  // react-doctor-disable-next-line no-effect-chain -- Stats-load effect (199) sets userStats + userStatsLoaded; this effect intentionally runs one render later so connectQueue's closure sees the real stats (not the default 800) for the JOIN_QUEUE payload. A second purpose: reconnect to the queue when MATCH_ABORTED flips gameState back to "waiting". Merging would either send the default rating or drop the abort-reconnect path.
   useEffect(() => {
     if (
       userStatsLoaded &&
@@ -414,17 +609,16 @@ const Game = () => {
     }
   }, [connectQueue, gameState, userStats, userStatsLoaded]);
 
-  const handleWebSocketMessage = (message) => {
-    switch (message.type) {
+  useEffect(() => {
+    handleWebSocketMessageRef.current = (message) => {
+      switch (message.type) {
       case "MATCH_FOUND":
-        setRematchState("idle");
-        setIncomingRematch(null);
-        setPostMatchRating(null);
-        setActiveGameId(message.gameId || null);
-        setModeSeconds(Number(message.modeSeconds) || modeSeconds);
-        setOpponent(message.opponent);
-        setInput("");
-        setGameState("countdown");
+        activeGameIdRef.current = message.gameId || null;
+        dispatch({
+          type: "MATCH_FOUND",
+          modeSeconds: Number(message.modeSeconds) || modeSeconds,
+          opponent: message.opponent,
+        });
 
         // Initial match: hop from the matchmaking queue to the dedicated game room.
         // Rematch: MATCH_FOUND arrives on the already-open game socket, so skip.
@@ -441,39 +635,28 @@ const Game = () => {
 
       case "MATCH_ABORTED":
         matchAbortedRef.current = true;
-        setRematchState("idle");
-        setIncomingRematch(null);
-        setPostMatchRating(null);
-        setActiveGameId(null);
-        setOpponent(null);
-        setInput("");
-        setGameState("waiting");
+        activeGameIdRef.current = null;
+        dispatch({ type: "MATCH_ABORTED" });
         break;
 
       case "COUNTDOWN":
-        setCountdown(message.count);
+        dispatch({ type: "COUNTDOWN", count: message.count });
         break;
 
       case "GAME_START": {
         gameEndedRef.current = false;
         resultPersistedRef.current = false;
-        setModeSeconds(Number(message.modeSeconds) || modeSeconds);
-        setWords(Array.isArray(message.words) ? message.words : []);
-        setTimeLeft(
-          Number.isFinite(message.duration)
-            ? Math.max(0, Math.round(message.duration / 1000))
-            : 60
-        );
-
-        setGameState("playing");
-        setCountdown(null);
+        const startTimeLeft = Number.isFinite(message.duration)
+          ? Math.max(0, Math.round(message.duration / 1000))
+          : 60;
+        timeLeftRef.current = startTimeLeft;
+        dispatch({
+          type: "GAME_START",
+          modeSeconds: Number(message.modeSeconds) || modeSeconds,
+          words: Array.isArray(message.words) ? message.words : [],
+          timeLeft: startTimeLeft,
+        });
         startTimer();
-        // Reset scores and progress
-        setMyScore(0);
-        setOpponentScore(0);
-        setCurrentWordIndex(0);
-        setOpponentWordIndex(0);
-        setInput("");
         setTimeout(() => inputRef.current?.focus(), 100);
         break;
       }
@@ -490,18 +673,17 @@ const Game = () => {
             ? message.player2
             : message.player1;
 
-        setMyScore(myData.score);
-        setCurrentWordIndex(myData.currentWordIndex);
-        setOpponentScore(opponentData.score);
-        setOpponentWordIndex(opponentData.currentWordIndex);
+        dispatch({
+          type: "PLAYER_PROGRESS",
+          myScore: myData.score,
+          currentWordIndex: myData.currentWordIndex,
+          opponentScore: opponentData.score,
+          opponentWordIndex: opponentData.currentWordIndex,
+        });
         break;
       }
 
       case "GAME_RESUMED": {
-        setModeSeconds(Number(message.modeSeconds) || modeSeconds);
-        setOpponent(message.opponent || null);
-        setWords(Array.isArray(message.words) ? message.words : []);
-
         const myData =
           message.player1?.id === currentUser.uid
             ? message.player1
@@ -511,34 +693,36 @@ const Game = () => {
             ? message.player2
             : message.player1;
 
-        setMyScore(Number.isFinite(myData?.score) ? myData.score : 0);
-        setCurrentWordIndex(
-          Number.isFinite(myData?.currentWordIndex)
-            ? myData.currentWordIndex
-            : 0
-        );
-        setOpponentScore(
-          Number.isFinite(opponentData?.score) ? opponentData.score : 0
-        );
-        setOpponentWordIndex(
-          Number.isFinite(opponentData?.currentWordIndex)
-            ? opponentData.currentWordIndex
-            : 0
-        );
-
+        let resumedTimeLeft;
         if (message.status === "playing") {
-          const resumedDuration = Number.isFinite(message.duration)
+          resumedTimeLeft = Number.isFinite(message.duration)
             ? Math.max(0, Math.round(message.duration / 1000))
             : 60;
-          setCountdown(null);
-          setTimeLeft(resumedDuration);
-          setGameState("playing");
+          timeLeftRef.current = resumedTimeLeft;
+        }
+
+        dispatch({
+          type: "GAME_RESUMED",
+          modeSeconds: Number(message.modeSeconds) || modeSeconds,
+          opponent: message.opponent || null,
+          words: Array.isArray(message.words) ? message.words : [],
+          myScore: Number.isFinite(myData?.score) ? myData.score : 0,
+          currentWordIndex: Number.isFinite(myData?.currentWordIndex)
+            ? myData.currentWordIndex
+            : 0,
+          opponentScore: Number.isFinite(opponentData?.score)
+            ? opponentData.score
+            : 0,
+          opponentWordIndex: Number.isFinite(opponentData?.currentWordIndex)
+            ? opponentData.currentWordIndex
+            : 0,
+          status: message.status,
+          timeLeft: resumedTimeLeft,
+        });
+
+        if (message.status === "playing") {
           startTimer();
           setTimeout(() => inputRef.current?.focus(), 100);
-        } else if (message.status === "countdown") {
-          setGameState("countdown");
-        } else {
-          setGameState("waiting");
         }
 
         break;
@@ -549,13 +733,12 @@ const Game = () => {
 
       case "GAME_END":
         gameEndedRef.current = true;
-        setRematchState("idle");
-        setIncomingRematch(null);
-        setActiveGameId(message.results?.gameId || activeGameId);
-        setModeSeconds(Number(message.results?.modeSeconds) || modeSeconds);
-        setGameResults(message.results);
-        setInput("");
-        setGameState("finished");
+        activeGameIdRef.current = message.results?.gameId || activeGameIdRef.current;
+        dispatch({
+          type: "GAME_END",
+          results: message.results,
+          modeSeconds: Number(message.results?.modeSeconds) || modeSeconds,
+        });
         if (timerRef.current) {
           clearInterval(timerRef.current);
           timerRef.current = null;
@@ -566,33 +749,31 @@ const Game = () => {
 
       case "OPPONENT_DISCONNECTED":
         gameEndedRef.current = true;
-        setRematchState("idle");
-        setIncomingRematch(null);
-        setPostMatchRating(null);
-        setInput("");
-        setGameState("finished");
         {
-      const fallbackResults = {
-          gameId: activeGameId,
-          modeSeconds,
-          player1: {
-            id: currentUser.uid,
-            username: userStats.username,
-            avatarId: userStats.avatarId,
-            score: myScore,
-            won: true,
-          },
-          player2: {
-            id: opponent?.id || "disconnected",
-            username: opponent?.username || "Opponent",
-            avatarId: opponent?.avatarId || "avatar1",
-            score: opponentScore,
-            won: false,
-          },
-          isDraw: false,
-          reason: "opponent_disconnected",
+          const fallbackResults = {
+            gameId: activeGameIdRef.current,
+            modeSeconds,
+            player1: {
+              id: currentUser.uid,
+              username: userStats.username,
+              avatarId: userStats.avatarId,
+              score: myScore,
+              won: true,
+            },
+            player2: {
+              id: opponent?.id || "disconnected",
+              username: opponent?.username || "Opponent",
+              avatarId: opponent?.avatarId || "avatar1",
+              score: opponentScore,
+              won: false,
+            },
+            isDraw: false,
+            reason: "opponent_disconnected",
           };
-          setGameResults(fallbackResults);
+          dispatch({
+            type: "OPPONENT_DISCONNECTED",
+            results: fallbackResults,
+          });
           updateGameResults(fallbackResults);
         }
         if (timerRef.current) {
@@ -602,35 +783,36 @@ const Game = () => {
         break;
 
       case "REMATCH_PENDING":
-        setRematchState("pending");
+        dispatch({ type: "REMATCH_PENDING" });
         break;
 
       case "REMATCH_REQUESTED":
-        setIncomingRematch({
-          fromPlayerId: message.fromPlayerId,
-          fromUsername: message.fromUsername || "Opponent",
+        dispatch({
+          type: "REMATCH_REQUESTED",
+          incomingRematch: {
+            fromPlayerId: message.fromPlayerId,
+            fromUsername: message.fromUsername || "Opponent",
+          },
         });
         break;
 
       case "REMATCH_DECLINED":
-        setRematchState("declined");
-        setIncomingRematch(null);
+        dispatch({ type: "REMATCH_DECLINED" });
         break;
 
       case "REMATCH_TIMEOUT":
-        setRematchState("timeout");
-        setIncomingRematch(null);
+        dispatch({ type: "REMATCH_TIMEOUT" });
         break;
 
       case "REMATCH_UNAVAILABLE":
-        setRematchState("unavailable");
-        setIncomingRematch(null);
+        dispatch({ type: "REMATCH_UNAVAILABLE" });
         break;
 
       default:
         break;
     }
-  };
+    };
+  });
 
   const updateGameResults = async (results) => {
     try {
@@ -653,7 +835,7 @@ const Game = () => {
         return;
       }
 
-      const persistedGameId = results.gameId || activeGameId;
+      const persistedGameId = results.gameId || activeGameIdRef.current;
       if (!persistedGameId) {
         console.warn("Skipping game result persistence due to missing game id");
         return;
@@ -670,13 +852,14 @@ const Game = () => {
       });
 
       resultPersistedRef.current = true;
-      setPostMatchRating(
-        Number.isFinite(Number(data?.modeStats?.rating))
+      dispatch({
+        type: "SET_POST_MATCH_RATING",
+        postMatchRating: Number.isFinite(Number(data?.modeStats?.rating))
           ? Number(data.modeStats.rating)
           : Number.isFinite(Number(data?.player?.rating))
             ? Number(data.player.rating)
-            : null
-      );
+            : null,
+      });
 
       // Update local user stats for immediate UI update
       setUserStats((prev) => ({
@@ -701,22 +884,20 @@ const Game = () => {
     }
   };
 
-  const startTimer = () => {
+  const startTimer = useCallback(() => {
     if (timerRef.current) {
       clearInterval(timerRef.current);
     }
 
     timerRef.current = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(timerRef.current);
-          timerRef.current = null;
-          return 0;
-        }
-        return prev - 1;
-      });
+      timeLeftRef.current -= 1;
+      dispatch({ type: "TICK", timeLeft: timeLeftRef.current });
+      if (timeLeftRef.current <= 0) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
     }, 1000);
-  };
+  }, []);
 
   const handleInputChange = (e) => {
     const maxLength = currentWord.length;
@@ -724,7 +905,7 @@ const Game = () => {
       .replace(/\s/g, "")
       .slice(0, maxLength)
       .toLowerCase();
-    setInput(nextValue);
+    dispatch({ type: "INPUT_CHANGE", input: nextValue });
 
     if (isAutoAdvanceEnabled) {
       submitWordIfCorrect(nextValue);
@@ -753,7 +934,7 @@ const Game = () => {
 
   useEffect(() => {
     if (gameState !== "playing") {
-      setInput("");
+      dispatch({ type: "INPUT_CHANGE", input: "" });
     }
   }, [gameState]);
 
@@ -769,9 +950,9 @@ const Game = () => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     try {
       wsRef.current.send(JSON.stringify({ type: "REMATCH_REQUEST" }));
-      setRematchState("pending");
+      dispatch({ type: "SET_REMATCH_STATE", rematchState: "pending" });
     } catch {
-      setRematchState("unavailable");
+      dispatch({ type: "SET_REMATCH_STATE", rematchState: "unavailable" });
     }
   };
 
@@ -782,22 +963,8 @@ const Game = () => {
     } catch {
       // no-op
     } finally {
-      setIncomingRematch(null);
+      dispatch({ type: "CLEAR_INCOMING_REMATCH" });
     }
-  };
-
-  const formatTime = (seconds) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
-  };
-
-  const getRatingColor = (rating) => {
-    if (rating >= 1600) return "text-chart-5";
-    if (rating >= 1400) return "text-chart-4";
-    if (rating >= 1200) return "text-chart-3";
-    if (rating >= 1000) return "text-chart-2";
-    return "text-muted-foreground";
   };
 
   const isWinner = Boolean(
@@ -812,6 +979,589 @@ const Game = () => {
       ? Number(postMatchRating)
       : userStats?.rating ?? 800;
 
+  return {
+    currentUser,
+    gameState,
+    connectionError,
+    opponent,
+    countdown,
+    words,
+    currentWordIndex,
+    opponentWordIndex,
+    myScore,
+    opponentScore,
+    timeLeft,
+    input,
+    gameResults,
+    modeSeconds,
+    rematchState,
+    incomingRematch,
+    userStats,
+    queueRating,
+    currentWord,
+    isAutoAdvanceEnabled,
+    activeSubmitLabel,
+    isCoarsePointer,
+    viewport,
+    inputRef,
+    isWinner,
+    displayRating,
+    showGuestUpgrade,
+    setShowGuestUpgrade,
+    handleInputChange,
+    handleInputSubmit,
+    submitCurrentInput,
+    handleBackToDashboard,
+    handleRematch,
+    respondToRematch,
+  };
+}
+
+function GameHeader({ modeSeconds, gameState, timeLeft }) {
+  return (
+    <m.div
+      initial={{ opacity: 0, y: -10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="flex items-center justify-between border-b border-border/50 pb-4"
+    >
+      <div>
+        <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
+          Ranked Match
+        </p>
+        <h2 className="font-sans text-xl font-semibold tracking-tight">Live Game</h2>
+        <p className="mt-1 font-mono text-xs uppercase tracking-[0.12em] text-muted-foreground">
+          {modeSeconds}s mode
+        </p>
+      </div>
+
+      {gameState === "playing" && (
+        <div className="flex items-center gap-2 rounded-full bg-primary/10 px-4 py-2 font-mono text-lg font-bold tabular-nums text-primary">
+          <FiClock className="h-4 w-4" />
+          {formatTime(timeLeft)}
+        </div>
+      )}
+    </m.div>
+  );
+}
+
+function GameErrorState({ connectionError, onBack }) {
+  return (
+    <m.div
+      key="error"
+      initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="flex flex-1 items-center justify-center py-12"
+      >
+        <Card className="w-full max-w-md border-destructive/50">
+          <CardHeader className="text-center">
+            <m.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-destructive/20"
+            >
+              <FiZap className="h-8 w-8 text-destructive" />
+            </m.div>
+            <CardTitle className="font-sans text-destructive">
+              {connectionError?.title || "Connection Lost"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4 text-center">
+            <p className="text-sm text-muted-foreground">
+              {connectionError?.message || "Could not connect to the game server."}
+            </p>
+            <Button onClick={onBack} className="w-full gap-2">
+              <FiArrowLeft className="h-4 w-4" />
+              Back to Dashboard
+            </Button>
+          </CardContent>
+        </Card>
+      </m.div>
+  );
+}
+
+function GameWaitingState({ queueRating, onCancel }) {
+  return (
+    <m.div
+      key="waiting"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="flex flex-1 items-center justify-center py-12"
+    >
+      <Card className="w-full max-w-md overflow-hidden">
+        <CardHeader className="text-center">
+          <m.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: "spring", stiffness: 200 }}
+            className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/20"
+          >
+            <FiZap className="h-8 w-8 text-primary" />
+          </m.div>
+          <CardTitle className="font-sans">Finding Opponent</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6 py-8 text-center">
+          <DotLoader duration={100} className="mx-auto scale-150" />
+          <div className="space-y-2">
+            <p className="font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">
+              Searching for players...
+            </p>
+            <div className="flex items-center justify-center gap-2">
+              <FiTrendingUp className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">
+                Your Rating:{" "}
+                <span className={`font-semibold ${getRatingColor(queueRating)}`}>
+                  {queueRating}
+                </span>
+              </span>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            onClick={onCancel}
+            className="w-full gap-2"
+          >
+            <FiArrowLeft className="h-4 w-4" />
+            Cancel
+          </Button>
+        </CardContent>
+      </Card>
+    </m.div>
+  );
+}
+
+function GameCountdownState({ userStats, opponent, countdown }) {
+  return (
+    <m.div
+      key="countdown"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="flex flex-1 items-center justify-center py-12"
+    >
+      <Card className="w-full max-w-md overflow-hidden border-primary/50">
+        <CardHeader className="text-center">
+          <CardTitle className="font-sans">Match Found!</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6 py-8 text-center">
+          {/* VS Display */}
+          <div className="flex items-center justify-center gap-4">
+            <div className="text-right">
+              <p className="inline-flex items-center gap-2 font-semibold">
+                <UserAvatar avatarId={userStats.avatarId} username={userStats.username} size="sm" />
+                <span>{userStats.username}</span>
+              </p>
+              <p className={`font-mono text-sm ${getRatingColor(userStats.rating)}`}>
+                {userStats.rating}
+              </p>
+            </div>
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted font-sans text-lg font-bold text-muted-foreground">
+              VS
+            </div>
+            <div className="text-left">
+              <p className="inline-flex items-center gap-2 font-semibold">
+                <UserAvatar avatarId={opponent?.avatarId} username={opponent?.username || "Opponent"} size="sm" />
+                <span>{opponent?.username}</span>
+              </p>
+              <p className={`font-mono text-sm ${getRatingColor(opponent?.rating)}`}>
+                {opponent?.rating}
+              </p>
+            </div>
+          </div>
+          
+          {/* Countdown */}
+          <m.div
+            key={countdown}
+            initial={{ scale: 0.5, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="font-sans text-7xl font-bold text-primary"
+          >
+            {countdown === 0 ? "GO!" : countdown}
+          </m.div>
+        </CardContent>
+      </Card>
+    </m.div>
+  );
+}
+
+function GamePlayingState({
+  userStats,
+  opponent,
+  myScore,
+  currentWordIndex,
+  opponentScore,
+  opponentWordIndex,
+  words,
+  input,
+  inputRef,
+  isCoarsePointer,
+  isAutoAdvanceEnabled,
+  activeSubmitLabel,
+  handleInputChange,
+  handleInputSubmit,
+  submitCurrentInput,
+}) {
+  return (
+    <m.div
+      key="playing"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="grid min-h-0 flex-1 grid-rows-[auto,1fr,auto] gap-6"
+    >
+      {/* Score Display */}
+      <div className="grid grid-cols-2 gap-4">
+        <Card className="border-primary/30 bg-primary/5">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
+              <UserAvatar avatarId={userStats.avatarId} username={userStats.username} size="sm" />
+              {userStats.username} (You)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="font-sans text-3xl font-bold text-primary">{myScore}</div>
+            <div className="font-mono text-xs text-muted-foreground">
+              Word {currentWordIndex + 1} / {words.length}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
+              <UserAvatar avatarId={opponent?.avatarId} username={opponent?.username || "Opponent"} size="sm" />
+              {opponent?.username}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="font-sans text-3xl font-bold">{opponentScore}</div>
+            <div className="font-mono text-xs text-muted-foreground">
+              Word {opponentWordIndex + 1} / {words.length}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Current Word Display - Monkeytype Style */}
+      <Card className="h-full">
+        <CardContent className="flex h-full flex-col gap-6 py-8">
+          <div className="text-center">
+            <p className="mb-4 font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">
+              Type This Word
+            </p>
+            <div className="relative inline-block font-mono text-4xl font-medium tracking-wider leading-none sm:text-5xl">
+              {(words[currentWordIndex] || "").split("").map((char, charIndex) => {
+                const typedChar = input[charIndex];
+                const isCurrentPosition = charIndex === input.length;
+                const isTyped = charIndex < input.length;
+                const isCorrect = isTyped && typedChar === char;
+                const isWrong = isTyped && typedChar !== char;
+                const renderedChar = char === " " ? "\u00A0" : char;
+                const renderedTypedChar = isWrong && typedChar === " " ? "_" : typedChar;
+
+                return (
+                  <span
+                    key={charIndex}
+                    className={`relative inline-block min-w-[0.45em] align-baseline ${
+                      isCorrect
+                        ? "text-primary"
+                        : isWrong
+                        ? "text-destructive"
+                        : "text-muted-foreground/50"
+                    }`}
+                  >
+                    {isCurrentPosition && (
+                      <span
+                        className="absolute -left-[2px] top-0 h-full w-[3px] bg-primary"
+                        style={{
+                          animation: "blink 1s ease-in-out infinite",
+                        }}
+                      />
+                    )}
+                    {isWrong ? renderedTypedChar : renderedChar}
+                  </span>
+                );
+              })}
+              {/* Cursor at end if all typed */}
+              {input.length === (words[currentWordIndex] || "").length && (
+                <span
+                  className="absolute -right-[2px] top-0 h-full w-[3px] bg-primary"
+                  style={{
+                    animation: "blink 1s ease-in-out infinite",
+                  }}
+                />
+              )}
+            </div>
+          </div>
+          <input
+            ref={inputRef}
+            value={input}
+            onChange={handleInputChange}
+            onKeyDown={handleInputSubmit}
+            aria-label="Type the next word"
+            className={isCoarsePointer ? "h-11 w-full rounded-md border border-border/70 bg-background px-3 text-base" : "pointer-events-none absolute opacity-0"}
+            autoFocus={!isCoarsePointer}
+            autoCapitalize="none"
+            autoCorrect="off"
+            autoComplete="one-time-code"
+            spellCheck={false}
+            inputMode="text"
+            enterKeyHint="go"
+          />
+          {/* Click area to refocus */}
+          <div
+            onClick={() => inputRef.current?.focus()}
+            className="cursor-text rounded-md border border-border/50 bg-muted/30 p-4 text-center"
+          >
+            <p className="font-mono text-sm text-muted-foreground">
+              {input.length > 0 ? (
+                <span>Typing: <span className="text-foreground">{input}</span></span>
+              ) : (
+                isAutoAdvanceEnabled
+                  ? "Type the full word correctly to auto-advance..."
+                  : `Type the word, then press ${activeSubmitLabel} to submit...`
+              )}
+            </p>
+          </div>
+          {isCoarsePointer && !isAutoAdvanceEnabled ? (
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full"
+              onClick={submitCurrentInput}
+            >
+              Submit Word
+            </Button>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      {/* Progress Indicators */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
+              Your Progress
+            </span>
+            <span className="font-mono text-xs text-primary">
+              {Math.round((currentWordIndex / words.length) * 100)}%
+            </span>
+          </div>
+          <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+            <m.div
+              className="h-full w-full origin-left rounded-full bg-primary"
+              initial={{ scaleX: 0 }}
+              animate={{ scaleX: currentWordIndex / words.length }}
+              transition={{ duration: 0.3 }}
+            />
+          </div>
+        </div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
+              Opponent Progress
+            </span>
+            <span className="font-mono text-xs text-destructive">
+              {Math.round((opponentWordIndex / words.length) * 100)}%
+            </span>
+          </div>
+          <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+            <m.div
+              className="h-full w-full origin-left rounded-full bg-destructive"
+              initial={{ scaleX: 0 }}
+              animate={{ scaleX: opponentWordIndex / words.length }}
+              transition={{ duration: 0.3 }}
+            />
+          </div>
+        </div>
+      </div>
+    </m.div>
+  );
+}
+
+function GameResultsState({
+  gameResults,
+  currentUser,
+  userStats,
+  displayRating,
+  onBack,
+  setShowGuestUpgrade,
+  rematchState,
+  onRematch,
+}) {
+  return (
+    <m.div
+      key="finished"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="flex flex-1 items-center justify-center py-12"
+    >
+      <Card className="w-full max-w-md overflow-hidden">
+        <CardHeader className="text-center">
+          <CardTitle className="font-sans text-2xl">
+            {gameResults.reason === "opponent_disconnected"
+              ? "Opponent Disconnected"
+              : gameResults.isDraw
+              ? "It's a Draw!"
+              : gameResults.player1.id === currentUser.uid &&
+                gameResults.player1.won
+              ? "You Won"
+              : gameResults.player2.id === currentUser.uid &&
+                gameResults.player2.won
+              ? "You Won"
+              : "Better Luck Next Time!"}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6 py-6">
+          {/* Score Display */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className={`rounded-md p-4 text-center ${
+              gameResults.player1.won ? "bg-primary/10" : "bg-muted/50"
+            }`}>
+              <p className="inline-flex items-center gap-2 font-semibold">
+                <UserAvatar avatarId={gameResults.player1.avatarId} username={gameResults.player1.username} size="sm" />
+                <span>{gameResults.player1.username}</span>
+              </p>
+              <p className="font-sans text-3xl font-bold">
+                {gameResults.player1.score}
+              </p>
+              {gameResults.player1.won && (
+                <span className="font-mono text-xs text-primary">WINNER</span>
+              )}
+            </div>
+            <div className={`rounded-md p-4 text-center ${
+              gameResults.player2.won ? "bg-primary/10" : "bg-muted/50"
+            }`}>
+              <p className="inline-flex items-center gap-2 font-semibold">
+                <UserAvatar avatarId={gameResults.player2.avatarId} username={gameResults.player2.username} size="sm" />
+                <span>{gameResults.player2.username}</span>
+              </p>
+              <p className="font-sans text-3xl font-bold">
+                {gameResults.player2.score}
+              </p>
+              {gameResults.player2.won && (
+                <span className="font-mono text-xs text-primary">WINNER</span>
+              )}
+            </div>
+          </div>
+
+          {/* Rating Update */}
+          {userStats && (
+            <div className="flex items-center justify-center gap-2 rounded-md bg-muted/50 p-3">
+              <FiTrendingUp className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">
+                New Rating:{" "}
+                <span
+                  className={`font-semibold ${getRatingColor(displayRating)}`}
+                >
+                  {displayRating}
+                </span>
+              </span>
+            </div>
+          )}
+
+          <Button onClick={onBack} className="w-full gap-2">
+            <FiArrowLeft className="h-4 w-4" />
+            Back to Dashboard
+          </Button>
+          {currentUser?.isAnonymous ? (
+            <Button
+              variant="outline"
+              onClick={() => setShowGuestUpgrade(true)}
+              className="w-full gap-2"
+            >
+              <FiSave className="h-4 w-4" />
+              Save progress
+            </Button>
+          ) : null}
+          {rematchState !== "declined" ? (
+            <Button variant="outline" onClick={onRematch} className="w-full" disabled={rematchState === "pending"}>
+              {rematchState === "pending" ? "Rematch Requested..." : "Rematch"}
+            </Button>
+          ) : null}
+          {rematchState === "declined" ? (
+            <p className="text-center text-xs text-muted-foreground">Opponent declined the rematch.</p>
+          ) : null}
+          {rematchState === "timeout" ? (
+            <p className="text-center text-xs text-muted-foreground">Rematch request timed out.</p>
+          ) : null}
+          {rematchState === "unavailable" ? (
+            <p className="text-center text-xs text-muted-foreground">Opponent is unavailable for rematch.</p>
+          ) : null}
+        </CardContent>
+      </Card>
+    </m.div>
+  );
+}
+
+function RematchRequestToast({ incomingRematch, onRespond }) {
+  return (
+    <m.div
+      key="rematch-request"
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="fixed bottom-4 right-4 z-50 w-[min(92vw,22rem)]"
+    >
+      <Card className="border-primary/40 bg-background/95 shadow-xl backdrop-blur">
+        <CardContent className="space-y-3 p-4">
+          <p className="text-sm">
+            <span className="font-semibold">{incomingRematch.fromUsername}</span> wants a rematch.
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <Button onClick={() => onRespond("accept")} size="sm" className="gap-1.5">
+              <FiCheck className="h-3.5 w-3.5" />
+              Accept
+            </Button>
+            <Button onClick={() => onRespond("reject")} size="sm" variant="outline" className="gap-1.5">
+              <FiX className="h-3.5 w-3.5" />
+              Decline
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </m.div>
+  );
+}
+
+const Game = () => {
+  const {
+    currentUser,
+    gameState,
+    connectionError,
+    opponent,
+    countdown,
+    words,
+    currentWordIndex,
+    opponentWordIndex,
+    myScore,
+    opponentScore,
+    timeLeft,
+    input,
+    gameResults,
+    modeSeconds,
+    rematchState,
+    incomingRematch,
+    userStats,
+    queueRating,
+    isAutoAdvanceEnabled,
+    activeSubmitLabel,
+    isCoarsePointer,
+    viewport,
+    inputRef,
+    isWinner,
+    displayRating,
+    showGuestUpgrade,
+    setShowGuestUpgrade,
+    handleInputChange,
+    handleInputSubmit,
+    submitCurrentInput,
+    handleBackToDashboard,
+    handleRematch,
+    respondToRematch,
+  } = useGameSession();
+
   return (
     <div className="flex h-full flex-col gap-6">
       {gameState === "finished" && isWinner && viewport.width > 0 && viewport.height > 0 ? (
@@ -823,480 +1573,64 @@ const Game = () => {
           gravity={0.2}
         />
       ) : null}
-      {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between border-b border-border/50 pb-4"
-      >
-        <div>
-          <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
-            Ranked Match
-          </p>
-          <h2 className="font-sans text-xl font-semibold tracking-tight">Live Game</h2>
-          <p className="mt-1 font-mono text-xs uppercase tracking-[0.12em] text-muted-foreground">
-            {modeSeconds}s mode
-          </p>
-        </div>
 
-        {gameState === "playing" && (
-          <div className="flex items-center gap-2 rounded-full bg-primary/10 px-4 py-2 font-mono text-lg font-bold tabular-nums text-primary">
-            <FiClock className="h-4 w-4" />
-            {formatTime(timeLeft)}
-          </div>
-        )}
-      </motion.div>
+      <GameHeader modeSeconds={modeSeconds} gameState={gameState} timeLeft={timeLeft} />
 
-      {/* Game States */}
       <AnimatePresence initial={false} mode="wait">
         {gameState === "error" && (
-          <motion.div
-            key="error"
-            initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="flex flex-1 items-center justify-center py-12"
-            >
-              <Card className="w-full max-w-md border-destructive/50">
-                <CardHeader className="text-center">
-                  <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-destructive/20"
-                  >
-                    <FiZap className="h-8 w-8 text-destructive" />
-                  </motion.div>
-                  <CardTitle className="font-sans text-destructive">
-                    {connectionError?.title || "Connection Lost"}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4 text-center">
-                  <p className="text-sm text-muted-foreground">
-                    {connectionError?.message || "Could not connect to the game server."}
-                  </p>
-                  <Button onClick={() => navigate("/dashboard")} className="w-full gap-2">
-                    <FiArrowLeft className="h-4 w-4" />
-                    Back to Dashboard
-                  </Button>
-                </CardContent>
-              </Card>
-            </motion.div>
-          )}
+          <GameErrorState connectionError={connectionError} onBack={handleBackToDashboard} />
+        )}
 
-          {gameState === "waiting" && (
-            <motion.div
-              key="waiting"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="flex flex-1 items-center justify-center py-12"
-            >
-              <Card className="w-full max-w-md overflow-hidden">
-                <CardHeader className="text-center">
-                  <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{ type: "spring", stiffness: 200 }}
-                    className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/20"
-                  >
-                    <FiZap className="h-8 w-8 text-primary" />
-                  </motion.div>
-                  <CardTitle className="font-sans">Finding Opponent</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-6 py-8 text-center">
-                  <DotLoader duration={100} className="mx-auto scale-150" />
-                  <div className="space-y-2">
-                    <p className="font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">
-                      Searching for players...
-                    </p>
-                    <div className="flex items-center justify-center gap-2">
-                      <FiTrendingUp className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm text-muted-foreground">
-                        Your Rating:{" "}
-                        <span className={`font-semibold ${getRatingColor(queueRating)}`}>
-                          {queueRating}
-                        </span>
-                      </span>
-                    </div>
-                  </div>
-                  <Button
-                    variant="outline"
-                    onClick={handleBackToDashboard}
-                    className="w-full gap-2"
-                  >
-                    <FiArrowLeft className="h-4 w-4" />
-                    Cancel
-                  </Button>
-                </CardContent>
-              </Card>
-            </motion.div>
-          )}
+        {gameState === "waiting" && (
+          <GameWaitingState queueRating={queueRating} onCancel={handleBackToDashboard} />
+        )}
 
-          {gameState === "countdown" && (
-            <motion.div
-              key="countdown"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="flex flex-1 items-center justify-center py-12"
-            >
-              <Card className="w-full max-w-md overflow-hidden border-primary/50">
-                <CardHeader className="text-center">
-                  <CardTitle className="font-sans">Match Found!</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-6 py-8 text-center">
-                  {/* VS Display */}
-                  <div className="flex items-center justify-center gap-4">
-                    <div className="text-right">
-                      <p className="inline-flex items-center gap-2 font-semibold">
-                        <UserAvatar avatarId={userStats.avatarId} username={userStats.username} size="sm" />
-                        <span>{userStats.username}</span>
-                      </p>
-                      <p className={`font-mono text-sm ${getRatingColor(userStats.rating)}`}>
-                        {userStats.rating}
-                      </p>
-                    </div>
-                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted font-sans text-lg font-bold text-muted-foreground">
-                      VS
-                    </div>
-                    <div className="text-left">
-                      <p className="inline-flex items-center gap-2 font-semibold">
-                        <UserAvatar avatarId={opponent?.avatarId} username={opponent?.username || "Opponent"} size="sm" />
-                        <span>{opponent?.username}</span>
-                      </p>
-                      <p className={`font-mono text-sm ${getRatingColor(opponent?.rating)}`}>
-                        {opponent?.rating}
-                      </p>
-                    </div>
-                  </div>
-                  
-                  {/* Countdown */}
-                  <motion.div
-                    key={countdown}
-                    initial={{ scale: 0.5, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    className="font-sans text-7xl font-bold text-primary"
-                  >
-                    {countdown === 0 ? "GO!" : countdown}
-                  </motion.div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          )}
+        {gameState === "countdown" && (
+          <GameCountdownState userStats={userStats} opponent={opponent} countdown={countdown} />
+        )}
 
-          {gameState === "playing" && (
-            <motion.div
-              key="playing"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="grid min-h-0 flex-1 grid-rows-[auto,1fr,auto] gap-6"
-            >
-              {/* Score Display */}
-              <div className="grid grid-cols-2 gap-4">
-                <Card className="border-primary/30 bg-primary/5">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
-                      <UserAvatar avatarId={userStats.avatarId} username={userStats.username} size="sm" />
-                      {userStats.username} (You)
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="font-sans text-3xl font-bold text-primary">{myScore}</div>
-                    <div className="font-mono text-xs text-muted-foreground">
-                      Word {currentWordIndex + 1} / {words.length}
-                    </div>
-                  </CardContent>
-                </Card>
+        {gameState === "playing" && (
+          <GamePlayingState
+            userStats={userStats}
+            opponent={opponent}
+            myScore={myScore}
+            currentWordIndex={currentWordIndex}
+            opponentScore={opponentScore}
+            opponentWordIndex={opponentWordIndex}
+            words={words}
+            input={input}
+            inputRef={inputRef}
+            isCoarsePointer={isCoarsePointer}
+            isAutoAdvanceEnabled={isAutoAdvanceEnabled}
+            activeSubmitLabel={activeSubmitLabel}
+            handleInputChange={handleInputChange}
+            handleInputSubmit={handleInputSubmit}
+            submitCurrentInput={submitCurrentInput}
+          />
+        )}
 
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
-                      <UserAvatar avatarId={opponent?.avatarId} username={opponent?.username || "Opponent"} size="sm" />
-                      {opponent?.username}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="font-sans text-3xl font-bold">{opponentScore}</div>
-                    <div className="font-mono text-xs text-muted-foreground">
-                      Word {opponentWordIndex + 1} / {words.length}
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
+        {gameState === "finished" && gameResults && (
+          <GameResultsState
+            gameResults={gameResults}
+            currentUser={currentUser}
+            userStats={userStats}
+            displayRating={displayRating}
+            onBack={handleBackToDashboard}
+            setShowGuestUpgrade={setShowGuestUpgrade}
+            rematchState={rematchState}
+            onRematch={handleRematch}
+          />
+        )}
 
-              {/* Current Word Display - Monkeytype Style */}
-              <Card className="h-full">
-                <CardContent className="flex h-full flex-col gap-6 py-8">
-                  <div className="text-center">
-                    <p className="mb-4 font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">
-                      Type This Word
-                    </p>
-                    <div className="relative inline-block font-mono text-4xl font-medium tracking-wider leading-none sm:text-5xl">
-                      {(words[currentWordIndex] || "").split("").map((char, charIndex) => {
-                        const typedChar = input[charIndex];
-                        const isCurrentPosition = charIndex === input.length;
-                        const isTyped = charIndex < input.length;
-                        const isCorrect = isTyped && typedChar === char;
-                        const isWrong = isTyped && typedChar !== char;
-                        const renderedChar = char === " " ? "\u00A0" : char;
-                        const renderedTypedChar = isWrong && typedChar === " " ? "_" : typedChar;
+        {gameState === "finished" && incomingRematch ? (
+          <RematchRequestToast incomingRematch={incomingRematch} onRespond={respondToRematch} />
+        ) : null}
+      </AnimatePresence>
 
-                        return (
-                          <span
-                            key={charIndex}
-                            className={`relative inline-block min-w-[0.45em] align-baseline ${
-                              isCorrect
-                                ? "text-primary"
-                                : isWrong
-                                ? "text-destructive"
-                                : "text-muted-foreground/50"
-                            }`}
-                          >
-                            {isCurrentPosition && (
-                              <span
-                                className="absolute -left-[2px] top-0 h-full w-[3px] bg-primary"
-                                style={{
-                                  animation: "blink 1s ease-in-out infinite",
-                                }}
-                              />
-                            )}
-                            {isWrong ? renderedTypedChar : renderedChar}
-                          </span>
-                        );
-                      })}
-                      {/* Cursor at end if all typed */}
-                      {input.length === (words[currentWordIndex] || "").length && (
-                        <span
-                          className="absolute -right-[2px] top-0 h-full w-[3px] bg-primary"
-                          style={{
-                            animation: "blink 1s ease-in-out infinite",
-                          }}
-                        />
-                      )}
-                    </div>
-                  </div>
-                  <input
-                    ref={inputRef}
-                    value={input}
-                    onChange={handleInputChange}
-                    onKeyDown={handleInputSubmit}
-                    className={isCoarsePointer ? "h-11 w-full rounded-md border border-border/70 bg-background px-3 text-base" : "pointer-events-none absolute opacity-0"}
-                    autoFocus={!isCoarsePointer}
-                    autoCapitalize="none"
-                    autoCorrect="off"
-                    autoComplete="one-time-code"
-                    spellCheck={false}
-                    inputMode="text"
-                    enterKeyHint="go"
-                  />
-                  {/* Click area to refocus */}
-                  <div
-                    onClick={() => inputRef.current?.focus()}
-                    className="cursor-text rounded-md border border-border/50 bg-muted/30 p-4 text-center"
-                  >
-                    <p className="font-mono text-sm text-muted-foreground">
-                      {input.length > 0 ? (
-                        <span>Typing: <span className="text-foreground">{input}</span></span>
-                      ) : (
-                        isAutoAdvanceEnabled
-                          ? "Type the full word correctly to auto-advance..."
-                          : `Type the word, then press ${activeSubmitLabel} to submit...`
-                      )}
-                    </p>
-                  </div>
-                  {isCoarsePointer && !isAutoAdvanceEnabled ? (
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      className="w-full"
-                      onClick={submitCurrentInput}
-                    >
-                      Submit Word
-                    </Button>
-                  ) : null}
-                </CardContent>
-              </Card>
-
-              {/* Progress Indicators */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
-                      Your Progress
-                    </span>
-                    <span className="font-mono text-xs text-primary">
-                      {Math.round((currentWordIndex / words.length) * 100)}%
-                    </span>
-                  </div>
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
-                    <motion.div
-                      className="h-full rounded-full bg-primary"
-                      initial={{ width: 0 }}
-                      animate={{ width: `${(currentWordIndex / words.length) * 100}%` }}
-                      transition={{ duration: 0.3 }}
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
-                      Opponent Progress
-                    </span>
-                    <span className="font-mono text-xs text-destructive">
-                      {Math.round((opponentWordIndex / words.length) * 100)}%
-                    </span>
-                  </div>
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
-                    <motion.div
-                      className="h-full rounded-full bg-destructive"
-                      initial={{ width: 0 }}
-                      animate={{ width: `${(opponentWordIndex / words.length) * 100}%` }}
-                      transition={{ duration: 0.3 }}
-                    />
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          )}
-
-          {gameState === "finished" && gameResults && (
-            <motion.div
-              key="finished"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="flex flex-1 items-center justify-center py-12"
-            >
-              <Card className="w-full max-w-md overflow-hidden">
-                <CardHeader className="text-center">
-                  <CardTitle className="font-sans text-2xl">
-                    {gameResults.reason === "opponent_disconnected"
-                      ? "Opponent Disconnected"
-                      : gameResults.isDraw
-                      ? "It's a Draw!"
-                      : gameResults.player1.id === currentUser.uid &&
-                        gameResults.player1.won
-                      ? "You Won"
-                      : gameResults.player2.id === currentUser.uid &&
-                        gameResults.player2.won
-                      ? "You Won"
-                      : "Better Luck Next Time!"}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-6 py-6">
-                  {/* Score Display */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className={`rounded-md p-4 text-center ${
-                      gameResults.player1.won ? "bg-primary/10" : "bg-muted/50"
-                    }`}>
-                      <p className="inline-flex items-center gap-2 font-semibold">
-                        <UserAvatar avatarId={gameResults.player1.avatarId} username={gameResults.player1.username} size="sm" />
-                        <span>{gameResults.player1.username}</span>
-                      </p>
-                      <p className="font-sans text-3xl font-bold">
-                        {gameResults.player1.score}
-                      </p>
-                      {gameResults.player1.won && (
-                        <span className="font-mono text-xs text-primary">WINNER</span>
-                      )}
-                    </div>
-                    <div className={`rounded-md p-4 text-center ${
-                      gameResults.player2.won ? "bg-primary/10" : "bg-muted/50"
-                    }`}>
-                      <p className="inline-flex items-center gap-2 font-semibold">
-                        <UserAvatar avatarId={gameResults.player2.avatarId} username={gameResults.player2.username} size="sm" />
-                        <span>{gameResults.player2.username}</span>
-                      </p>
-                      <p className="font-sans text-3xl font-bold">
-                        {gameResults.player2.score}
-                      </p>
-                      {gameResults.player2.won && (
-                        <span className="font-mono text-xs text-primary">WINNER</span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Rating Update */}
-                  {userStats && (
-                    <div className="flex items-center justify-center gap-2 rounded-md bg-muted/50 p-3">
-                      <FiTrendingUp className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm text-muted-foreground">
-                        New Rating:{" "}
-                        <span
-                          className={`font-semibold ${getRatingColor(displayRating)}`}
-                        >
-                          {displayRating}
-                        </span>
-                      </span>
-                    </div>
-                  )}
-
-                  <Button onClick={handleBackToDashboard} className="w-full gap-2">
-                    <FiArrowLeft className="h-4 w-4" />
-                    Back to Dashboard
-                  </Button>
-                  {currentUser?.isAnonymous ? (
-                    <Button
-                      variant="outline"
-                      onClick={() => setShowGuestUpgrade(true)}
-                      className="w-full gap-2"
-                    >
-                      <FiSave className="h-4 w-4" />
-                      Save progress
-                    </Button>
-                  ) : null}
-                  {rematchState !== "declined" ? (
-                    <Button variant="outline" onClick={handleRematch} className="w-full" disabled={rematchState === "pending"}>
-                      {rematchState === "pending" ? "Rematch Requested..." : "Rematch"}
-                    </Button>
-                  ) : null}
-                  {rematchState === "declined" ? (
-                    <p className="text-center text-xs text-muted-foreground">Opponent declined the rematch.</p>
-                  ) : null}
-                  {rematchState === "timeout" ? (
-                    <p className="text-center text-xs text-muted-foreground">Rematch request timed out.</p>
-                  ) : null}
-                  {rematchState === "unavailable" ? (
-                    <p className="text-center text-xs text-muted-foreground">Opponent is unavailable for rematch.</p>
-                  ) : null}
-                </CardContent>
-              </Card>
-            </motion.div>
-          )}
-
-          {gameState === "finished" && incomingRematch ? (
-            <motion.div
-              key="rematch-request"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="fixed bottom-4 right-4 z-50 w-[min(92vw,22rem)]"
-            >
-              <Card className="border-primary/40 bg-background/95 shadow-xl backdrop-blur">
-                <CardContent className="space-y-3 p-4">
-                  <p className="text-sm">
-                    <span className="font-semibold">{incomingRematch.fromUsername}</span> wants a rematch.
-                  </p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button onClick={() => respondToRematch("accept")} size="sm" className="gap-1.5">
-                      <FiCheck className="h-3.5 w-3.5" />
-                      Accept
-                    </Button>
-                    <Button onClick={() => respondToRematch("reject")} size="sm" variant="outline" className="gap-1.5">
-                      <FiX className="h-3.5 w-3.5" />
-                      Decline
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
-
-        <GuestUpgradePrompt
-          open={showGuestUpgrade}
-          onOpenChange={setShowGuestUpgrade}
-        />
+      <GuestUpgradePrompt
+        open={showGuestUpgrade}
+        onOpenChange={setShowGuestUpgrade}
+      />
     </div>
   );
 };

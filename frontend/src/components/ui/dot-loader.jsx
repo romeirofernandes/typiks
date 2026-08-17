@@ -40,8 +40,9 @@ export function DotLoader({
       const frame = frames[frameIndex];
       if (!frame) return;
 
+      const activeSet = new Set(frame);
       dots.forEach((dot, index) => {
-        dot.classList.toggle("active", frame.includes(index));
+        dot.classList.toggle("active", activeSet.has(index));
       });
     },
     [frames]

@@ -1,4 +1,4 @@
-import { motion, useReducedMotion } from "framer-motion";
+import { m, useReducedMotion } from "framer-motion";
 import { Children, useCallback, useEffect, useRef, useState } from "react";
 import { SPRING_LAYOUT } from "@/lib/ease";
 import { cn } from "@/lib/utils";
@@ -72,10 +72,11 @@ export function SharedLayoutBg({
       className={cn("relative w-full overflow-clip", className)}
     >
       {bounds ? (
-        <motion.div
+        <m.div
           aria-hidden
+          layout
           initial={false}
-          animate={{
+          style={{
             left: bounds.left - inset,
             top: bounds.top - inset,
             width: bounds.width + inset * 2,
@@ -96,6 +97,7 @@ export function SharedLayoutBg({
         const isActive = activeKey != null && key === activeKey;
         return (
           <div
+            // react-doctor-disable-next-line no-array-index-as-key -- index only used as fallback when the child element itself has no key
             key={key}
             ref={
               isActive

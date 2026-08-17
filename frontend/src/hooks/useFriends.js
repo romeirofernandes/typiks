@@ -197,7 +197,11 @@ export function useFriends(currentUser, { onAcceptInvite } = {}) {
       const normalizedUsername = targetUsername.trim();
       if (!currentUser || !normalizedUsername) return;
       setFeedback("");
-      await sendFriendRequestMutation.mutateAsync(normalizedUsername);
+      try {
+        await sendFriendRequestMutation.mutateAsync(normalizedUsername);
+      } catch {
+        // onError in the mutation already sets feedback
+      }
     },
     [username, currentUser, sendFriendRequestMutation]
   );

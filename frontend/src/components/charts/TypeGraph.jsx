@@ -38,6 +38,8 @@ const DAYS_BY_DEVICE = {
   tablet: 259,
 };
 
+const EMPTY_ACTIVITY = [];
+
 function getDaysForViewport(desktopDays) {
   if (typeof window === "undefined") return desktopDays;
   const width = window.innerWidth;
@@ -47,7 +49,7 @@ function getDaysForViewport(desktopDays) {
 }
 
 export function TypeGraph({
-  activityData = [],
+  activityData = EMPTY_ACTIVITY,
   maxDailyCount = 0,
   days = 364,
   title = "Type Graph",

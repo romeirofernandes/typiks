@@ -52,4 +52,5 @@ function Button({
   );
 }
 
+// react-doctor-disable-next-line only-export-components -- Standard shadcn pattern: buttonVariants (cva) sits beside the Button component and is consumed by alert-dialog.jsx; splitting it into its own module would diverge from the shadcn convention used across this codebase.
 export { Button, buttonVariants }

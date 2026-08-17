@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useStats } from "@/hooks/useStats";
-import { motion, useReducedMotion } from "framer-motion";
+import { m, useReducedMotion } from "framer-motion";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SharedLayoutBg } from "@/components/motion/shared-layout-bg";
 import { useNavigate } from "react-router-dom";
@@ -62,13 +62,13 @@ export default function StartGame() {
   );
 
   return (
-    <motion.div
+    <m.div
       initial={{ opacity: 0, y: reduceMotion ? 0 : -10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35 }}
       className="flex min-h-full min-w-0 flex-col"
     >
-      <motion.div
+      <m.div
         initial={{ opacity: 0, y: reduceMotion ? 0 : 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25, delay: 0.06 }}
@@ -79,7 +79,7 @@ export default function StartGame() {
         <p className="mt-1 text-sm text-muted-foreground">
           Choose a timer. Each mode keeps separate rating and score average.
         </p>
-      </motion.div>
+      </m.div>
 
       <SharedLayoutBg
         inset={1}
@@ -125,14 +125,23 @@ export default function StartGame() {
             })
           : null}
       </SharedLayoutBg>
-    </motion.div>
+    </m.div>
   );
 }
 
 function ModeCard({ mode, backgrounds, onStart, delay = 0, reduceMotion = false }) {
   return (
-    <motion.article
+    <m.article
       onClick={onStart}
+      role="button"
+      tabIndex={0}
+      aria-label={`Start ${mode.label} game`}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onStart();
+        }
+      }}
       initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay }}
@@ -177,6 +186,6 @@ function ModeCard({ mode, backgrounds, onStart, delay = 0, reduceMotion = false 
           {mode.gamesPlayed} games played
         </p>
       </div>
-    </motion.article>
+    </m.article>
   );
 }

@@ -56,6 +56,7 @@ function SidebarNavButton({
           "h-11 border border-transparent transition-colors",
           expanded ? "w-full justify-start px-3" : "size-11 justify-center",
           !active && "hover:border-border/70",
+          active && "hover:bg-transparent hover:text-foreground",
           muted && "pointer-events-none opacity-55 saturate-0",
           highlight && !muted && "bg-primary/40 text-foreground hover:bg-primary/50 dark:bg-primary/30 dark:hover:bg-primary/40"
         )}
@@ -87,7 +88,7 @@ function SidebarNavButton({
       </Button>
 
       {!expanded ? (
-        <span className="pointer-events-none invisible absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-xs text-popover-foreground opacity-0 shadow-sm transition-all duration-200 group-hover:visible group-hover:opacity-100">
+        <span className="pointer-events-none invisible absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-xs text-popover-foreground opacity-0 shadow-sm transition-opacity duration-200 group-hover:visible group-hover:opacity-100">
           {label}
         </span>
       ) : null}
@@ -95,63 +96,25 @@ function SidebarNavButton({
   );
 }
 
-export default function AppShell() {
-  const { state: { currentUser } } = useAuth();
-  const navigate = useNavigate();
-  const location = useLocation();
-  const visualViewportHeight = useVisualViewportHeight();
-
-  const [expanded, setExpanded] = useState(true);
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const [isAvatarPreviewOpen, setIsAvatarPreviewOpen] = useState(false);
-  const [statsUsername, setStatsUsername] = useState(null);
-  const [statsAvatarId, setStatsAvatarId] = useState("avatar1");
+function usePresenceConnection({ currentUser, onAvatarPreviewOpenChange }) {
+  const queryClient = useQueryClient();
   const presenceSocketRef = useRef(null);
   const presencePingTimerRef = useRef(null);
   const presenceReconnectTimerRef = useRef(null);
   const presenceSubscribersRef = useRef(new Set());
 
-  const queryClient = useQueryClient();
-
-  const notificationsQuery = useQuery({
-    queryKey: meKeys.notifications(),
-    queryFn: () =>
-      apiFetch(currentUser, "/api/users/me/notifications").then(({ data }) => ({
-        pendingFriendRequests: Number(data?.pendingFriendRequests || 0),
-        pendingRoomInvites: Number(data?.pendingRoomInvites || 0),
-        total: Number(data?.total || 0),
-      })),
-    enabled: Boolean(currentUser),
-    staleTime: 30 * 1000,
-    refetchInterval: 25000,
-    refetchOnWindowFocus: false,
-  });
-
-  const notificationCounts = notificationsQuery.data ?? {
-    pendingFriendRequests: 0,
-    pendingRoomInvites: 0,
-    total: 0,
-  };
-
-  const { stats: sidebarStats } = useStats();
-
-  useEffect(() => {
-    if (!sidebarStats) return;
-    setStatsUsername(sidebarStats?.username ?? null);
-    setStatsAvatarId(sidebarStats?.avatarId || "avatar1");
-  }, [sidebarStats]);
-
   useEffect(() => {
     const handleAvatarPreviewState = (event) => {
-      setIsAvatarPreviewOpen(Boolean(event?.detail?.open));
+      onAvatarPreviewOpenChange(Boolean(event?.detail?.open));
     };
 
     window.addEventListener("typiks:avatar-preview-state", handleAvatarPreviewState);
     return () => {
       window.removeEventListener("typiks:avatar-preview-state", handleAvatarPreviewState);
     };
-  }, []);
+  }, [onAvatarPreviewOpenChange]);
 
+  // react-doctor-disable-next-line effect-needs-cleanup -- presence socket + timers are stored in refs and released on unmount below; isMounted guard prevents socket creation after cleanup
   useEffect(() => {
     if (!currentUser) return;
 
@@ -224,6 +187,7 @@ export default function AppShell() {
     const connectPresenceSocket = async () => {
       try {
         const idToken = await currentUser.getIdToken();
+        if (!isMounted) return;
         const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
         const httpUrl = serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
         const wsBaseUrl = httpUrl
@@ -330,6 +294,273 @@ export default function AppShell() {
       }
     };
   }, [currentUser, queryClient]);
+}
+
+function DesktopSidebar({
+  expanded,
+  onToggleExpanded,
+  isAvatarPreviewOpen,
+  statsAvatarId,
+  username,
+  activeNavKey,
+  navItems,
+  profileActive,
+  onNavigateProfile,
+  onSignOut,
+}) {
+  return (
+    <aside
+      className={cn(
+        "relative z-30 hidden shrink-0 flex-col justify-between py-2 transition-[width] duration-300 lg:flex",
+        expanded ? "w-60" : "w-[4.5rem]"
+      )}
+    >
+      <div className="flex flex-col gap-3">
+        <div className={cn("flex h-11 items-center", expanded ? "justify-between px-2" : "justify-center")}>
+          {expanded ? (
+            <span className="text-2xl font-sans font-semibold leading-none">typiks</span>
+          ) : null}
+
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={onToggleExpanded}
+            aria-label={expanded ? "Collapse sidebar" : "Expand sidebar"}
+            className="size-11 border border-transparent hover:border-border/70"
+          >
+            <ArrowLeft01Icon
+              size={18}
+              className={cn("transition-transform duration-300", !expanded && "rotate-180")}
+            />
+          </Button>
+        </div>
+
+        <nav className="flex flex-col px-2" aria-label="Sidebar actions">
+          <SharedLayoutBg
+            activeKey={activeNavKey}
+            inset={0}
+            className="flex flex-col gap-2"
+            pillClassName="rounded-md"
+            pillContainerClassName="bg-secondary"
+          >
+            {navItems.map((item) => (
+              <SidebarNavButton
+                key={item.key}
+                icon={item.icon}
+                label={item.label}
+                active={item.active}
+                expanded={expanded}
+                onClick={item.onClick}
+                badgeCount={item.badgeCount}
+              />
+            ))}
+          </SharedLayoutBg>
+        </nav>
+      </div>
+
+      <div
+        className={cn(
+          "flex flex-col gap-2 border-t border-border/80 px-2 pt-3 transition-opacity",
+          isAvatarPreviewOpen && "pointer-events-none opacity-55 saturate-0"
+        )}
+      >
+        <div className={cn("group relative flex", !expanded && "justify-center")}>
+          <ThemeToggleButton
+            variant={isAvatarPreviewOpen ? "outline" : "secondary"}
+            title="Toggle theme"
+            className={cn(expanded ? "h-11 w-full justify-center" : "size-11")}
+          />
+
+          {!expanded ? (
+            <span className="pointer-events-none invisible absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-xs text-popover-foreground opacity-0 shadow-sm transition-opacity duration-200 group-hover:visible group-hover:opacity-100">
+              Toggle theme
+            </span>
+          ) : null}
+        </div>
+
+        {expanded ? (
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={onNavigateProfile}
+            className={cn(
+              "h-11 w-full justify-start px-2.5",
+              !isAvatarPreviewOpen && "bg-primary/40 text-foreground hover:bg-primary/50 dark:bg-primary/30 dark:hover:bg-primary/40"
+            )}
+          >
+            <UserAvatar avatarId={statsAvatarId} username={username} size="md" plain />
+              <span className="ml-1 truncate text-sm font-medium">{username}</span>
+          </Button>
+        ) : (
+          <SidebarNavButton
+            icon={UserIcon}
+            label="Profile"
+            active={profileActive}
+            expanded={expanded}
+            onClick={onNavigateProfile}
+            muted={isAvatarPreviewOpen}
+            highlight={!isAvatarPreviewOpen}
+          />
+        )}
+
+        <div className={cn("group relative flex", !expanded && "justify-center")}>
+          <Button
+            type="button"
+            variant="destructive"
+            onClick={onSignOut}
+            aria-label="Logout"
+            className={cn(
+              expanded ? "w-full justify-start px-3" : "size-11 justify-center",
+              isAvatarPreviewOpen && "bg-muted text-muted-foreground hover:bg-muted"
+            )}
+          >
+            <ArrowLeft01Icon size={18} className="rotate-180" />
+            {expanded ? <span>Logout</span> : null}
+          </Button>
+
+          {!expanded ? (
+            <span className="pointer-events-none invisible absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-xs text-popover-foreground opacity-0 shadow-sm transition-opacity duration-200 group-hover:visible group-hover:opacity-100">
+              Logout
+            </span>
+          ) : null}
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function MobileTopBar({
+  mobileOpen,
+  setMobileOpen,
+  username,
+  statsAvatarId,
+  activeNavKey,
+  navItems,
+  onNavigateProfile,
+  onSignOut,
+}) {
+  return (
+    <div className="flex items-center justify-between rounded-lg border border-border/80 bg-background/90 p-2 lg:hidden">
+      <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+        <SheetTrigger asChild>
+          <Button type="button" variant="outline" size="icon" className="size-10" aria-label="Open sidebar">
+            <Menu01Icon size={18} />
+          </Button>
+        </SheetTrigger>
+
+        <SheetContent side="left" className="w-[18rem] border-r border-border p-0">
+          <SheetHeader className="border-b border-border px-4 py-4">
+            <SheetTitle className="text-2xl font-sans leading-none">typiks</SheetTitle>
+          </SheetHeader>
+
+          <div className="flex h-full flex-col justify-between p-3">
+            <nav className="flex flex-col" aria-label="Mobile sidebar actions">
+              <SharedLayoutBg
+                activeKey={activeNavKey}
+                inset={0}
+                className="flex flex-col gap-2"
+                pillClassName="rounded-md"
+                pillContainerClassName="bg-secondary"
+              >
+                {navItems.map((item) => (
+                  <SidebarNavButton
+                    key={item.key}
+                    icon={item.icon}
+                    label={item.label}
+                    active={item.active}
+                    expanded
+                    onClick={() => {
+                      item.onClick();
+                      setMobileOpen(false);
+                    }}
+                    badgeCount={item.badgeCount}
+                  />
+                ))}
+              </SharedLayoutBg>
+            </nav>
+
+            <div className="flex flex-col gap-2 border-t border-border/80 pt-3">
+              <ThemeToggleButton variant="secondary" title="Toggle theme" className="w-full justify-center" />
+
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  onNavigateProfile();
+                  setMobileOpen(false);
+                }}
+                className="h-11 w-full justify-start px-3"
+              >
+                <UserAvatar avatarId={statsAvatarId} username={username} size="md" plain />
+                <span className="ml-2 truncate text-sm font-medium">{username}</span>
+              </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  onSignOut();
+                  setMobileOpen(false);
+                }}
+                className="h-11 w-full justify-start border-destructive/40 px-3 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              >
+                <ArrowLeft01Icon size={18} />
+                <span>Logout</span>
+              </Button>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      <span className="text-base font-sans font-semibold">typiks</span>
+    </div>
+  );
+}
+
+export default function AppShell() {
+  const { state: { currentUser } } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const visualViewportHeight = useVisualViewportHeight();
+
+  const [expanded, setExpanded] = useState(true);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [isAvatarPreviewOpen, setIsAvatarPreviewOpen] = useState(false);
+  const [statsUsername, setStatsUsername] = useState(null);
+  const [statsAvatarId, setStatsAvatarId] = useState("avatar1");
+
+  const notificationsQuery = useQuery({
+    queryKey: meKeys.notifications(),
+    queryFn: () =>
+      apiFetch(currentUser, "/api/users/me/notifications").then(({ data }) => ({
+        pendingFriendRequests: Number(data?.pendingFriendRequests || 0),
+        pendingRoomInvites: Number(data?.pendingRoomInvites || 0),
+        total: Number(data?.total || 0),
+      })),
+    enabled: Boolean(currentUser),
+    staleTime: 30 * 1000,
+    refetchInterval: 25000,
+    refetchOnWindowFocus: false,
+  });
+
+  const notificationCounts = notificationsQuery.data ?? {
+    pendingFriendRequests: 0,
+    pendingRoomInvites: 0,
+    total: 0,
+  };
+
+  const { stats: sidebarStats } = useStats();
+
+  useEffect(() => {
+    if (!sidebarStats) return;
+    setStatsUsername(sidebarStats?.username ?? null);
+    setStatsAvatarId(sidebarStats?.avatarId || "avatar1");
+  }, [sidebarStats]);
+
+  usePresenceConnection({
+    currentUser,
+    onAvatarPreviewOpenChange: setIsAvatarPreviewOpen,
+  });
 
   const username =
     statsUsername ||
@@ -426,199 +657,30 @@ export default function AppShell() {
       <div className="min-h-svh text-foreground font-mono antialiased">
         <div className="h-svh w-full p-3" style={{ height: visualViewportHeight }}>
           <div className="flex h-full w-full flex-col gap-3 lg:flex-row">
-            <aside
-              className={cn(
-                "relative z-30 hidden shrink-0 flex-col justify-between py-2 transition-[width] duration-300 lg:flex",
-                expanded ? "w-60" : "w-[4.5rem]"
-              )}
-            >
-              <div className="flex flex-col gap-3">
-                <div className={cn("flex h-11 items-center", expanded ? "justify-between px-2" : "justify-center")}>
-                  {expanded ? (
-                    <span className="text-2xl font-sans font-semibold leading-none">typiks</span>
-                  ) : null}
-
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => setExpanded((prev) => !prev)}
-                    aria-label={expanded ? "Collapse sidebar" : "Expand sidebar"}
-                    className="size-11 border border-transparent hover:border-border/70"
-                  >
-                    <ArrowLeft01Icon
-                      size={18}
-                      className={cn("transition-transform duration-300", !expanded && "rotate-180")}
-                    />
-                  </Button>
-                </div>
-
-                <nav className="flex flex-col px-2" aria-label="Sidebar actions">
-                  <SharedLayoutBg
-                    activeKey={activeNavKey}
-                    inset={0}
-                    className="flex flex-col gap-2"
-                    pillClassName="rounded-md"
-                    pillContainerClassName="bg-secondary"
-                  >
-                    {navItems.map((item) => (
-                      <SidebarNavButton
-                        key={item.key}
-                        icon={item.icon}
-                        label={item.label}
-                        active={item.active}
-                        expanded={expanded}
-                        onClick={item.onClick}
-                        badgeCount={item.badgeCount}
-                      />
-                    ))}
-                  </SharedLayoutBg>
-                </nav>
-              </div>
-
-              <div
-                className={cn(
-                  "flex flex-col gap-2 border-t border-border/80 px-2 pt-3 transition-opacity",
-                  isAvatarPreviewOpen && "pointer-events-none opacity-55 saturate-0"
-                )}
-              >
-                <div className={cn("group relative flex", !expanded && "justify-center")}>
-                  <ThemeToggleButton
-                    variant={isAvatarPreviewOpen ? "outline" : "secondary"}
-                    title="Toggle theme"
-                    className={cn(expanded ? "h-11 w-full justify-center" : "size-11")}
-                  />
-
-                  {!expanded ? (
-                    <span className="pointer-events-none invisible absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-xs text-popover-foreground opacity-0 shadow-sm transition-all duration-200 group-hover:visible group-hover:opacity-100">
-                      Toggle theme
-                    </span>
-                  ) : null}
-                </div>
-
-                {expanded ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={handleProfile}
-                    className={cn(
-                      "h-11 w-full justify-start px-2.5",
-                      !isAvatarPreviewOpen && "bg-primary/40 text-foreground hover:bg-primary/50 dark:bg-primary/30 dark:hover:bg-primary/40"
-                    )}
-                  >
-                    <UserAvatar avatarId={statsAvatarId} username={username} size="md" plain />
-                      <span className="ml-1 truncate text-sm font-medium">{username}</span>
-                  </Button>
-                ) : (
-                  <SidebarNavButton
-                    icon={UserIcon}
-                    label="Profile"
-                    active={location.pathname === "/profile"}
-                    expanded={expanded}
-                    onClick={handleProfile}
-                    muted={isAvatarPreviewOpen}
-                    highlight={!isAvatarPreviewOpen}
-                  />
-                )}
-
-                <div className={cn("group relative flex", !expanded && "justify-center")}>
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    onClick={handleSignOut}
-                    aria-label="Logout"
-                    className={cn(
-                      expanded ? "w-full justify-start px-3" : "size-11 justify-center",
-                      isAvatarPreviewOpen && "bg-muted text-muted-foreground hover:bg-muted"
-                    )}
-                  >
-                    <ArrowLeft01Icon size={18} className="rotate-180" />
-                    {expanded ? <span>Logout</span> : null}
-                  </Button>
-
-                  {!expanded ? (
-                    <span className="pointer-events-none invisible absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-xs text-popover-foreground opacity-0 shadow-sm transition-all duration-200 group-hover:visible group-hover:opacity-100">
-                      Logout
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-            </aside>
+            <DesktopSidebar
+              expanded={expanded}
+              onToggleExpanded={() => setExpanded((prev) => !prev)}
+              isAvatarPreviewOpen={isAvatarPreviewOpen}
+              statsAvatarId={statsAvatarId}
+              username={username}
+              activeNavKey={activeNavKey}
+              navItems={navItems}
+              profileActive={location.pathname === "/profile"}
+              onNavigateProfile={handleProfile}
+              onSignOut={handleSignOut}
+            />
 
             <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
-              <div className="flex items-center justify-between rounded-lg border border-border/80 bg-background/90 p-2 lg:hidden">
-                <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-                  <SheetTrigger asChild>
-                    <Button type="button" variant="outline" size="icon" className="size-10" aria-label="Open sidebar">
-                      <Menu01Icon size={18} />
-                    </Button>
-                  </SheetTrigger>
-
-                  <SheetContent side="left" className="w-[18rem] border-r border-border p-0">
-                    <SheetHeader className="border-b border-border px-4 py-4">
-                      <SheetTitle className="text-2xl font-sans leading-none">typiks</SheetTitle>
-                    </SheetHeader>
-
-                    <div className="flex h-full flex-col justify-between p-3">
-                      <nav className="flex flex-col" aria-label="Mobile sidebar actions">
-                        <SharedLayoutBg
-                          activeKey={activeNavKey}
-                          inset={0}
-                          className="flex flex-col gap-2"
-                          pillClassName="rounded-md"
-                          pillContainerClassName="bg-secondary"
-                        >
-                          {navItems.map((item) => (
-                            <SidebarNavButton
-                              key={item.key}
-                              icon={item.icon}
-                              label={item.label}
-                              active={item.active}
-                              expanded
-                              onClick={() => {
-                                item.onClick();
-                                setMobileOpen(false);
-                              }}
-                              badgeCount={item.badgeCount}
-                            />
-                          ))}
-                        </SharedLayoutBg>
-                      </nav>
-
-                      <div className="flex flex-col gap-2 border-t border-border/80 pt-3">
-                        <ThemeToggleButton variant="secondary" title="Toggle theme" className="w-full justify-center" />
-
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => {
-                            handleProfile();
-                            setMobileOpen(false);
-                          }}
-                          className="h-11 w-full justify-start px-3"
-                        >
-                          <UserAvatar avatarId={statsAvatarId} username={username} size="md" plain />
-                          <span className="ml-2 truncate text-sm font-medium">{username}</span>
-                        </Button>
-
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => {
-                            handleSignOut();
-                            setMobileOpen(false);
-                          }}
-                          className="h-11 w-full justify-start border-destructive/40 px-3 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                        >
-                          <ArrowLeft01Icon size={18} />
-                          <span>Logout</span>
-                        </Button>
-                      </div>
-                    </div>
-                  </SheetContent>
-                </Sheet>
-
-                <span className="text-base font-sans font-semibold">typiks</span>
-              </div>
+              <MobileTopBar
+                mobileOpen={mobileOpen}
+                setMobileOpen={setMobileOpen}
+                username={username}
+                statsAvatarId={statsAvatarId}
+                activeNavKey={activeNavKey}
+                navItems={navItems}
+                onNavigateProfile={handleProfile}
+                onSignOut={handleSignOut}
+              />
 
               <main
                 className={cn(

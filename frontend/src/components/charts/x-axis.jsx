@@ -56,7 +56,7 @@ export function XAxis({
   const { xScale, margin, tooltipData, containerRef } = useChart();
   const [mounted, setMounted] = useState(false);
 
-  // Only render on client side after mount
+  // react-doctor-disable-next-line rendering-hydration-no-flicker -- intentional mount gate: ticks render crosshair layer that needs post-layout scale, client-only SPA (no SSR)
   useEffect(() => {
     setMounted(true);
   }, []);

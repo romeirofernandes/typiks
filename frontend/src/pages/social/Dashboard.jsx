@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { motion, useReducedMotion } from "framer-motion";
+import { m, useReducedMotion } from "framer-motion";
 import { useAuth } from "@/hooks/useAuth";
 import { useStats } from "@/hooks/useStats";
 import { Button } from "@/components/ui/button";
@@ -146,13 +146,13 @@ export default function Dashboard() {
   }
 
   return (
-    <motion.div
+    <m.div
       initial={{ opacity: 0, y: reduceMotion ? 0 : -10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35 }}
       className="flex min-h-full min-w-0 flex-col gap-4 xl:h-full"
     >
-      <motion.header
+      <m.header
         initial={{ opacity: 0, y: reduceMotion ? 0 : 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25, delay: 0.06 }}
@@ -160,9 +160,9 @@ export default function Dashboard() {
       >
         <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Dashboard</p>
         <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">{greeting}, {username}</h1>
-      </motion.header>
+      </m.header>
 
-      <motion.section
+      <m.section
         initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3, delay: 0.12 }}
@@ -171,9 +171,9 @@ export default function Dashboard() {
         <Button className="h-14 text-sm sm:h-16 sm:text-base" onClick={() => navigate("/start-game")}>Start Ranked Match</Button>
         <Button variant="outline" className="h-14 text-sm sm:h-16 sm:text-base" onClick={() => navigate("/create-room")}>Create Friendly Room</Button>
         <Button variant="secondary" className="h-14 text-sm sm:h-16 sm:text-base" onClick={() => navigate("/leaderboard")}>Open Leaderboard</Button>
-      </motion.section>
+      </m.section>
 
-      <motion.section
+      <m.section
         initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3, delay: 0.18 }}
@@ -185,9 +185,9 @@ export default function Dashboard() {
             <p className="mt-2 text-2xl font-semibold tabular-nums sm:text-3xl">{stat.value}</p>
           </div>
         ))}
-      </motion.section>
+      </m.section>
 
-      <motion.section
+      <m.section
         initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3, delay: 0.24 }}
@@ -231,9 +231,9 @@ export default function Dashboard() {
           maxDailyCount={maxDailyCount}
           days={typeGraphDays}
         />
-      </motion.section>
+      </m.section>
 
-      <motion.section
+      <m.section
         initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3, delay: 0.3 }}
@@ -256,7 +256,7 @@ export default function Dashboard() {
         </div>
 
         <RatingGrowthChart points={ratingTrend} />
-      </motion.section>
-    </motion.div>
+      </m.section>
+    </m.div>
   );
 }

@@ -1,5 +1,5 @@
 import { createPortal } from "react-dom";
-import { motion, useSpring } from "framer-motion";
+import { m, useSpring } from "framer-motion";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +25,7 @@ export function TooltipBox({
   const tooltipHeightRef = useRef(80);
   const [mounted, setMounted] = useState(false);
 
+  // react-doctor-disable-next-line rendering-hydration-no-flicker -- intentional mount gate: tooltip measures container size for flip positioning after layout, client-only SPA (no SSR)
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -33,17 +34,7 @@ export function TooltipBox({
   const animatedTop = useSpring(y, springConfig);
 
   const tw = tooltipWidthRef.current;
-  const th = tooltipHeightRef.current;
   const shouldFlipX = x + tw + offset > containerWidth;
-  const targetX = shouldFlipX ? x - offset - tw : x + offset;
-  const targetY = Math.max(offset, Math.min(y - th / 2, containerHeight - th - offset));
-
-  if (leftOverride === undefined) {
-    animatedLeft.set(targetX);
-  }
-  if (topOverride === undefined) {
-    animatedTop.set(targetY);
-  }
 
   useLayoutEffect(() => {
     if (!(visible && tooltipRef.current)) {
@@ -106,7 +97,7 @@ export function TooltipBox({
     return null;
   }
 
-  return createPortal(<motion.div
+  return createPortal(<m.div
     animate={{ opacity: 1 }}
     className={cn("pointer-events-none absolute z-50", className)}
     exit={{ opacity: 0 }}
@@ -114,7 +105,7 @@ export function TooltipBox({
     ref={tooltipRef}
     style={{ left: finalLeft, top: finalTop }}
     transition={{ duration: 0.1 }}>
-    <motion.div
+    <m.div
       animate={{ scale: 1, opacity: 1, x: 0 }}
       className="min-w-[140px] overflow-hidden rounded-lg bg-popover text-popover-foreground shadow-lg backdrop-blur-md"
       initial={{ scale: 0.85, opacity: 0, x: isFlipped ? 20 : -20 }}
@@ -122,8 +113,8 @@ export function TooltipBox({
       style={{ transformOrigin }}
       transition={{ type: "spring", stiffness: 300, damping: 25 }}>
       {children}
-    </motion.div>
-  </motion.div>, container);
+    </m.div>
+  </m.div>, container);
 }
 
 TooltipBox.displayName = "TooltipBox";
