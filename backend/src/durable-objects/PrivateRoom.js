@@ -1,6 +1,8 @@
 import { verifyFirebaseIdToken } from '../middleware/firebaseAuth.js';
 import { generateSeed, generateWords, WORD_DIFFICULTIES } from '../utils/wordGenerator.js';
 import { generateEntityId as createId } from '../services/ids.js';
+import { persistRoomMatchResult } from '../services/match-results.js';
+import { drizzle } from 'drizzle-orm/d1';
 
 const MAX_PLAYER_INPUT_LENGTH = 32;
 
@@ -657,7 +659,8 @@ export class PrivateRoom {
 			return;
 		}
 
-		const words = generateWords(generateSeed(), WORD_DIFFICULTIES.medium, this.settings.wordCount);
+		const seed = generateSeed();
+		const words = generateWords(seed, WORD_DIFFICULTIES.medium, this.settings.wordCount);
 		const startTime = Date.now();
 		const durationMs = this.settings.roundTimeSeconds * 1000;
 		const endTime = startTime + durationMs;
@@ -692,6 +695,8 @@ export class PrivateRoom {
 
 		this.gameState = 'playing';
 		this.game = {
+			id: createId('game'),
+			seed,
 			countdown: 0,
 			countdownInterval: null,
 			startTimeout: null,
@@ -809,6 +814,28 @@ export class PrivateRoom {
 			}
 
 			isDraw = !winnerId;
+		}
+
+		if (this.env?.DB) {
+			persistRoomMatchResult(drizzle(this.env.DB), {
+				gameId: this.game.id,
+				roomCode: this.roomCode || null,
+				mode: this.settings.gameMode,
+				modeSeconds: this.settings.roundTimeSeconds,
+				difficulty: WORD_DIFFICULTIES.medium,
+				seed: this.game.seed,
+				startedAt: this.game.startTime ? new Date(this.game.startTime) : null,
+				endedAt: new Date(),
+				players: rankings.map((row, index) => ({
+					id: row.playerId,
+					placement: index + 1,
+					score: row.score,
+					progress: row.progress,
+					correctChars: row.correctChars,
+				})),
+				winnerId,
+				isDraw,
+			}).catch((error) => console.error('Failed to persist room match result:', error));
 		}
 
 		this.sendToMembers({

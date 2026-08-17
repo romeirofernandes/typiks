@@ -2,6 +2,7 @@ import {
     sqliteTable,
     text,
     integer,
+    real,
     index,
     uniqueIndex,
     primaryKey,
@@ -136,5 +137,97 @@ export const rankedGameLogs = sqliteTable(
         userDateIdx: index('ranked_game_logs_user_date_idx').on(table.userId, table.createdAt),
         userModeIdx: index('ranked_game_logs_user_mode_idx').on(table.userId, table.modeSeconds),
         modeIdx: index('ranked_game_logs_mode_seconds_idx').on(table.modeSeconds),
+    })
+);
+
+export const matches = sqliteTable(
+    'matches',
+    {
+        id: text('id').primaryKey(),
+        roomCode: text('room_code'),
+        mode: text('mode').notNull(), // 'ranked' | 'ffa' | 'coop'
+        modeSeconds: integer('mode_seconds').notNull(),
+        difficulty: text('difficulty').notNull(),
+        seed: integer('seed').notNull(),
+        status: text('status').notNull(),
+        startedAt: integer('started_at', { mode: 'timestamp' }),
+        endedAt: integer('ended_at', { mode: 'timestamp' }),
+        createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+    },
+    (table) => ({
+        roomCodeIdx: index('matches_room_code_idx').on(table.roomCode),
+        createdAtIdx: index('matches_created_at_idx').on(table.createdAt),
+        statusIdx: index('matches_status_idx').on(table.status),
+    })
+);
+
+export const matchParticipants = sqliteTable(
+    'match_participants',
+    {
+        matchId: text('match_id').notNull(),
+        userId: text('user_id').notNull(),
+        opponentId: text('opponent_id'),
+        placement: integer('placement').notNull().default(0),
+        result: text('result'), // 'win' | 'loss' | 'draw', null for team modes
+        score: integer('score').notNull().default(0),
+        opponentScore: integer('opponent_score').notNull().default(0),
+        progress: integer('progress').notNull().default(0),
+        correctChars: integer('correct_chars').notNull().default(0),
+        wpm: real('wpm'),
+        accuracy: real('accuracy'),
+        disconnected: integer('disconnected').notNull().default(0),
+        ratingBefore: integer('rating_before'),
+        ratingAfter: integer('rating_after'),
+        createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+    },
+    (table) => ({
+        pk: primaryKey({ columns: [table.matchId, table.userId] }),
+        matchIdx: index('match_participants_match_id_idx').on(table.matchId),
+        userIdx: index('match_participants_user_id_idx').on(table.userId),
+        userDateIdx: index('match_participants_user_date_idx').on(table.userId, table.createdAt),
+    })
+);
+
+export const userSettings = sqliteTable(
+    'user_settings',
+    {
+        userId: text('user_id').primaryKey(),
+        regionAnalyticsConsent: integer('region_analytics_consent').notNull().default(0),
+        createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+        updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+    }
+);
+
+export const rooms = sqliteTable(
+    'rooms',
+    {
+        roomCode: text('room_code').primaryKey(),
+        ownerId: text('owner_id').notNull(),
+        name: text('name').notNull().default(''),
+        visibility: text('visibility').notNull().default('private'),
+        status: text('status').notNull().default('open'),
+        maxPlayers: integer('max_players').notNull().default(6),
+        modeSeconds: integer('mode_seconds'),
+        wordCount: integer('word_count'),
+        createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+        closedAt: integer('closed_at', { mode: 'timestamp' }),
+    },
+    (table) => ({
+        ownerIdx: index('rooms_owner_id_idx').on(table.ownerId),
+    })
+);
+
+export const roomMembers = sqliteTable(
+    'room_members',
+    {
+        roomCode: text('room_code').notNull(),
+        userId: text('user_id').notNull(),
+        role: text('role').notNull().default('member'),
+        joinedAt: integer('joined_at', { mode: 'timestamp' }).notNull(),
+        leftAt: integer('left_at', { mode: 'timestamp' }),
+    },
+    (table) => ({
+        pk: primaryKey({ columns: [table.roomCode, table.userId] }),
+        userIdx: index('room_members_user_id_idx').on(table.userId),
     })
 );

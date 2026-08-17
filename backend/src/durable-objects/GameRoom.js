@@ -2,6 +2,8 @@ import { verifyFirebaseIdToken } from '../middleware/firebaseAuth.js';
 import { generateSeed, generateWords, WORD_DIFFICULTIES } from '../utils/wordGenerator.js';
 import { resolveServerProfiles } from '../utils/serverProfiles.js';
 import { generateEntityId as createId } from '../services/ids.js';
+import { persistRankedMatchResult } from '../services/match-results.js';
+import { drizzle } from 'drizzle-orm/d1';
 
 export const DEFAULT_MODE_SECONDS = 60;
 export const ALLOWED_MODE_SECONDS = new Set([15, 30, 60]);
@@ -114,6 +116,7 @@ export class GameRoom {
 		return {
 			id: game.id,
 			difficulty: game.difficulty,
+			seed: game.seed,
 			modeSeconds: game.modeSeconds,
 			status: game.status,
 			startTime: game.startTime,
@@ -850,6 +853,7 @@ export class GameRoom {
 		const game = {
 			id: gameId,
 			difficulty,
+			seed: wordSeed,
 			modeSeconds: normalizedModeSeconds,
 			player1: {
 				id: match.player1.id,
@@ -1091,6 +1095,30 @@ export class GameRoom {
 			isDraw,
 			reason,
 		};
+
+		if (this.env?.DB) {
+			try {
+				const persisted = await persistRankedMatchResult(drizzle(this.env.DB), {
+					gameId,
+					modeSeconds: results.modeSeconds,
+					roomCode: null,
+					difficulty: game.difficulty,
+					seed: game.seed,
+					startedAt: game.startTime ? new Date(game.startTime) : null,
+					endedAt: new Date(),
+					player1: results.player1,
+					player2: results.player2,
+					isDraw,
+					disconnectedPlayerId:
+						reason === 'opponent_disconnected' ? options?.disconnectedPlayerId ?? null : null,
+				});
+				if (persisted?.ratings) {
+					results.ratings = persisted.ratings;
+				}
+			} catch (error) {
+				console.error('Failed to persist ranked match result:', error);
+			}
+		}
 
 		this.sendToPlayers(game, {
 			type: 'GAME_END',

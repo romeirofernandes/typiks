@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useReducer } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   m,
   AnimatePresence,
@@ -21,7 +21,6 @@ import {
 } from "@/lib/player-preferences";
 import { FiClock, FiArrowLeft, FiZap, FiTrendingUp, FiCheck, FiX, FiSave } from "react-icons/fi";
 import GuestUpgradePrompt from "@/components/auth/GuestUpgradePrompt";
-import { apiFetch } from "@/lib/api-client";
 import { userKeys } from "@/lib/query-keys";
 
 function openWebSocket(path) {
@@ -354,27 +353,6 @@ function useGameSession() {
 
   const { stats: fetchedStats, loading: statsLoading } = useStats();
   const queryClient = useQueryClient();
-
-  const persistGameResultMutation = useMutation({
-    mutationFn: (payload) =>
-      apiFetch(currentUser, `/api/users/${currentUser.uid}/game-result`, {
-        method: "PATCH",
-        body: payload,
-      }).then(({ data }) => data),
-    onSuccess: () => {
-      if (currentUser) {
-        queryClient.invalidateQueries({
-          queryKey: userKeys.stats(currentUser.uid),
-        });
-        queryClient.invalidateQueries({
-          queryKey: userKeys.activity(currentUser.uid, 364),
-        });
-        queryClient.invalidateQueries({
-          queryKey: userKeys.detail(currentUser.uid),
-        });
-      }
-    },
-  });
 
   useEffect(() => {
     if (statsLoading) return;
@@ -814,74 +792,58 @@ function useGameSession() {
     };
   });
 
-  const updateGameResults = async (results) => {
-    try {
-      if (resultPersistedRef.current) {
-        return;
-      }
+  const applyPostMatchRatings = (results) => {
+    const ratings = results?.ratings;
+    if (!ratings) return;
 
-      // Determine if current user won
-      const currentUserResult =
-        results.player1.id === currentUser.uid
-          ? results.player1
-          : results.player2;
-      const opponentResult =
-        results.player1.id === currentUser.uid
-          ? results.player2
-          : results.player1;
+    const currentUserId = currentUser?.uid;
+    const mine =
+      ratings.player1?.id === currentUserId
+        ? ratings.player1
+        : ratings.player2?.id === currentUserId
+          ? ratings.player2
+          : null;
 
-      if (!opponentResult?.id || opponentResult.id === "disconnected") {
-        console.warn("Skipping game result persistence due to missing opponent id");
-        return;
-      }
+    const postMatchRating = Number.isFinite(Number(mine?.ratingAfter))
+      ? Number(mine.ratingAfter)
+      : Number.isFinite(Number(mine?.ratingBefore))
+        ? Number(mine.ratingBefore)
+        : null;
 
-      const persistedGameId = results.gameId || activeGameIdRef.current;
-      if (!persistedGameId) {
-        console.warn("Skipping game result persistence due to missing game id");
-        return;
-      }
+    if (postMatchRating === null) return;
 
-      const data = await persistGameResultMutation.mutateAsync({
-        won: currentUserResult.won,
-        isDraw: Boolean(results.isDraw),
-        opponentId: opponentResult.id,
-        score: currentUserResult.score,
-        opponentScore: opponentResult.score,
-        modeSeconds,
-        gameId: persistedGameId,
-      });
+    dispatch({
+      type: "SET_POST_MATCH_RATING",
+      postMatchRating,
+    });
 
+    // Update local user stats for immediate UI update
+    setUserStats((prev) => ({
+      ...prev,
+      rating: postMatchRating,
+    }));
+  };
+
+  const updateGameResults = (results) => {
+    // Results are recorded server-side by the GameRoom. The client only
+    // refreshes derived queries and applies the authoritative post-match
+    // rating carried on the result message.
+    if (!resultPersistedRef.current) {
       resultPersistedRef.current = true;
-      dispatch({
-        type: "SET_POST_MATCH_RATING",
-        postMatchRating: Number.isFinite(Number(data?.modeStats?.rating))
-          ? Number(data.modeStats.rating)
-          : Number.isFinite(Number(data?.player?.rating))
-            ? Number(data.player.rating)
-            : null,
-      });
-
-      // Update local user stats for immediate UI update
-      setUserStats((prev) => ({
-        ...prev,
-        ...data.player,
-        modeStats: Array.isArray(prev?.modeStats)
-          ? prev.modeStats.map((mode) =>
-              Number(mode.modeSeconds) === Number(modeSeconds) && data?.modeStats
-                ? { ...mode, ...data.modeStats }
-                : mode
-            )
-          : prev?.modeStats,
-        winRate:
-          prev.gamesPlayed > 0 && Number(data.player.gamesPlayed) > 0
-            ? ((Number(data.player.gamesWon) / Number(data.player.gamesPlayed)) * 100).toFixed(1)
-            : prev.gamesPlayed > 0
-              ? ((Number(prev.gamesWon) / Number(prev.gamesPlayed)) * 100).toFixed(1)
-              : 0,
-      }));
-    } catch (error) {
-      console.error("Failed to update game results:", error);
+      if (currentUser) {
+        queryClient.invalidateQueries({
+          queryKey: userKeys.stats(currentUser.uid),
+        });
+        queryClient.invalidateQueries({
+          queryKey: userKeys.activity(currentUser.uid, 364),
+        });
+        queryClient.invalidateQueries({
+          queryKey: userKeys.detail(currentUser.uid),
+        });
+      }
     }
+
+    applyPostMatchRatings(results);
   };
 
   const startTimer = useCallback(() => {
