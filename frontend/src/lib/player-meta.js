@@ -1,36 +1,3 @@
-export const AVATAR_IDS = [
-  "avatar1",
-  "avatar2",
-  "avatar3",
-  "avatar4",
-  "avatar5",
-  "avatar6",
-  "avatar7",
-  "avatar8",
-  "avatar9",
-  "avatar10",
-];
-
-export const MALE_AVATAR_IDS = ["avatar1", "avatar2", "avatar3", "avatar4", "avatar5"];
-export const FEMALE_AVATAR_IDS = ["avatar6", "avatar7", "avatar8", "avatar9", "avatar10"];
-
-export const DEFAULT_AVATAR_ID = "avatar1";
-
-export function normalizeAvatarId(value) {
-  if (typeof value !== "string") return DEFAULT_AVATAR_ID;
-  const normalized = value.trim().toLowerCase();
-  return AVATAR_IDS.includes(normalized) ? normalized : DEFAULT_AVATAR_ID;
-}
-
-export function getAvatarPath(avatarId) {
-  return `/${normalizeAvatarId(avatarId)}.svg`;
-}
-
-export function getRandomDefaultAvatarId() {
-  const index = Math.floor(Math.random() * AVATAR_IDS.length);
-  return AVATAR_IDS[index] || DEFAULT_AVATAR_ID;
-}
-
 export const RATING_TIERS = [
   {
     min: 1700,

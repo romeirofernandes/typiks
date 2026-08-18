@@ -69,7 +69,7 @@ function RoomIllustration() {
             <div className="text-xs font-medium text-muted-foreground">
               Room code
             </div>
-            <div className="mt-1 font-semibold tracking-wider">TYPK-482</div>
+            <div className="mt-1 font-semibold tracking-wider">K8M2J9</div>
           </div>
           <Button
             type="button"
@@ -134,20 +134,20 @@ function LeaderboardIllustration() {
       <div className="rounded-xl border border-border/70 bg-background/60 p-4">
         <div className="flex items-center justify-between">
           <div className="text-xs font-medium text-muted-foreground">
-            Today’s top
+            Rankings
           </div>
-          <div className="text-xs font-semibold tabular-nums">WPM</div>
+          <div className="text-xs font-semibold tabular-nums">Rating</div>
         </div>
 
         <div className="mt-4 space-y-2">
-          <LeaderboardRow rank={1} name="You" wpm={104} highlighted />
-          <LeaderboardRow rank={2} name="Ayaan" wpm={97} />
-          <LeaderboardRow rank={3} name="Mina" wpm={92} />
+          <LeaderboardRow rank={1} name="You" rating={1245} highlighted />
+          <LeaderboardRow rank={2} name="Ayaan" rating={1180} />
+          <LeaderboardRow rank={3} name="Mina" rating={1102} />
         </div>
 
         <div className="mt-4 flex items-center justify-between rounded-lg border border-border/70 bg-card px-3 py-2 text-xs">
-          <span className="text-muted-foreground">Best streak</span>
-          <span className="font-semibold tabular-nums">6 wins</span>
+          <span className="text-muted-foreground">Win rate</span>
+          <span className="font-semibold tabular-nums">68%</span>
         </div>
       </div>
     </div>
@@ -189,7 +189,7 @@ function ProgressRow({ name, value, emphasized = false }) {
   );
 }
 
-function LeaderboardRow({ rank, name, wpm, highlighted = false }) {
+function LeaderboardRow({ rank, name, rating, highlighted = false }) {
   return (
     <div
       className={
@@ -208,7 +208,7 @@ function LeaderboardRow({ rank, name, wpm, highlighted = false }) {
         </div>
         <div className="text-xs font-medium text-foreground">{name}</div>
       </div>
-      <div className="text-xs font-semibold tabular-nums">{wpm}</div>
+      <div className="text-xs font-semibold tabular-nums">{rating}</div>
     </div>
   );
 }

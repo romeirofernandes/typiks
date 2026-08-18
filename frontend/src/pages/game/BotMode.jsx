@@ -12,6 +12,10 @@ import {
   NEXT_WORD_CONDITIONS,
 } from "@/lib/player-preferences";
 import { FiUser, FiClock, FiArrowLeft, FiZap, FiCpu } from "react-icons/fi";
+import { buildMatchInitialState, matchReducer } from "@/lib/match/matchReducer";
+import { WordDisplay } from "@/components/game/WordDisplay";
+import { buildWordBank, pickWords } from "@/lib/typing/words";
+import { randomRange } from "@/lib/utils";
 
 const BOT_DIFFICULTIES = {
   easy: { id: "easy", label: "Easy", cpsRange: [2.2, 3.4], accuracy: 0.82 },
@@ -20,113 +24,6 @@ const BOT_DIFFICULTIES = {
 };
 
 const MODE_SECONDS = [15, 30, 60];
-
-function buildWordBank(wordsJson) {
-  const seen = new Set();
-  const source = Array.isArray(wordsJson) ? wordsJson : [];
-  for (const word of source) {
-    if (typeof word !== "string") continue;
-    const clean = word.trim().toLowerCase();
-    if (clean.length >= 3 && clean.length <= 12) {
-      seen.add(clean);
-    }
-  }
-  return Array.from(seen);
-}
-
-function randomRange(min, max) {
-  return Math.random() * (max - min) + min;
-}
-
-function pickWords(count, wordBank) {
-  if (wordBank.length === 0) return [];
-
-  const shuffled = [...wordBank];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-
-  if (count <= shuffled.length) {
-    return shuffled.slice(0, count);
-  }
-
-  const output = [...shuffled];
-  while (output.length < count) {
-    const nextBatch = [...wordBank];
-    for (let i = nextBatch.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [nextBatch[i], nextBatch[j]] = [nextBatch[j], nextBatch[i]];
-    }
-    output.push(...nextBatch);
-  }
-
-  return output.slice(0, count);
-}
-
-const GAME_INITIAL_STATE = {
-  gameState: "setup",
-  countdown: null,
-  words: [],
-  currentWordIndex: 0,
-  opponentWordIndex: 0,
-  myScore: 0,
-  opponentScore: 0,
-  timeLeft: 30,
-  input: "",
-};
-
-function gameReducer(state, action) {
-  switch (action.type) {
-    case "START": {
-      return {
-        ...GAME_INITIAL_STATE,
-        gameState: "countdown",
-        countdown: 3,
-        words: action.words,
-        timeLeft: action.modeSeconds,
-      };
-    }
-    case "COUNTDOWN": {
-      return { ...state, countdown: action.count };
-    }
-    case "GO": {
-      return { ...state, countdown: null, gameState: "playing" };
-    }
-    case "TICK": {
-      return { ...state, timeLeft: state.timeLeft <= 1 ? 0 : state.timeLeft - 1 };
-    }
-    case "SUBMIT": {
-      const nextIndex = Math.min(state.currentWordIndex + 1, state.words.length);
-      return {
-        ...state,
-        myScore: state.myScore + 1,
-        currentWordIndex: nextIndex,
-        input: "",
-      };
-    }
-    case "BOT_SCORE": {
-      return { ...state, opponentScore: state.opponentScore + 1 };
-    }
-    case "BOT_PROGRESS": {
-      return { ...state, opponentWordIndex: action.index };
-    }
-    case "INPUT": {
-      return { ...state, input: action.value };
-    }
-    case "FINISH": {
-      return { ...state, gameState: "finished" };
-    }
-    case "RESET": {
-      return {
-        ...GAME_INITIAL_STATE,
-        timeLeft: action.modeSeconds,
-      };
-    }
-    default:
-      return state;
-  }
-}
 
 function BotHeader({ modeSeconds, timeLeft, gameState }) {
   return (
@@ -317,47 +214,11 @@ function BotPlayingScreen({
         <CardContent className="flex h-full flex-col gap-6 py-8">
           <div className="text-center">
             <p className="mb-4 font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">Type This Word</p>
-            <div
+            <WordDisplay
               key={words[currentWordIndex]}
-              className="relative inline-block font-mono text-4xl font-medium tracking-wider leading-none sm:text-5xl"
-            >
-              {(words[currentWordIndex] || "").split("").map((char, charIndex) => {
-                const typedChar = input[charIndex];
-                const isCurrentPosition = charIndex === input.length;
-                const isTyped = charIndex < input.length;
-                const isCorrect = isTyped && typedChar === char;
-                const isWrong = isTyped && typedChar !== char;
-                const renderedChar = char === " " ? "\u00A0" : char;
-                const renderedTypedChar = isWrong && typedChar === " " ? "_" : typedChar;
-
-                return (
-                  <span
-                    key={charIndex}
-                    className={`relative inline-block min-w-[0.45em] align-baseline ${
-                      isCorrect
-                        ? "text-primary"
-                        : isWrong
-                        ? "text-destructive"
-                        : "text-muted-foreground/50"
-                    }`}
-                  >
-                    {isCurrentPosition ? (
-                      <span
-                        className="absolute -left-[2px] top-0 h-full w-[3px] bg-primary"
-                        style={{ animation: "blink 1s ease-in-out infinite" }}
-                      />
-                    ) : null}
-                    {isWrong ? renderedTypedChar : renderedChar}
-                  </span>
-                );
-              })}
-              {input.length === (words[currentWordIndex] || "").length ? (
-                <span
-                  className="absolute -right-[2px] top-0 h-full w-[3px] bg-primary"
-                  style={{ animation: "blink 1s ease-in-out infinite" }}
-                />
-              ) : null}
-            </div>
+              word={words[currentWordIndex]}
+              input={input}
+            />
           </div>
 
           <input
@@ -478,7 +339,10 @@ export default function BotMode() {
   const [modeSeconds, setModeSeconds] = useState(30);
   const [difficulty, setDifficulty] = useState("medium");
   const [wordBank, setWordBank] = useState([]);
-  const [game, dispatch] = useReducer(gameReducer, GAME_INITIAL_STATE);
+  const [game, dispatch] = useReducer(
+    matchReducer,
+    buildMatchInitialState({ timeLeft: 30 })
+  );
   const { gameState, countdown, words, currentWordIndex, opponentWordIndex, myScore, opponentScore, timeLeft, input } = game;
   const [playerPreferences] = usePlayerPreferences();
   const viewport = useViewport();
@@ -510,7 +374,15 @@ export default function BotMode() {
     import("../../../../words.json")
       .then((module) => {
         if (cancelled) return;
-        setWordBank(buildWordBank(module.default));
+        setWordBank(
+          buildWordBank(module.default, {
+            minLength: 3,
+            maxLength: 12,
+            allowNonAlpha: true,
+            requireVowel: false,
+            requireUniqueChars: false,
+          })
+        );
       })
       .catch(() => {
         if (cancelled) return;

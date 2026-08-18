@@ -1,4 +1,4 @@
-import { AVATAR_IDS, RANKED_MODE_SECONDS, ONLINE_WINDOW_MS } from '../config.js';
+import { RANKED_MODE_SECONDS, ONLINE_WINDOW_MS } from '../config.js';
 import isoCountries from '../data/iso-countries.json' with { type: 'json' };
 
 export function normalizeLocationKey(value) {
@@ -23,12 +23,6 @@ export function normalizeUsername(value) {
 	if (username.length < 3 || username.length > 24) return null;
 	if (!/^[a-z0-9._-]+$/.test(username)) return null;
 	return username;
-}
-
-export function normalizeAvatarId(value) {
-	if (typeof value !== 'string') return null;
-	const normalized = value.trim().toLowerCase();
-	return AVATAR_IDS.includes(normalized) ? normalized : null;
 }
 
 export function normalizeModeSeconds(rawValue) {

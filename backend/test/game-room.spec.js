@@ -131,8 +131,8 @@ function createStoredState(overrides = {}) {
 		match: {
 			gameId: 'game-1',
 			modeSeconds: 60,
-			player1: { id: 'p1', userInfo: { username: 'alice', rating: 800, avatarId: 'avatar1' } },
-			player2: { id: 'p2', userInfo: { username: 'bob', rating: 800, avatarId: 'avatar1' } },
+			player1: { id: 'p1', userInfo: { username: 'alice', rating: 800 } },
+			player2: { id: 'p2', userInfo: { username: 'bob', rating: 800 } },
 			createdAt: Date.now(),
 		},
 		phase: 'waiting_for_players',
@@ -166,8 +166,8 @@ describe('GameRoom init handshake', () => {
 				gameId: 'game-abc',
 				modeSeconds: 60,
 				// Client-asserted values must be ignored when no DB profile exists.
-				player1: { id: 'p1', userInfo: { username: 'hacker', rating: 9999, avatarId: 'avatar9' } },
-				player2: { id: 'p2', userInfo: { username: 'spoof', rating: 1, avatarId: 'avatar2' } },
+				player1: { id: 'p1', userInfo: { username: 'hacker', rating: 9999 } },
+				player2: { id: 'p2', userInfo: { username: 'spoof', rating: 1 } },
 			}),
 		});
 
@@ -178,8 +178,8 @@ describe('GameRoom init handshake', () => {
 		expect(room.phase).toBe('waiting_for_players');
 		expect(room.alarmPurpose).toBe('wait');
 		expect(room.waitDeadline).toBeGreaterThan(Date.now());
-		expect(room.match.player1.userInfo).toEqual({ username: 'player', rating: 800, avatarId: 'avatar1' });
-		expect(room.match.player2.userInfo).toEqual({ username: 'player', rating: 800, avatarId: 'avatar1' });
+		expect(room.match.player1.userInfo).toEqual({ username: 'player', rating: 800 });
+		expect(room.match.player2.userInfo).toEqual({ username: 'player', rating: 800 });
 	});
 
 	it('rejects an invalid /init payload', async () => {
@@ -230,8 +230,8 @@ describe('GameRoom handoff timeout', () => {
 		room.match = {
 			gameId: 'game-1',
 			modeSeconds: 60,
-			player1: { id: 'p1', userInfo: { username: 'alice', rating: 800, avatarId: 'avatar1' } },
-			player2: { id: 'p2', userInfo: { username: 'bob', rating: 800, avatarId: 'avatar1' } },
+			player1: { id: 'p1', userInfo: { username: 'alice', rating: 800 } },
+			player2: { id: 'p2', userInfo: { username: 'bob', rating: 800 } },
 			createdAt: Date.now(),
 		};
 		room.phase = 'waiting_for_players';
@@ -301,8 +301,8 @@ describe('GameRoom recovery', () => {
 				endTime: Date.now() + 25000,
 				countdownStart: null,
 				words: ['alpha', 'bravo'],
-				player1: { id: 'p1', sessionId: 'session-p1', userInfo: { username: 'alice', rating: 800, avatarId: 'avatar1' }, score: 5, currentWordIndex: 5 },
-				player2: { id: 'p2', sessionId: 'session-p2', userInfo: { username: 'bob', rating: 800, avatarId: 'avatar1' }, score: 3, currentWordIndex: 3 },
+				player1: { id: 'p1', sessionId: 'session-p1', userInfo: { username: 'alice', rating: 800 }, score: 5, currentWordIndex: 5 },
+				player2: { id: 'p2', sessionId: 'session-p2', userInfo: { username: 'bob', rating: 800 }, score: 3, currentWordIndex: 3 },
 			},
 		});
 		const room = new GameRoom(
@@ -332,8 +332,8 @@ describe('GameRoom recovery', () => {
 			results: {
 				gameId: 'round-1',
 				modeSeconds: 60,
-				player1: { id: 'p1', username: 'alice', avatarId: 'avatar1', score: 5, progress: 5, won: true },
-				player2: { id: 'p2', username: 'bob', avatarId: 'avatar1', score: 3, progress: 3, won: false },
+				player1: { id: 'p1', username: 'alice', score: 5, progress: 5, won: true },
+				player2: { id: 'p2', username: 'bob', score: 3, progress: 3, won: false },
 				isDraw: false,
 				reason: 'timeout',
 			},
@@ -385,8 +385,8 @@ describe('GameRoom expired persisted alarms', () => {
 			results: {
 				gameId: 'round-1',
 				modeSeconds: 60,
-				player1: { id: 'p1', username: 'alice', avatarId: 'avatar1', score: 5, progress: 5, won: true },
-				player2: { id: 'p2', username: 'bob', avatarId: 'avatar1', score: 3, progress: 3, won: false },
+				player1: { id: 'p1', username: 'alice', score: 5, progress: 5, won: true },
+				player2: { id: 'p2', username: 'bob', score: 3, progress: 3, won: false },
 				isDraw: false,
 				reason: 'timeout',
 			},
@@ -507,8 +507,8 @@ describe('GameRoom alarm setup failure fallbacks', () => {
 		room.phase = 'finished';
 		room.createRematchOfferFromGame({
 			modeSeconds: 60,
-			player1: { id: 'p1', userInfo: { username: 'alice', rating: 800, avatarId: 'avatar1' } },
-			player2: { id: 'p2', userInfo: { username: 'bob', rating: 800, avatarId: 'avatar1' } },
+			player1: { id: 'p1', userInfo: { username: 'alice', rating: 800 } },
+			player2: { id: 'p2', userInfo: { username: 'bob', rating: 800 } },
 		});
 
 		const requesterSocket = createSocket();

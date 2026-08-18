@@ -15,7 +15,7 @@ import {
 } from "d3";
 import { feature } from "topojson-client";
 import { useQuery } from "@tanstack/react-query";
-import { m } from "framer-motion";
+import { m, useReducedMotion } from "framer-motion";
 
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
@@ -208,6 +208,35 @@ function useGlobeTransform() {
     return next;
   }, [countryMarkers]);
 
+  const globeStats = useMemo(() => {
+    if (countryMarkers.length === 0) return null;
+
+    const totalPlayers = countryMarkers.reduce(
+      (sum, marker) => sum + marker.userCount,
+      0
+    );
+    const topRated = countryMarkers.reduce((best, marker) =>
+      marker.avgRating > best.avgRating ? marker : best
+    );
+    const modeCounts = new Map();
+    countryMarkers.forEach((marker) => {
+      if (!marker.mostPlayedMode) return;
+      modeCounts.set(
+        marker.mostPlayedMode,
+        (modeCounts.get(marker.mostPlayedMode) ?? 0) + 1
+      );
+    });
+    const mostPlayedMode =
+      [...modeCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+
+    return {
+      totalCountries: countryMarkers.length,
+      totalPlayers,
+      topRated,
+      mostPlayedMode,
+    };
+  }, [countryMarkers]);
+
   const worldCentroids = useMemo(
     () => worldData.map((country) => geoCentroid(country)),
     [worldData]
@@ -387,9 +416,16 @@ function useGlobeTransform() {
     }
   };
 
-  const handleTouchEnd = () => {
+  const handleTouchEnd = (event) => {
     dragRef.current.active = false;
     touchRef.current.pinchStartDist = 0;
+
+    const touch = event.changedTouches?.[0];
+    if (!touch || dragRef.current.moved) return;
+    const point = getTouchPoint(touch);
+    if (!point) return;
+    const nearest = getNearestProjectedMarker(point.x, point.y);
+    setHoveredMarkerId(nearest?.id || null);
   };
 
   useEffect(() => {
@@ -633,6 +669,7 @@ function useGlobeTransform() {
     isDark,
     projectedMarkers,
     markerColorMap,
+    globeStats,
     activeMarker,
     activeMarkerUserCount,
     isAnimating,
@@ -729,27 +766,62 @@ function GlobeMarkersLayer({ projectedMarkers, markerColorMap }) {
   );
 }
 
-function GlobeActiveMarkerTooltip({ activeMarker, activeMarkerUserCount }) {
+function GlobeActiveMarkerTooltip({ activeMarker, activeMarkerUserCount, cardWidth }) {
   if (!activeMarker) return null;
 
+  const TIP_WIDTH = 256;
+  const EDGE = 8;
+  const tight = Math.max(TIP_WIDTH / 2 + EDGE, 0);
+  const clampedX = Number.isFinite(Number(cardWidth))
+    ? Math.min(Math.max(activeMarker.x, tight), Math.max(tight, cardWidth - TIP_WIDTH / 2 - EDGE))
+    : activeMarker.x;
+  const clampedY = Math.max(activeMarker.y, 160);
+
   return (
-    <div
-      className="pointer-events-none absolute z-20 w-64 -translate-x-1/2 -translate-y-[calc(100%+12px)] rounded-md border border-border/70 bg-background/95 px-3 py-2.5 text-xs leading-tight text-foreground shadow-md backdrop-blur-sm"
-      style={{ left: activeMarker.x, top: activeMarker.y }}
-    >
-      <div className="mb-1 truncate text-xs font-semibold">{activeMarker.country}</div>
-      <div className="tabular-nums text-muted-foreground">
-        Average rating: {Math.round(activeMarker.avgRating)}
+    <>
+      <div
+        className="pointer-events-none absolute z-20 hidden w-64 rounded-md border border-border/70 bg-background/95 px-3 py-2.5 text-xs leading-tight text-foreground shadow-md backdrop-blur-sm sm:block -translate-x-1/2 -translate-y-[calc(100%+12px)]"
+        style={{ left: clampedX, top: clampedY }}
+      >
+        <div className="mb-1 truncate text-xs font-semibold">{activeMarker.country}</div>
+        <div className="tabular-nums text-muted-foreground">
+          Average rating: {Math.round(activeMarker.avgRating)}
+        </div>
+        <div className="tabular-nums text-muted-foreground">
+          Average win rate: {Number.isFinite(activeMarker.avgWinRate) ? `${Math.round(activeMarker.avgWinRate)}%` : "N/A"}
+        </div>
+        <div className="tabular-nums text-muted-foreground">
+          Most played mode: {activeMarker.mostPlayedMode ? `${activeMarker.mostPlayedMode}s` : "N/A"}
+        </div>
+        <div className="tabular-nums text-muted-foreground">
+          Players: {Number.isFinite(activeMarkerUserCount) ? activeMarkerUserCount.toLocaleString() : "N/A"}
+        </div>
       </div>
-      <div className="tabular-nums text-muted-foreground">
-        Average win rate: {Number.isFinite(activeMarker.avgWinRate) ? `${Math.round(activeMarker.avgWinRate)}%` : "N/A"}
+
+      <div className="pointer-events-none absolute inset-x-2 top-2 z-20 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-md border border-border/70 bg-background/95 px-3 py-2 text-xs leading-tight text-foreground shadow-md backdrop-blur-sm sm:hidden">
+        <span className="truncate font-semibold">{activeMarker.country}</span>
+        <span className="tabular-nums text-muted-foreground">
+          {Math.round(activeMarker.avgRating)} rating ·{" "}
+          {Number.isFinite(activeMarker.avgWinRate) ? `${Math.round(activeMarker.avgWinRate)}% WR` : "N/A"}
+        </span>
+        <span className="tabular-nums text-muted-foreground">
+          {activeMarker.mostPlayedMode ? `${activeMarker.mostPlayedMode}s` : "N/A"} ·{" "}
+          {Number.isFinite(activeMarkerUserCount) ? `${activeMarkerUserCount} players` : "N/A"}
+        </span>
       </div>
-      <div className="tabular-nums text-muted-foreground">
-        Most played mode: {activeMarker.mostPlayedMode ? `${activeMarker.mostPlayedMode}s` : "N/A"}
-      </div>
-      <div className="tabular-nums text-muted-foreground">
-        Players: {Number.isFinite(activeMarkerUserCount) ? activeMarkerUserCount.toLocaleString() : "N/A"}
-      </div>
+    </>
+  );
+}
+
+function GlobeStatCard({ label, value }) {
+  return (
+    <div className="rounded-md border border-border/70 bg-card/85 p-4 backdrop-blur-[1px]">
+      <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+        {label}
+      </p>
+      <p className="mt-1.5 truncate text-lg font-semibold text-foreground">
+        {value}
+      </p>
     </div>
   );
 }
@@ -763,11 +835,11 @@ function GlobeControls({
   onReset,
 }) {
   return (
-    <div className="absolute bottom-4 right-4 z-20 flex gap-2">
+    <div className="absolute bottom-2 right-2 z-20 flex max-w-full flex-wrap items-center justify-end gap-1.5 sm:bottom-4 sm:right-4 sm:gap-2">
       <Button
         onClick={onAnimate}
         disabled={isAnimating}
-        className="min-w-[120px] cursor-pointer rounded"
+        className="min-w-0 flex-1 cursor-pointer rounded px-2.5 text-xs sm:flex-none sm:min-w-[120px] sm:px-4 sm:text-sm"
       >
         {isAnimating
           ? "Animating..."
@@ -778,21 +850,23 @@ function GlobeControls({
       <Button
         onClick={onZoomIn}
         variant="outline"
-        className="min-w-[42px] cursor-pointer rounded"
+        className="min-w-10 shrink-0 cursor-pointer rounded px-0 sm:min-w-[42px]"
+        aria-label="Zoom in"
       >
         +
       </Button>
       <Button
         onClick={onZoomOut}
         variant="outline"
-        className="min-w-[42px] cursor-pointer rounded"
+        className="min-w-10 shrink-0 cursor-pointer rounded px-0 sm:min-w-[42px]"
+        aria-label="Zoom out"
       >
         -
       </Button>
       <Button
         onClick={onReset}
         variant="outline"
-        className="min-w-[80px] cursor-pointer rounded"
+        className="min-w-0 shrink-0 cursor-pointer rounded px-2.5 text-xs sm:min-w-[80px] sm:px-4 sm:text-sm"
       >
         Reset
       </Button>
@@ -808,6 +882,7 @@ export function GlobeToMapTransform() {
     isDark,
     projectedMarkers,
     markerColorMap,
+    globeStats,
     activeMarker,
     activeMarkerUserCount,
     isAnimating,
@@ -825,30 +900,57 @@ export function GlobeToMapTransform() {
     handleZoomIn,
     handleZoomOut,
   } = useGlobeTransform();
+  const reduceMotion = useReducedMotion();
+  const cardRef = useRef(null);
+  const [cardWidth, setCardWidth] = useState(0);
+
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    const update = () => setCardWidth(el.clientWidth);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   return (
-    <m.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.35 }}
-      className="relative isolate flex h-full w-full items-center justify-center"
-    >
-      <GlobeBackground isDark={isDark} />
-      <GlobeInteractiveSvg
-        svgRef={svgRef}
-        width={width}
-        height={height}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseLeave}
-        onWheel={handleWheel}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-      />
-      <GlobeMarkersLayer projectedMarkers={projectedMarkers} markerColorMap={markerColorMap} />
-      <GlobeActiveMarkerTooltip activeMarker={activeMarker} activeMarkerUserCount={activeMarkerUserCount} />
+    <div className="flex h-full min-w-0 flex-col gap-4">
+      <m.header
+        initial={{ opacity: 0, y: reduceMotion ? 0 : 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25, delay: 0.06 }}
+        className="border-b border-border/70 pb-4"
+      >
+        <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">
+          Global Community
+        </p>
+        <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">The Globe</h1>
+      </m.header>
+
+      <m.div
+        ref={cardRef}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.35 }}
+        className="relative isolate flex w-full min-h-[300px] flex-1 items-center justify-center overflow-hidden rounded-md border border-border/70 bg-card"
+      >
+        <GlobeBackground isDark={isDark} />
+        <GlobeInteractiveSvg
+          svgRef={svgRef}
+          width={width}
+          height={height}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseLeave}
+          onWheel={handleWheel}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        />
+        <GlobeMarkersLayer projectedMarkers={projectedMarkers} markerColorMap={markerColorMap} />
+        <GlobeActiveMarkerTooltip activeMarker={activeMarker} activeMarkerUserCount={activeMarkerUserCount} cardWidth={cardWidth} />
       <GlobeControls
         isAnimating={isAnimating}
         progress={progress}
@@ -857,7 +959,36 @@ export function GlobeToMapTransform() {
         onZoomOut={handleZoomOut}
         onReset={handleReset}
       />
-    </m.div>
+      </m.div>
+
+      <m.section
+        initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, delay: 0.12 }}
+        className="space-y-4"
+      >
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <GlobeStatCard
+            label="Countries mapped"
+            value={globeStats ? globeStats.totalCountries : "—"}
+          />
+          <GlobeStatCard
+            label="Players represented"
+            value={globeStats ? globeStats.totalPlayers.toLocaleString() : "—"}
+          />
+          <GlobeStatCard
+            label="Top rated country"
+            value={globeStats ? globeStats.topRated.country : "—"}
+          />
+          <GlobeStatCard
+            label="Most played mode"
+            value={globeStats && globeStats.mostPlayedMode
+              ? `${globeStats.mostPlayedMode}s`
+              : "—"}
+          />
+        </div>
+      </m.section>
+    </div>
   );
 }
 

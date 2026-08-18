@@ -155,7 +155,7 @@ const Leaderboard = () => {
                       <span className="text-xs text-muted-foreground tabular-nums">{player.winRate}% WR</span>
                     </div>
                     <div className="mt-2 flex items-center gap-2">
-                      <UserAvatar avatarId={player.avatarId} username={player.username} size="sm" />
+                      <UserAvatar username={player.username} size="md" plain />
                       <p className="truncate text-lg font-semibold">{player.username}</p>
                     </div>
                     <p className={`mt-1 text-sm font-medium tabular-nums ${getRatingColor(player.rating)}`}>
@@ -190,7 +190,7 @@ const Leaderboard = () => {
                     </span>
                   </div>
                   <div className="mt-2 flex items-center gap-2">
-                    <UserAvatar avatarId={player.avatarId} username={player.username} size="sm" />
+                    <UserAvatar username={player.username} size="md" plain />
                     <p className="truncate text-lg font-semibold">{player.username}</p>
                   </div>
                   <p
@@ -264,7 +264,7 @@ const Leaderboard = () => {
 
                             <td className="px-4 py-3">
                               <span className="inline-flex items-center gap-2 font-semibold">
-                                <UserAvatar avatarId={player.avatarId} username={player.username} size="sm" />
+                                <UserAvatar username={player.username} size="md" plain />
                                 <span>{player.username}</span>
                               </span>
                             </td>

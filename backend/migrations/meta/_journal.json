@@ -36,6 +36,13 @@
       "when": 1775020000000,
       "tag": "0004_solid_harbor",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1787184000000,
+      "tag": "0009_drop_avatar_id",
+      "breakpoints": true
     }
   ]
 }

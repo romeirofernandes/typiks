@@ -7,6 +7,7 @@ export const userKeys = {
     [...userKeys.detail(uid), "rating-trend", modeSeconds],
   location: (uid) => [...userKeys.detail(uid), "location"],
   search: (query) => [...userKeys.all, "search", query],
+  usernameAvailable: (username) => [...userKeys.all, "username-available", username],
 };
 
 export const meKeys = {

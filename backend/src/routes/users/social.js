@@ -35,7 +35,6 @@ socialRouter.get('/me/friends', requireAuth, async (c) => {
 				.select({
 					id: friendUser.id,
 					username: friendUser.username,
-					avatarId: friendUser.avatarId,
 					rating: friendUser.rating,
 					gamesPlayed: friendUser.gamesPlayed,
 					gamesWon: friendUser.gamesWon,
@@ -49,7 +48,6 @@ socialRouter.get('/me/friends', requireAuth, async (c) => {
 				.select({
 					id: friendUser.id,
 					username: friendUser.username,
-					avatarId: friendUser.avatarId,
 					rating: friendUser.rating,
 					gamesPlayed: friendUser.gamesPlayed,
 					gamesWon: friendUser.gamesWon,
@@ -103,7 +101,6 @@ socialRouter.get('/me/friend-requests', requireAuth, async (c) => {
 					id: friendRequests.id,
 					senderId: friendRequests.senderId,
 					senderUsername: senderUser.username,
-					senderAvatarId: senderUser.avatarId,
 					senderRating: senderUser.rating,
 					createdAt: friendRequests.createdAt,
 				})
@@ -121,7 +118,6 @@ socialRouter.get('/me/friend-requests', requireAuth, async (c) => {
 					id: friendRequests.id,
 					receiverId: friendRequests.receiverId,
 					receiverUsername: receiverUser.username,
-					receiverAvatarId: receiverUser.avatarId,
 					receiverRating: receiverUser.rating,
 					createdAt: friendRequests.createdAt,
 				})
@@ -202,7 +198,6 @@ socialRouter.get('/me/search', requireAuth, async (c) => {
 			.select({
 				id: users.id,
 				username: users.username,
-				avatarId: users.avatarId,
 				rating: users.rating,
 			})
 			.from(users)

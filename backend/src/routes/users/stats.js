@@ -25,7 +25,6 @@ statsRouter.get('/leaderboard/top', async (c) => {
 		const topPlayers = await db
 			.select({
 				username: users.username,
-				avatarId: users.avatarId,
 				rating: users.rating,
 				gamesPlayed: users.gamesPlayed,
 				gamesWon: users.gamesWon,
@@ -63,7 +62,6 @@ statsRouter.get('/:id/stats', requireAuth, async (c) => {
 		const user = await db
 			.select({
 				username: users.username,
-				avatarId: users.avatarId,
 				rating: users.rating,
 			})
 			.from(users)
@@ -116,7 +114,6 @@ statsRouter.get('/:id/stats', requireAuth, async (c) => {
 
 		return c.json({
 			username: stats.username,
-			avatarId: stats.avatarId,
 			gamesPlayed: aggregate.gamesPlayed,
 			gamesWon: aggregate.gamesWon,
 			gamesLost: aggregate.gamesLost,

@@ -26,6 +26,7 @@
     "@visx/responsive": "^4.0.1-alpha.0",
     "@visx/scale": "^4.0.1-alpha.0",
     "@visx/shape": "^4.0.1-alpha.0",
+    "blobatar": "^0.2.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "d3": "^7.9.0",

@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useStats } from "@/hooks/useStats";
 import { useVisualViewportHeight } from "@/hooks/useVisualViewportHeight";
+import { usePresenceSocket } from "@/hooks/usePresenceSocket";
 
 import BackgroundGrid from "@/components/landing/BackgroundGrid";
 import { SharedLayoutBg } from "@/components/motion/shared-layout-bg";
@@ -39,7 +40,6 @@ function SidebarNavButton({
   expanded,
   onClick,
   badgeCount = 0,
-  avatarId = null,
   muted = false,
   highlight = false,
 }) {
@@ -61,16 +61,7 @@ function SidebarNavButton({
           highlight && !muted && "bg-primary/40 text-foreground hover:bg-primary/50 dark:bg-primary/30 dark:hover:bg-primary/40"
         )}
       >
-        {avatarId ? (
-          <UserAvatar
-            avatarId={avatarId}
-            username={label}
-            size={expanded ? "md" : "sm"}
-            plain={expanded}
-          />
-        ) : (
-          <Icon size={18} className="shrink-0" />
-        )}
+        {<Icon size={18} className="shrink-0" />}
         {expanded ? (
           <>
             <span className="ml-3 truncate">{label}</span>
@@ -98,10 +89,6 @@ function SidebarNavButton({
 
 function usePresenceConnection({ currentUser, onAvatarPreviewOpenChange }) {
   const queryClient = useQueryClient();
-  const presenceSocketRef = useRef(null);
-  const presencePingTimerRef = useRef(null);
-  const presenceReconnectTimerRef = useRef(null);
-  const presenceSubscribersRef = useRef(new Set());
 
   useEffect(() => {
     const handleAvatarPreviewState = (event) => {
@@ -114,193 +101,17 @@ function usePresenceConnection({ currentUser, onAvatarPreviewOpenChange }) {
     };
   }, [onAvatarPreviewOpenChange]);
 
-  // react-doctor-disable-next-line effect-needs-cleanup -- presence socket + timers are stored in refs and released on unmount below; isMounted guard prevents socket creation after cleanup
-  useEffect(() => {
-    if (!currentUser) return;
-
-    let isMounted = true;
-
-    const clearPresenceTimers = () => {
-      if (presencePingTimerRef.current) {
-        window.clearInterval(presencePingTimerRef.current);
-        presencePingTimerRef.current = null;
-      }
-      if (presenceReconnectTimerRef.current) {
-        window.clearTimeout(presenceReconnectTimerRef.current);
-        presenceReconnectTimerRef.current = null;
-      }
-    };
-
-    const sendPresenceMessage = (payload) => {
-      if (!presenceSocketRef.current || presenceSocketRef.current.readyState !== WebSocket.OPEN) {
-        return;
-      }
-
-      try {
-        presenceSocketRef.current.send(JSON.stringify(payload));
-      } catch (error) {
-        console.error("Failed to send presence message:", error);
-      }
-    };
-
-    const broadcastPresenceUpdate = (userId, online) => {
-      if (!userId) return;
-      window.dispatchEvent(
-        new CustomEvent("typiks:presence-update", {
-          detail: { userId, online: Boolean(online) },
-        })
-      );
-    };
-
-    const broadcastPresenceSnapshot = (onlineMap) => {
-      if (!onlineMap || typeof onlineMap !== "object") return;
-      window.dispatchEvent(
-        new CustomEvent("typiks:presence-snapshot", {
-          detail: { onlineMap },
-        })
-      );
-    };
-
-    const pushPresenceSubscription = () => {
-      sendPresenceMessage({
-        type: "SUBSCRIBE",
-        userIds: Array.from(presenceSubscribersRef.current),
-      });
-    };
-
-    const handlePresenceSubscribeEvent = (event) => {
-      const ids = Array.isArray(event?.detail?.userIds) ? event.detail.userIds : [];
-      let changed = false;
-
-      for (const id of ids) {
-        if (typeof id !== "string" || !id) continue;
-        if (presenceSubscribersRef.current.has(id)) continue;
-        presenceSubscribersRef.current.add(id);
-        changed = true;
-      }
-
-      if (changed) {
-        pushPresenceSubscription();
-      }
-    };
-
-    const connectPresenceSocket = async () => {
-      try {
-        const idToken = await currentUser.getIdToken();
-        if (!isMounted) return;
-        const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
-        const httpUrl = serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
-        const wsBaseUrl = httpUrl
-          .replace(/^http:/i, "ws:")
-          .replace(/^https:/i, "wss:")
-          .replace(/\/$/, "");
-
-        const socket = new WebSocket(new URL("/ws/presence", wsBaseUrl));
-        presenceSocketRef.current = socket;
-
-        socket.onopen = () => {
-          if (!isMounted || presenceSocketRef.current !== socket) return;
-          sendPresenceMessage({
-            type: "AUTH",
-            idToken,
-            visible: document.visibilityState === "visible",
-          });
-          pushPresenceSubscription();
-
-          clearPresenceTimers();
-          presencePingTimerRef.current = window.setInterval(() => {
-            sendPresenceMessage({ type: "PING" });
-          }, 15000);
-        };
-
-        socket.onclose = () => {
-          if (presenceSocketRef.current === socket) {
-            presenceSocketRef.current = null;
-          }
-          if (!isMounted) return;
-
-          clearPresenceTimers();
-          presenceReconnectTimerRef.current = window.setTimeout(() => {
-            if (!isMounted) return;
-            void connectPresenceSocket();
-          }, 2000);
-        };
-
-        socket.onerror = () => {
-          if (!isMounted) return;
-          try {
-            socket.close();
-          } catch {
-            // no-op
-          }
-        };
-
-        socket.onmessage = (event) => {
-          try {
-            const payload = JSON.parse(event.data);
-            if (!payload || typeof payload.type !== "string") return;
-
-            if (payload.type === "PRESENCE_UPDATE") {
-              broadcastPresenceUpdate(payload.userId, payload.online);
-              return;
-            }
-
-            if (payload.type === "PRESENCE_SNAPSHOT") {
-              broadcastPresenceSnapshot(payload.onlineMap);
-              return;
-            }
-
-            if (payload.type === "NOTIFICATION_POKE") {
-              syncNotifications();
-            }
-          } catch {
-            // no-op
-          }
-        };
-      } catch (error) {
-        console.error("Failed to connect presence socket:", error);
-      }
-    };
-
-    const handleVisibility = () => {
-      sendPresenceMessage({
-        type: "VISIBILITY",
-        visible: document.visibilityState === "visible",
-      });
-    };
-
-    const syncNotifications = () => {
-      if (!isMounted) return;
-      queryClient.invalidateQueries({ queryKey: meKeys.notifications() });
-    };
-
-    void connectPresenceSocket();
-    document.addEventListener("visibilitychange", handleVisibility);
-    window.addEventListener("typiks:presence-subscribe", handlePresenceSubscribeEvent);
-    syncNotifications();
-
-    return () => {
-      isMounted = false;
-      document.removeEventListener("visibilitychange", handleVisibility);
-      window.removeEventListener("typiks:presence-subscribe", handlePresenceSubscribeEvent);
-      clearPresenceTimers();
-      if (presenceSocketRef.current) {
-        try {
-          presenceSocketRef.current.close();
-        } catch {
-          // no-op
-        }
-        presenceSocketRef.current = null;
-      }
-    };
-  }, [currentUser, queryClient]);
+  usePresenceSocket({
+    currentUser,
+    onNotificationPoke: () =>
+      queryClient.invalidateQueries({ queryKey: meKeys.notifications() }),
+  });
 }
 
 function DesktopSidebar({
   expanded,
   onToggleExpanded,
   isAvatarPreviewOpen,
-  statsAvatarId,
   username,
   activeNavKey,
   navItems,
@@ -388,7 +199,12 @@ function DesktopSidebar({
               !isAvatarPreviewOpen && "bg-primary/40 text-foreground hover:bg-primary/50 dark:bg-primary/30 dark:hover:bg-primary/40"
             )}
           >
-            <UserAvatar avatarId={statsAvatarId} username={username} size="md" plain />
+            <UserAvatar
+              username={username}
+              size="md"
+              plain
+              className="transition-transform duration-200 hover:scale-105"
+            />
               <span className="ml-1 truncate text-sm font-medium">{username}</span>
           </Button>
         ) : (
@@ -433,7 +249,6 @@ function MobileTopBar({
   mobileOpen,
   setMobileOpen,
   username,
-  statsAvatarId,
   activeNavKey,
   navItems,
   onNavigateProfile,
@@ -491,7 +306,12 @@ function MobileTopBar({
                 }}
                 className="h-11 w-full justify-start px-3"
               >
-                <UserAvatar avatarId={statsAvatarId} username={username} size="md" plain />
+                <UserAvatar
+                  username={username}
+                  size="md"
+                  plain
+                  className="transition-transform duration-200 hover:scale-105"
+                />
                 <span className="ml-2 truncate text-sm font-medium">{username}</span>
               </Button>
 
@@ -526,8 +346,6 @@ export default function AppShell() {
   const [expanded, setExpanded] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isAvatarPreviewOpen, setIsAvatarPreviewOpen] = useState(false);
-  const [statsUsername, setStatsUsername] = useState(null);
-  const [statsAvatarId, setStatsAvatarId] = useState("avatar1");
 
   const notificationsQuery = useQuery({
     queryKey: meKeys.notifications(),
@@ -551,19 +369,13 @@ export default function AppShell() {
 
   const { stats: sidebarStats } = useStats();
 
-  useEffect(() => {
-    if (!sidebarStats) return;
-    setStatsUsername(sidebarStats?.username ?? null);
-    setStatsAvatarId(sidebarStats?.avatarId || "avatar1");
-  }, [sidebarStats]);
-
   usePresenceConnection({
     currentUser,
     onAvatarPreviewOpenChange: setIsAvatarPreviewOpen,
   });
 
   const username =
-    statsUsername ||
+    sidebarStats?.username ||
     currentUser?.displayName ||
     currentUser?.email?.split("@")[0] ||
     "username";
@@ -661,7 +473,6 @@ export default function AppShell() {
               expanded={expanded}
               onToggleExpanded={() => setExpanded((prev) => !prev)}
               isAvatarPreviewOpen={isAvatarPreviewOpen}
-              statsAvatarId={statsAvatarId}
               username={username}
               activeNavKey={activeNavKey}
               navItems={navItems}
@@ -675,7 +486,6 @@ export default function AppShell() {
                 mobileOpen={mobileOpen}
                 setMobileOpen={setMobileOpen}
                 username={username}
-                statsAvatarId={statsAvatarId}
                 activeNavKey={activeNavKey}
                 navItems={navItems}
                 onNavigateProfile={handleProfile}
@@ -683,19 +493,9 @@ export default function AppShell() {
               />
 
               <main
-                className={cn(
-                  "relative z-10 min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border border-border/80 shadow-xl",
-                  location.pathname === "/the-globe"
-                    ? "p-0"
-                    : "bg-background/95 p-4 sm:p-6"
-                )}
+                className="relative z-10 min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border border-border/80 bg-background/95 shadow-xl p-4 sm:p-6"
               >
-                <div
-                  className={cn(
-                    "h-full min-w-0",
-                    location.pathname === "/the-globe" ? "" : "overflow-y-auto pr-1"
-                  )}
-                >
+                <div className="h-full min-w-0 overflow-y-auto pr-1">
                   <Outlet />
                 </div>
               </main>

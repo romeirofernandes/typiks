@@ -1,10 +1,10 @@
+import { Blobatar } from "blobatar/react";
+import "blobatar/motion.css";
 import { m, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
-import { getAvatarPath, normalizeAvatarId } from "@/lib/player-meta";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export function UserAvatar({
-  avatarId,
   username = "Player",
   className = "",
   size = "md",
@@ -12,18 +12,30 @@ export function UserAvatar({
   expandOnClick = false,
 }) {
   const [isOpen, setIsOpen] = useState(false);
-  const normalizedAvatar = normalizeAvatarId(avatarId);
+  const overlayButtonRef = useRef(null);
   const dimensions =
     size === "sm"
       ? "h-7 w-7"
       : size === "lg"
       ? "h-14 w-14"
-      : "h-9 w-9";
+      : size === "xl"
+      ? "h-20 w-20"
+      : "h-8 w-8";
   const wrapperClass = cn(
     "inline-flex items-center justify-center rounded-full overflow-hidden",
     plain ? "" : "border border-border/60 bg-background shadow-sm",
     dimensions,
     className
+  );
+
+  const avatar = (
+    <Blobatar
+      name={username}
+      size={48}
+      animate="hover"
+      title={`${username} avatar`}
+      className="size-full"
+    />
   );
 
   useEffect(() => {
@@ -44,18 +56,22 @@ export function UserAvatar({
     };
   }, [expandOnClick, isOpen]);
 
+  useEffect(() => {
+    if (!expandOnClick || !isOpen) return;
+
+    const keydown = (event) => {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        setIsOpen(false);
+      }
+    };
+    overlayButtonRef.current?.focus();
+    window.addEventListener("keydown", keydown, true);
+    return () => window.removeEventListener("keydown", keydown, true);
+  }, [expandOnClick, isOpen]);
+
   if (!expandOnClick) {
-    return (
-      <span className={wrapperClass}>
-        <img
-          src={getAvatarPath(normalizedAvatar)}
-          alt={`${username} avatar`}
-          className="h-full w-full rounded-full object-cover"
-          loading="lazy"
-          decoding="async"
-        />
-      </span>
-    );
+    return <span className={wrapperClass}>{avatar}</span>;
   }
 
   return (
@@ -70,13 +86,7 @@ export function UserAvatar({
       )}
       whileTap={{ scale: 0.96 }}
     >
-      <img
-        src={getAvatarPath(normalizedAvatar)}
-        alt={`${username} avatar`}
-        className="h-full w-full rounded-full object-cover"
-        loading="lazy"
-        decoding="async"
-      />
+      {avatar}
     </m.button>
 
     <AnimatePresence>
@@ -87,14 +97,9 @@ export function UserAvatar({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           onClick={() => setIsOpen(false)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              event.stopPropagation();
-              setIsOpen(false);
-            }
-          }}
         >
           <m.button
+            ref={overlayButtonRef}
             type="button"
             onClick={(event) => {
               event.stopPropagation();
@@ -106,10 +111,12 @@ export function UserAvatar({
             exit={{ scale: 0.9, opacity: 0 }}
             transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
           >
-            <img
-              src={getAvatarPath(normalizedAvatar)}
-              alt={`${username} avatar full`}
-              className="h-full w-full object-cover"
+            <Blobatar
+              name={username}
+              size={200}
+              animate="hover"
+              title={`${username} avatar full`}
+              className="size-full"
             />
           </m.button>
         </m.div>

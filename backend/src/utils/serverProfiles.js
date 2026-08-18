@@ -5,7 +5,7 @@ import { users } from '../db/schema.js';
 // Neutral fallback used when a player is not found in D1 or the database
 // cannot be queried. NOTE: this deliberately does NOT fall back to any
 // client-asserted userInfo — clients never decide what opponents see.
-const NEUTRAL_PROFILE = { username: 'player', rating: 800, avatarId: 'avatar1' };
+const NEUTRAL_PROFILE = { username: 'player', rating: 800 };
 
 function normalizeProfile(profile) {
 	const safe = { ...NEUTRAL_PROFILE };
@@ -20,15 +20,11 @@ function normalizeProfile(profile) {
 		safe.rating = Math.max(0, Math.min(3000, Math.floor(parsedRating)));
 	}
 
-	if (typeof profile.avatarId === 'string' && /^avatar([1-9]|10)$/.test(profile.avatarId.trim().toLowerCase())) {
-		safe.avatarId = profile.avatarId.trim().toLowerCase();
-	}
-
 	return safe;
 }
 
 // Resolves authoritative player profiles from the D1 `users` table.
-// Returns a map of playerId -> { username, rating, avatarId }. Unknown
+// Returns a map of playerId -> { username, rating }. Unknown
 // players (or a DB failure) resolve to neutral defaults, never to client
 // supplied values.
 export async function resolveServerProfiles(env, playerIds) {
@@ -49,7 +45,6 @@ export async function resolveServerProfiles(env, playerIds) {
 				id: users.id,
 				username: users.username,
 				rating: users.rating,
-				avatarId: users.avatarId,
 			})
 			.from(users)
 			.where(inArray(users.id, ids));

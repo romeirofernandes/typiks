@@ -33,11 +33,7 @@ export function ChartTooltip({
     xAccessor,
     dateLabels,
     containerRef,
-    orientation,
-    barXAccessor,
   } = useChart();
-
-  const isHorizontal = orientation === "horizontal";
 
   const [mounted, setMounted] = useState(false);
 
@@ -49,13 +45,6 @@ export function ChartTooltip({
   const visible = tooltipData !== null;
   const x = tooltipData?.x ?? 0;
   const xWithMargin = x + margin.left;
-
-  // For horizontal charts, get the y position from the first line's yPosition (center of bar)
-  const firstLineDataKey = lines[0]?.dataKey;
-  const firstLineY = firstLineDataKey
-    ? (tooltipData?.yPositions[firstLineDataKey] ?? 0)
-    : 0;
-  const yWithMargin = firstLineY + margin.top;
 
   // Animated crosshair position
   const animatedX = useSpring(xWithMargin, crosshairSpringConfig);
@@ -100,10 +89,6 @@ export function ChartTooltip({
     if (!tooltipData) {
       return undefined;
     }
-    // For bar charts (horizontal or vertical), use the category name
-    if (barXAccessor) {
-      return barXAccessor(tooltipData.point);
-    }
 
     const xValue = xAccessor(tooltipData.point);
     if (xValue instanceof Date) {
@@ -120,7 +105,7 @@ export function ChartTooltip({
     }
 
     return String(xValue ?? "");
-  }, [tooltipData, barXAccessor, xAccessor]);
+  }, [tooltipData, xAccessor]);
 
   // Use portal to render into the chart container
   // Only render after mount on client side
@@ -152,8 +137,8 @@ export function ChartTooltip({
         </svg>
       )}
 
-      {/* Dots on bars/lines - show for vertical charts only */}
-      {showDots && visible && !isHorizontal && (
+      {/* Dots on lines - show for vertical charts only */}
+      {showDots && visible && (
         <svg
           aria-hidden="true"
           className="pointer-events-none absolute inset-0"
@@ -179,10 +164,10 @@ export function ChartTooltip({
         containerHeight={height}
         containerRef={containerRef}
         containerWidth={width}
-        top={isHorizontal ? undefined : margin.top}
+        top={margin.top}
         visible={visible}
         x={xWithMargin}
-        y={isHorizontal ? yWithMargin : margin.top}>
+        y={margin.top}>
         {content && tooltipData
           ? content({
               point: tooltipData.point,
@@ -196,7 +181,7 @@ export function ChartTooltip({
       </TooltipBox>
 
       {/* Date/Category Ticker - only show for vertical charts */}
-      {showDatePill && dateLabels.length > 0 && visible && !isHorizontal && (
+      {showDatePill && dateLabels.length > 0 && visible && (
         <m.div
           className="pointer-events-none absolute z-50"
           style={{

@@ -1,8 +1,8 @@
-import { verifyFirebaseIdToken } from '../middleware/firebaseAuth.js';
 import { generateSeed, generateWords, WORD_DIFFICULTIES } from '../utils/wordGenerator.js';
 import { generateEntityId as createId } from '../services/ids.js';
 import { persistRoomMatchResult } from '../services/match-results.js';
 import { drizzle } from 'drizzle-orm/d1';
+import { WSCoordinator } from './WSCoordinator.js';
 
 const MAX_PLAYER_INPUT_LENGTH = 32;
 
@@ -29,6 +29,11 @@ const COOP_MODES = {
 };
 
 const DEFAULT_TEAM_NAMES = ['Team Alpha', 'Team Beta', 'Team Gamma', 'Team Delta', 'Team Epsilon', 'Team Zeta'];
+
+const ROOM_STATE_KEY = 'roomState';
+const PROGRESS_PERSIST_INTERVAL_MS = 1000;
+const COUNTDOWN_TICK_MS = 1000;
+const COUNTDOWN_START_MS = 3000;
 
 function getDefaultTeamName(index) {
 	return DEFAULT_TEAM_NAMES[index] || `Team ${index + 1}`;
@@ -112,16 +117,11 @@ function sanitizeRoomCode(rawRoomCode) {
 	return code.length === 6 ? code : null;
 }
 
-export class PrivateRoom {
+export class PrivateRoom extends WSCoordinator {
 	constructor(controller, env) {
-		this.controller = controller;
-		this.env = env;
+		super(controller, env);
 
-		this.sessions = new Map(); // sessionId -> socket
-		this.sessionOrder = new Map(); // sessionId -> monotonic connection order
-		this.playerToSession = new Map(); // playerId -> sessionId
 		this.members = new Map(); // playerId -> member data
-		this.nextSessionOrder = 0;
 
 		this.roomCode = null;
 		this.ownerId = null;
@@ -131,6 +131,16 @@ export class PrivateRoom {
 
 		this.gameState = 'lobby';
 		this.game = null;
+
+		// Persistence & recovery: durable lifecycle state is mirrored into a
+		// single `roomState` key so an eviction/restart can resume (or finalize)
+		// the room. Connection state stays ephemeral. One alarm at a time with a
+		// persisted purpose: 'countdown_end' | 'game_end'.
+		this.hydrated = false;
+		this.alarmPurpose = null;
+		this.alarmDeadline = null;
+		this.persistChain = Promise.resolve();
+		this.lastProgressPersistAt = 0;
 	}
 
 	getDefaultCoopTeams(teamCount = 2) {
@@ -145,6 +155,330 @@ export class PrivateRoom {
 		this.coopTeams = this.getDefaultCoopTeams(teamCount);
 		for (const member of this.members.values()) {
 			member.teamId = null;
+		}
+	}
+
+	// ----- Persistence & recovery -------------------------------------------
+
+	buildPersistedState() {
+		return {
+			roomCode: this.roomCode,
+			ownerId: this.ownerId,
+			createdAt: this.createdAt,
+			settings: this.settings,
+			coopTeams: this.coopTeams,
+			members: this.getSortedMembers().map((member) => ({
+				id: member.id,
+				userInfo: member.userInfo,
+				ready: member.ready,
+				teamId: member.teamId ?? null,
+				joinedAt: member.joinedAt,
+			})),
+			gameState: this.gameState,
+			game: this.serializeGame(),
+			alarm:
+				this.alarmPurpose && this.alarmDeadline
+					? { purpose: this.alarmPurpose, deadline: this.alarmDeadline }
+					: null,
+		};
+	}
+
+	serializeGame() {
+		if (!this.game) return null;
+
+		const progress = {};
+		for (const [playerId, entry] of this.game.progress.entries()) {
+			progress[playerId] = { ...entry };
+		}
+
+		const teamProgress = {};
+		if (this.game.teamProgress) {
+			for (const [teamId, entry] of this.game.teamProgress.entries()) {
+				teamProgress[teamId] = { ...entry };
+			}
+		}
+
+		return {
+			id: this.game.id ?? null,
+			seed: this.game.seed ?? null,
+			countdown: this.game.countdown ?? 0,
+			countdownEndsAt: this.game.countdownEndsAt ?? null,
+			words: this.game.words ?? [],
+			progress,
+			teamProgress,
+			startTime: this.game.startTime ?? null,
+			endTime: this.game.endTime ?? null,
+		};
+	}
+
+	deserializeGame(savedGame) {
+		if (!savedGame) return null;
+
+		const progress = new Map();
+		for (const [playerId, entry] of Object.entries(savedGame.progress ?? {})) {
+			progress.set(playerId, { ...entry });
+		}
+
+		const teamProgress = new Map();
+		for (const [teamId, entry] of Object.entries(savedGame.teamProgress ?? {})) {
+			teamProgress.set(teamId, { ...entry });
+		}
+
+		return {
+			id: savedGame.id ?? null,
+			seed: savedGame.seed ?? null,
+			countdown: savedGame.countdown ?? 0,
+			countdownEndsAt: savedGame.countdownEndsAt ?? null,
+			countdownInterval: null,
+			startTimeout: null,
+			gameTimer: null,
+			words: savedGame.words ?? [],
+			progress,
+			teamProgress,
+			startTime: savedGame.startTime ?? null,
+			endTime: savedGame.endTime ?? null,
+		};
+	}
+
+	// Serialized writes keep snapshot ordering stable when lifecycle mutations
+	// persist fire-and-forget from synchronous handlers.
+	persistRoomState() {
+		if (!this.storage?.put) return Promise.resolve();
+		this.persistChain = this.persistChain
+			.catch(() => {})
+			.then(() => this.storage.put(ROOM_STATE_KEY, this.buildPersistedState()))
+			.catch((error) => console.error('Failed to persist room state:', error));
+		return this.persistChain;
+	}
+
+	deletePersistedState() {
+		if (!this.storage?.delete) return Promise.resolve();
+		this.persistChain = this.persistChain
+			.catch(() => {})
+			.then(() => this.storage.delete(ROOM_STATE_KEY))
+			.catch((error) => console.error('Failed to delete persisted room state:', error));
+		return this.persistChain;
+	}
+
+	async hydrate() {
+		if (this.hydrated) return;
+		this.hydrated = true;
+		if (!this.storage?.get) return;
+
+		let saved = null;
+		try {
+			saved = await this.storage.get(ROOM_STATE_KEY);
+		} catch (error) {
+			console.error('Failed to load room state:', error);
+			return;
+		}
+		if (!saved) return;
+
+		this.roomCode = saved.roomCode ?? null;
+		this.ownerId = saved.ownerId ?? null;
+		this.createdAt = saved.createdAt ?? Date.now();
+		this.settings = saved.settings
+			? { ...DEFAULT_ROOM_SETTINGS, ...saved.settings }
+			: { ...DEFAULT_ROOM_SETTINGS };
+		this.coopTeams = Array.isArray(saved.coopTeams)
+			? saved.coopTeams
+			: this.getDefaultCoopTeams();
+
+		this.members.clear();
+		for (const member of saved.members ?? []) {
+			if (!member || typeof member.id !== 'string') continue;
+			this.members.set(member.id, {
+				id: member.id,
+				sessionId: null, // ephemeral — re-established on ROOM_JOIN
+				userInfo: this.sanitizeUserInfo(member.userInfo),
+				ready: Boolean(member.ready),
+				teamId: member.teamId ?? null,
+				joinedAt: member.joinedAt ?? Date.now(),
+			});
+		}
+
+		this.gameState = saved.gameState ?? 'lobby';
+		this.game = this.deserializeGame(saved.game);
+		if (saved.alarm) {
+			this.alarmPurpose = saved.alarm.purpose ?? null;
+			this.alarmDeadline = saved.alarm.deadline ?? null;
+		}
+
+		// Resume a mid-round room or finalize a stale one so recovery can never
+		// stall in 'playing' or 'countdown' after an eviction mid-flight.
+		if (this.gameState === 'playing' && this.game?.endTime) {
+			if (this.game.endTime <= Date.now()) {
+				await this.endGame('timeout');
+			} else {
+				this.resumeGameTimer();
+			}
+		} else if (this.gameState === 'countdown' && this.game) {
+			await this.resumeCountdown();
+		}
+
+		// Self-healing: if a pending alarm was lost (e.g. a crash between the
+		// snapshot write and setAlarm), re-arm it from persisted state.
+		if (
+			this.alarmPurpose &&
+			this.alarmDeadline &&
+			this.alarmDeadline > Date.now() &&
+			this.storage?.getAlarm &&
+			this.storage?.setAlarm
+		) {
+			try {
+				const current = await this.storage.getAlarm();
+				if (current == null) {
+					await this.storage.setAlarm(this.alarmDeadline);
+				}
+			} catch (error) {
+				console.error('Failed to reconcile pending alarm:', error);
+			}
+		}
+	}
+
+	// ----- Alarm handling ----------------------------------------------------
+
+	clearAlarmState() {
+		this.alarmPurpose = null;
+		this.alarmDeadline = null;
+	}
+
+	async clearAlarm() {
+		this.clearAlarmState();
+		if (this.storage?.deleteAlarm) {
+			try {
+				await this.storage.deleteAlarm();
+			} catch (error) {
+				console.error('Failed to clear alarm:', error);
+			}
+		}
+	}
+
+	async armCountdownEndAlarm(deadline) {
+		this.alarmPurpose = 'countdown_end';
+		this.alarmDeadline = deadline;
+		await this.persistRoomState();
+		if (this.storage?.setAlarm) {
+			try {
+				await this.storage.setAlarm(deadline);
+			} catch (error) {
+				console.error('Failed to arm countdown alarm:', error);
+			}
+		}
+	}
+
+	async armGameEndAlarm(endTime) {
+		this.alarmPurpose = 'game_end';
+		this.alarmDeadline = endTime;
+		await this.persistRoomState();
+		if (this.storage?.setAlarm) {
+			try {
+				await this.storage.setAlarm(endTime);
+			} catch (error) {
+				console.error('Failed to arm game-end alarm:', error);
+			}
+		}
+	}
+
+	// Single alarm at a time: purpose is persisted so the handler knows what
+	// fired even after a restart. Alarms are durable, so a pending round timer
+	// survives DO eviction and fires here on wake.
+	async alarm() {
+		// On a cold wake this.alarmPurpose is null until hydrate() loads it,
+		// and hydrate() may itself transition the room (e.g. an expired
+		// countdown resumes straight into 'playing', re-arming a game_end
+		// alarm). Read the fired purpose from storage first so we dispatch on
+		// what actually fired, not on whatever hydrate() left behind.
+		let purpose = this.alarmPurpose;
+		if (!purpose && this.storage?.get) {
+			try {
+				const saved = await this.storage.get(ROOM_STATE_KEY);
+				purpose = saved?.alarm?.purpose ?? null;
+			} catch (error) {
+				console.error('Failed to read alarm purpose:', error);
+			}
+		}
+
+		await this.hydrate();
+
+		if (purpose === 'countdown_end') {
+			if (this.gameState === 'countdown') {
+				this.clearAlarmState();
+				this.finishCountdownAndStart();
+			}
+			// If hydrate already advanced to 'playing', startGame armed the
+			// game_end alarm — leave it intact rather than clobbering it.
+		} else if (purpose === 'game_end') {
+			this.clearAlarmState();
+			if (this.gameState === 'playing') {
+				this.endGame('timeout');
+			}
+		}
+
+		await this.persistRoomState();
+	}
+
+	// Resumes a restored 'playing' round's wall-clock timer. The durable alarm
+	// remains the backstop; this only recreates the in-memory timer.
+	resumeGameTimer() {
+		if (!this.game?.endTime) return;
+		const remainingMs = Math.max(0, this.game.endTime - Date.now());
+		if (remainingMs > 0) {
+			this.game.gameTimer = setTimeout(() => {
+				this.endGame('timeout');
+			}, remainingMs);
+		}
+	}
+
+	async resumeCountdown() {
+		if (!this.game || this.gameState !== 'countdown') return;
+
+		const remainingMs = (this.game.countdownEndsAt ?? Date.now()) - Date.now();
+		if (remainingMs <= 0) {
+			this.finalizeCountdown();
+			this.startGame();
+			return;
+		}
+
+		this.game.countdown = Math.max(1, Math.ceil(remainingMs / COUNTDOWN_TICK_MS));
+		this.game.countdownInterval = setInterval(() => {
+			if (!this.game || this.gameState !== 'countdown') return;
+			this.game.countdown -= 1;
+			if (this.game.countdown > 0) {
+				this.sendToMembers({ type: 'ROOM_COUNTDOWN', count: this.game.countdown });
+				this.broadcastRoomState();
+				return;
+			}
+			this.finishCountdownAndStart();
+		}, COUNTDOWN_TICK_MS);
+	}
+
+	finalizeCountdown() {
+		if (!this.game || this.gameState !== 'countdown') return;
+		if (this.game.countdownInterval) {
+			clearInterval(this.game.countdownInterval);
+			this.game.countdownInterval = null;
+		}
+		if (this.game.countdown > 0) {
+			this.sendToMembers({ type: 'ROOM_COUNTDOWN', count: 0 });
+		}
+		this.game.countdown = 0;
+	}
+
+	finishCountdownAndStart() {
+		if (!this.game || this.gameState !== 'countdown') return;
+		if (this.game.startTimeout) return; // already scheduled (interval + alarm can both fire)
+		this.finalizeCountdown();
+		this.game.startTimeout = setTimeout(() => {
+			this.startGame();
+		}, 450);
+	}
+
+	persistProgressIfDue() {
+		const now = Date.now();
+		if (now - this.lastProgressPersistAt >= PROGRESS_PERSIST_INTERVAL_MS) {
+			this.lastProgressPersistAt = now;
+			void this.persistRoomState();
 		}
 	}
 
@@ -192,22 +526,10 @@ export class PrivateRoom {
 		return { ok: true };
 	}
 
-	async authenticateAndGetPlayerId(message) {
-		const idToken = message?.idToken;
-		if (typeof idToken !== 'string' || idToken.length === 0) {
-			throw new Error('Missing idToken');
-		}
-		const claims = await verifyFirebaseIdToken(idToken, {
-			projectId: this.env.FIREBASE_PROJECT_ID,
-		});
-		return claims.uid;
-	}
-
 	sanitizeUserInfo(userInfo) {
 		const safe = {
 			username: 'player',
 			rating: 800,
-			avatarId: 'avatar1',
 		};
 
 		if (!userInfo || typeof userInfo !== 'object') return safe;
@@ -220,37 +542,7 @@ export class PrivateRoom {
 			safe.rating = Math.max(0, Math.min(3000, Math.floor(userInfo.rating)));
 		}
 
-		if (
-			typeof userInfo.avatarId === 'string' &&
-			/^avatar([1-9]|10)$/.test(userInfo.avatarId.trim().toLowerCase())
-		) {
-			safe.avatarId = userInfo.avatarId.trim().toLowerCase();
-		}
-
 		return safe;
-	}
-
-	parseMessage(data) {
-		if (typeof data !== 'string') return null;
-
-		try {
-			const parsed = JSON.parse(data);
-			if (!parsed || typeof parsed !== 'object') {
-				return null;
-			}
-			return parsed;
-		} catch {
-			return null;
-		}
-	}
-
-	isSocketOpen(webSocket) {
-		if (!webSocket) return false;
-
-		const openStates = [WebSocket.OPEN, WebSocket.READY_STATE_OPEN, 1].filter((state) =>
-			Number.isFinite(state)
-		);
-		return openStates.includes(webSocket.readyState);
 	}
 
 	extractRoomCodeFromPath(urlString) {
@@ -320,7 +612,6 @@ export class PrivateRoom {
 			return {
 				playerId: member.id,
 				username: member.userInfo.username,
-				avatarId: member.userInfo.avatarId,
 				score: progress.score,
 				correctChars: progress.correctChars,
 				currentWordIndex: teamProgress?.currentWordIndex ?? progress.currentWordIndex,
@@ -358,7 +649,6 @@ export class PrivateRoom {
 		const members = this.getSortedMembers().map((member) => ({
 			id: member.id,
 			username: member.userInfo.username,
-			avatarId: member.userInfo.avatarId,
 			rating: member.userInfo.rating,
 			ready: member.ready,
 			isLeader: member.id === this.ownerId,
@@ -463,6 +753,9 @@ export class PrivateRoom {
 		if (this.members.size === 0) {
 			this.resetToLobby();
 			this.ownerId = null;
+			void this.deletePersistedState();
+		} else {
+			void this.persistRoomState();
 		}
 
 		this.sendToMembers({
@@ -471,58 +764,6 @@ export class PrivateRoom {
 			reason,
 		});
 		this.broadcastRoomState();
-	}
-
-	handleSessionTermination(sessionId, playerId) {
-		this.sessions.delete(sessionId);
-		this.sessionOrder.delete(sessionId);
-
-		if (!playerId) {
-			return;
-		}
-
-		const ownedSessionId = this.playerToSession.get(playerId);
-		if (ownedSessionId !== sessionId) {
-			return;
-		}
-
-		this.playerToSession.delete(playerId);
-		this.handlePlayerLeave(playerId, 'disconnected');
-	}
-
-	closeSession(sessionId, code = 1000, reason = 'Session replaced') {
-		const previousSocket = this.sessions.get(sessionId);
-		if (!previousSocket) {
-			return;
-		}
-
-		try {
-			previousSocket.close(code, reason);
-		} catch {
-			// ignore close errors from stale sockets
-		}
-
-		this.sessions.delete(sessionId);
-		this.sessionOrder.delete(sessionId);
-	}
-
-	getSessionOrder(sessionId) {
-		return this.sessionOrder.get(sessionId) ?? -1;
-	}
-
-	sendToPlayer(sessionId, message) {
-		if (typeof sessionId !== 'string' || sessionId.length === 0) {
-			return;
-		}
-
-		const webSocket = this.sessions.get(sessionId);
-		if (this.isSocketOpen(webSocket)) {
-			try {
-				webSocket.send(JSON.stringify(message));
-			} catch (error) {
-				console.error('Error sending room message:', error);
-			}
-		}
 	}
 
 	sendRoomError(sessionId, error) {
@@ -597,6 +838,7 @@ export class PrivateRoom {
 		for (const member of this.members.values()) {
 			member.ready = false;
 		}
+		void this.persistRoomState();
 		this.broadcastRoomState();
 	}
 
@@ -605,11 +847,13 @@ export class PrivateRoom {
 		this.gameState = 'countdown';
 		this.game = {
 			countdown: 3,
+			countdownEndsAt: Date.now() + COUNTDOWN_START_MS,
 			countdownInterval: null,
 			startTimeout: null,
 			gameTimer: null,
 			words: [],
 			progress: new Map(),
+			teamProgress: new Map(),
 			startTime: null,
 			endTime: null,
 		};
@@ -635,17 +879,10 @@ export class PrivateRoom {
 				return;
 			}
 
-			this.sendToMembers({
-				type: 'ROOM_COUNTDOWN',
-				count: 0,
-			});
+			this.finishCountdownAndStart();
+		}, COUNTDOWN_TICK_MS);
 
-			clearInterval(this.game.countdownInterval);
-			this.game.countdownInterval = null;
-			this.game.startTimeout = setTimeout(() => {
-				this.startGame();
-			}, 450);
-		}, 1000);
+		void this.armCountdownEndAlarm(this.game.countdownEndsAt);
 	}
 
 	startGame() {
@@ -655,6 +892,7 @@ export class PrivateRoom {
 
 		if (this.members.size < 2 || !this.allPlayersReady()) {
 			this.resetToLobby();
+			void this.persistRoomState();
 			this.broadcastRoomState();
 			return;
 		}
@@ -698,6 +936,7 @@ export class PrivateRoom {
 			id: createId('game'),
 			seed,
 			countdown: 0,
+			countdownEndsAt: null,
 			countdownInterval: null,
 			startTimeout: null,
 			gameTimer: null,
@@ -723,6 +962,8 @@ export class PrivateRoom {
 		this.game.gameTimer = setTimeout(() => {
 			this.endGame('timeout');
 		}, durationMs);
+
+		void this.armGameEndAlarm(this.game.endTime);
 	}
 
 	endGame(reason = 'timeout', options = {}) {
@@ -742,7 +983,6 @@ export class PrivateRoom {
 				return {
 					playerId: member.id,
 					username: member.userInfo.username,
-					avatarId: member.userInfo.avatarId,
 					score: progress.score,
 					correctChars: progress.correctChars,
 					teamId: member.teamId || null,
@@ -778,7 +1018,6 @@ export class PrivateRoom {
 				teamBucket.members.push({
 					playerId: row.playerId,
 					username: row.username,
-					avatarId: row.avatarId,
 					score: row.score,
 					correctChars: row.correctChars,
 					progress: row.progress,
@@ -853,6 +1092,9 @@ export class PrivateRoom {
 		});
 
 		this.resetToLobby();
+		this.lastProgressPersistAt = 0;
+		void this.clearAlarm();
+		void this.persistRoomState();
 		this.broadcastRoomState();
 	}
 
@@ -919,6 +1161,8 @@ export class PrivateRoom {
 
 			this.sendProgress();
 
+			this.persistProgressIfDue();
+
 			if (teamProgress.currentWordIndex >= this.game.words.length) {
 				this.endGame('completed', { winnerId: playerId });
 			}
@@ -942,6 +1186,7 @@ export class PrivateRoom {
 		progress.correctChars += currentWord.length;
 		progress.currentWordIndex += 1;
 		this.sendProgress();
+		this.persistProgressIfDue();
 
 		if (progress.currentWordIndex >= this.game.words.length) {
 			this.endGame('completed', { winnerId: playerId });
@@ -969,6 +1214,7 @@ export class PrivateRoom {
 		const currentWord = this.game.words[teamProgress.currentWordIndex] || '';
 		const typedInput = String(rawInput || '').replace(/\s/g, '').slice(0, currentWord.length);
 		teamProgress.currentInput = typedInput;
+		this.persistProgressIfDue();
 		this.sendToTeamMembers(member.teamId, {
 			type: 'ROOM_TEAM_TYPING',
 			teamId: member.teamId,
@@ -984,20 +1230,9 @@ export class PrivateRoom {
 			return false;
 		}
 
-		const existingSessionId = this.playerToSession.get(playerId);
-		if (
-			existingSessionId &&
-			existingSessionId !== sessionId &&
-			this.getSessionOrder(existingSessionId) > this.getSessionOrder(sessionId)
-		) {
-			this.closeSession(sessionId, 1000, 'Superseded by newer session');
+		if (!this.claimSession(playerId, sessionId)) {
 			return false;
 		}
-
-		if (existingSessionId && existingSessionId !== sessionId) {
-			this.closeSession(existingSessionId, 1000, 'Replaced by newer session');
-		}
-		this.playerToSession.set(playerId, sessionId);
 
 		const userInfo = this.sanitizeUserInfo(message.userInfo);
 		const roomCodeFromMessage = sanitizeRoomCode(message.roomCode);
@@ -1046,6 +1281,7 @@ export class PrivateRoom {
 			}
 		}
 
+		void this.persistRoomState();
 		this.broadcastRoomState();
 		return true;
 	}
@@ -1071,6 +1307,7 @@ export class PrivateRoom {
 		}
 
 		member.ready = Boolean(ready);
+		void this.persistRoomState();
 		this.broadcastRoomState();
 	}
 
@@ -1098,6 +1335,7 @@ export class PrivateRoom {
 
 		member.teamId = teamId;
 		member.ready = false;
+		void this.persistRoomState();
 		this.broadcastRoomState();
 	}
 
@@ -1126,6 +1364,7 @@ export class PrivateRoom {
 			...this.coopTeams[teamIndex],
 			name: sanitizeTeamName(name, fallback),
 		};
+		void this.persistRoomState();
 		this.broadcastRoomState();
 	}
 
@@ -1164,6 +1403,7 @@ export class PrivateRoom {
 			member.ready = false;
 		}
 
+		void this.persistRoomState();
 		this.broadcastRoomState();
 	}
 
@@ -1210,6 +1450,7 @@ export class PrivateRoom {
 		for (const member of this.members.values()) {
 			member.ready = false;
 		}
+		void this.persistRoomState();
 		this.broadcastRoomState();
 	}
 
@@ -1255,6 +1496,8 @@ export class PrivateRoom {
 	}
 
 	async configureRoom(request) {
+		await this.hydrate();
+
 		const body = await request.json().catch(() => null);
 		if (!body || typeof body !== 'object') {
 			return new Response(JSON.stringify({ error: 'Invalid payload' }), {
@@ -1293,6 +1536,7 @@ export class PrivateRoom {
 		this.coopTeams = this.getDefaultCoopTeams();
 		this.ownerId = typeof body.ownerId === 'string' && body.ownerId.length > 0 ? body.ownerId : null;
 		this.createdAt = Date.now();
+		void this.persistRoomState();
 
 		return new Response(
 			JSON.stringify({
@@ -1318,6 +1562,8 @@ export class PrivateRoom {
 			return new Response('Expected websocket', { status: 400 });
 		}
 
+		await this.hydrate();
+
 		const webSocketPair = new WebSocketPair();
 		const [client, server] = Object.values(webSocketPair);
 		this.handleSession(server, request);
@@ -1329,141 +1575,128 @@ export class PrivateRoom {
 	}
 
 	handleSession(webSocket, request) {
-		webSocket.accept();
-
-		const sessionId = createId('private_session');
-		this.sessions.set(sessionId, webSocket);
-		this.sessionOrder.set(sessionId, this.nextSessionOrder++);
-
-		const pathRoomCode = this.extractRoomCodeFromPath(request.url);
+		const pathRoomCode = this.extractRoomCodeFromPath(request?.url);
 		if (!this.roomCode && pathRoomCode) {
 			this.roomCode = pathRoomCode;
 		}
 
-		let playerId = null;
+		super.handleSession(webSocket, request);
+	}
 
-		webSocket.addEventListener('message', async (event) => {
-			try {
-				const message = this.parseMessage(event.data);
-				if (!message || typeof message.type !== 'string') {
+	generateSessionId() {
+		return createId('private_session');
+	}
+
+	handlePlayerDisconnect(playerId) {
+		this.handlePlayerLeave(playerId, 'disconnected');
+	}
+
+	async handleMessage(message, ctx) {
+		const { sessionId, webSocket, getPlayerId, setPlayerId } = ctx;
+
+		switch (message.type) {
+			case 'ROOM_JOIN':
+				try {
+					const joinedPlayerId = await this.authenticateAndGetPlayerId(message);
+					setPlayerId(joinedPlayerId);
+					this.handleJoin(joinedPlayerId, sessionId, message);
+				} catch (error) {
+					console.error('ROOM_JOIN failed:', error);
+					this.sendRoomError(sessionId, 'Unauthorized');
+					webSocket.close(1008, 'Unauthorized');
+				}
+				break;
+
+			case 'ROOM_SET_READY':
+				if (!getPlayerId()) {
+					this.sendRoomError(sessionId, 'Join the room first');
 					return;
 				}
+				this.handleReady(getPlayerId(), message.ready);
+				break;
 
-				switch (message.type) {
-					case 'ROOM_JOIN':
-						try {
-							playerId = await this.authenticateAndGetPlayerId(message);
-							this.handleJoin(playerId, sessionId, message);
-						} catch (error) {
-							console.error('ROOM_JOIN failed:', error);
-							this.sendRoomError(sessionId, 'Unauthorized');
-							webSocket.close(1008, 'Unauthorized');
-						}
-						break;
-
-					case 'ROOM_SET_READY':
-						if (!playerId) {
-							this.sendRoomError(sessionId, 'Join the room first');
-							return;
-						}
-						this.handleReady(playerId, message.ready);
-						break;
-
-					case 'ROOM_UPDATE_SETTINGS':
-						if (!playerId) {
-							this.sendRoomError(sessionId, 'Join the room first');
-							return;
-						}
-						this.updateSettings(playerId, message.settings);
-						break;
-
-					case 'ROOM_ASSIGN_TEAM':
-						if (!playerId) {
-							this.sendRoomError(sessionId, 'Join the room first');
-							return;
-						}
-						this.handleAssignTeam(playerId, message.teamId);
-						break;
-
-					case 'ROOM_SET_TEAM_NAME':
-						if (!playerId) {
-							this.sendRoomError(sessionId, 'Join the room first');
-							return;
-						}
-						this.handleSetTeamName(playerId, message.teamId, message.name);
-						break;
-
-					case 'ROOM_START_GAME':
-						if (!playerId) {
-							this.sendRoomError(sessionId, 'Join the room first');
-							return;
-						}
-						this.handleStartRequest(playerId);
-						break;
-
-					case 'ROOM_ADD_TEAM':
-						if (!playerId) {
-							this.sendRoomError(sessionId, 'Join the room first');
-							return;
-						}
-						this.handleAddTeam(playerId);
-						break;
-
-					case 'ROOM_REMOVE_TEAM':
-						if (!playerId) {
-							this.sendRoomError(sessionId, 'Join the room first');
-							return;
-						}
-						this.handleRemoveTeam(playerId, message.teamId);
-						break;
-
-					case 'ROOM_REMATCH':
-						if (!playerId) {
-							this.sendRoomError(sessionId, 'Join the room first');
-							return;
-						}
-						this.handleRematchRequest(playerId);
-						break;
-
-					case 'PLAYER_INPUT':
-						if (!playerId) {
-							this.sendRoomError(sessionId, 'Join the room first');
-							return;
-						}
-						this.handlePlayerInput(playerId, message.input);
-						break;
-
-					case 'PLAYER_TYPING':
-						if (!playerId) {
-							this.sendRoomError(sessionId, 'Join the room first');
-							return;
-						}
-						this.handlePlayerTyping(playerId, message.input);
-						break;
-
-					case 'ROOM_LEAVE':
-						if (playerId) {
-							this.playerToSession.delete(playerId);
-							this.handlePlayerLeave(playerId, 'left');
-							playerId = null;
-						}
-						break;
-
-					default:
-						break;
+			case 'ROOM_UPDATE_SETTINGS':
+				if (!getPlayerId()) {
+					this.sendRoomError(sessionId, 'Join the room first');
+					return;
 				}
-			} catch (error) {
-				console.error('Error handling private room message:', error);
-			}
-		});
+				this.updateSettings(getPlayerId(), message.settings);
+				break;
 
-		webSocket.addEventListener('close', () => {
-			this.handleSessionTermination(sessionId, playerId);
-		});
+			case 'ROOM_ASSIGN_TEAM':
+				if (!getPlayerId()) {
+					this.sendRoomError(sessionId, 'Join the room first');
+					return;
+				}
+				this.handleAssignTeam(getPlayerId(), message.teamId);
+				break;
 
-		webSocket.addEventListener('error', (error) => {
-			console.error('Private room socket error:', error);
-			this.handleSessionTermination(sessionId, playerId);
-		});
+			case 'ROOM_SET_TEAM_NAME':
+				if (!getPlayerId()) {
+					this.sendRoomError(sessionId, 'Join the room first');
+					return;
+				}
+				this.handleSetTeamName(getPlayerId(), message.teamId, message.name);
+				break;
+
+			case 'ROOM_START_GAME':
+				if (!getPlayerId()) {
+					this.sendRoomError(sessionId, 'Join the room first');
+					return;
+				}
+				this.handleStartRequest(getPlayerId());
+				break;
+
+			case 'ROOM_ADD_TEAM':
+				if (!getPlayerId()) {
+					this.sendRoomError(sessionId, 'Join the room first');
+					return;
+				}
+				this.handleAddTeam(getPlayerId());
+				break;
+
+			case 'ROOM_REMOVE_TEAM':
+				if (!getPlayerId()) {
+					this.sendRoomError(sessionId, 'Join the room first');
+					return;
+				}
+				this.handleRemoveTeam(getPlayerId(), message.teamId);
+				break;
+
+			case 'ROOM_REMATCH':
+				if (!getPlayerId()) {
+					this.sendRoomError(sessionId, 'Join the room first');
+					return;
+				}
+				this.handleRematchRequest(getPlayerId());
+				break;
+
+			case 'PLAYER_INPUT':
+				if (!getPlayerId()) {
+					this.sendRoomError(sessionId, 'Join the room first');
+					return;
+				}
+				this.handlePlayerInput(getPlayerId(), message.input);
+				break;
+
+			case 'PLAYER_TYPING':
+				if (!getPlayerId()) {
+					this.sendRoomError(sessionId, 'Join the room first');
+					return;
+				}
+				this.handlePlayerTyping(getPlayerId(), message.input);
+				break;
+
+			case 'ROOM_LEAVE':
+				if (getPlayerId()) {
+					this.playerToSession.delete(getPlayerId());
+					this.handlePlayerLeave(getPlayerId(), 'left');
+					setPlayerId(null);
+				}
+				break;
+
+			default:
+				break;
+		}
 	}
 }

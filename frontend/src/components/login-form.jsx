@@ -15,7 +15,6 @@ import { signInWithEmailAndPassword, signInWithPopup } from "firebase/auth";
 import { auth, googleProvider } from "@/firebase";
 import { ViewIcon, ViewOffIcon } from "hugeicons-react";
 import GoogleLogo from "@/components/icons/GoogleLogo";
-import { getRandomDefaultAvatarId } from "@/lib/player-meta";
 import GuestSignInButton from "@/components/auth/GuestSignInButton";
 import { useProvisionUser } from "@/lib/users-api";
 
@@ -53,7 +52,7 @@ export function LoginForm({ className, ...props }) {
       // Create or get user in database
       await provisionUser.mutateAsync({
         user: result.user,
-        body: { username: displayName, avatarId: getRandomDefaultAvatarId() },
+        body: { username: displayName },
       });
 
       navigate("/dashboard");

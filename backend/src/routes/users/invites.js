@@ -39,7 +39,6 @@ invitesRouter.get('/me/room-invites', requireAuth, async (c) => {
 				createdAt: roomInvites.createdAt,
 				inviterId: roomInvites.inviterId,
 				inviterUsername: inviterUser.username,
-				inviterAvatarId: inviterUser.avatarId,
 			})
 			.from(roomInvites)
 			.innerJoin(inviterUser, eq(roomInvites.inviterId, inviterUser.id))

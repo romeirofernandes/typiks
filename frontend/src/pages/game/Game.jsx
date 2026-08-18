@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useReducer } from "react";
+import React, { useState, useEffect, useRef, useCallback, useReducer, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   m,
@@ -22,16 +22,9 @@ import {
 import { FiClock, FiArrowLeft, FiZap, FiTrendingUp, FiCheck, FiX, FiSave } from "react-icons/fi";
 import GuestUpgradePrompt from "@/components/auth/GuestUpgradePrompt";
 import { userKeys } from "@/lib/query-keys";
-
-function openWebSocket(path) {
-  const serverUrl = import.meta.env.VITE_SERVER_URL || "127.0.0.1:8787";
-  const httpUrl = serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`;
-  const wsBaseUrl = httpUrl
-    .replace(/^http:/i, "ws:")
-    .replace(/^https:/i, "wss:")
-    .replace(/\/$/, "");
-  return new WebSocket(new URL(path, wsBaseUrl));
-}
+import { openWebSocket } from "@/lib/websocket";
+import { buildMatchInitialState, matchReducer } from "@/lib/match/matchReducer";
+import { WordDisplay } from "@/components/game/WordDisplay";
 
 function formatTime(seconds) {
   const mins = Math.floor(seconds / 60);
@@ -47,182 +40,8 @@ function getRatingColor(rating) {
   return "text-muted-foreground";
 }
 
-const GAME_INITIAL_STATE = {
-  gameState: "waiting",
-  connectionError: null,
-  opponent: null,
-  countdown: null,
-  words: [],
-  currentWordIndex: 0,
-  opponentWordIndex: 0,
-  myScore: 0,
-  opponentScore: 0,
-  timeLeft: 60,
-  input: "",
-  gameResults: null,
-  postMatchRating: null,
-  modeSeconds: 60,
-  rematchState: "idle",
-  incomingRematch: null,
-};
-
 function buildInitialGameState(modeSeconds) {
-  return { ...GAME_INITIAL_STATE, modeSeconds };
-}
-
-function gameReducer(state, action) {
-  switch (action.type) {
-    case "CONNECTION_CLEAR":
-      return { ...state, connectionError: null };
-
-    case "CONNECTION_ERROR":
-      return {
-        ...state,
-        connectionError: { title: action.title, message: action.message },
-        gameState: "error",
-      };
-
-    case "SET_GAME_STATE":
-      return { ...state, gameState: action.gameState };
-
-    case "MATCH_FOUND":
-      return {
-        ...state,
-        rematchState: "idle",
-        incomingRematch: null,
-        postMatchRating: null,
-        gameState: "countdown",
-        modeSeconds: action.modeSeconds,
-        opponent: action.opponent,
-        input: "",
-      };
-
-    case "MATCH_ABORTED":
-      return {
-        ...state,
-        rematchState: "idle",
-        incomingRematch: null,
-        postMatchRating: null,
-        opponent: null,
-        input: "",
-        gameState: "waiting",
-      };
-
-    case "COUNTDOWN":
-      return { ...state, countdown: action.count };
-
-    case "GAME_START":
-      return {
-        ...state,
-        modeSeconds: action.modeSeconds,
-        words: action.words,
-        timeLeft: action.timeLeft,
-        gameState: "playing",
-        countdown: null,
-        myScore: 0,
-        opponentScore: 0,
-        currentWordIndex: 0,
-        opponentWordIndex: 0,
-        input: "",
-      };
-
-    case "PLAYER_PROGRESS":
-      return {
-        ...state,
-        myScore: action.myScore,
-        currentWordIndex: action.currentWordIndex,
-        opponentScore: action.opponentScore,
-        opponentWordIndex: action.opponentWordIndex,
-      };
-
-    case "GAME_RESUMED":
-      return {
-        ...state,
-        modeSeconds: action.modeSeconds,
-        opponent: action.opponent,
-        words: action.words,
-        myScore: action.myScore,
-        currentWordIndex: action.currentWordIndex,
-        opponentScore: action.opponentScore,
-        opponentWordIndex: action.opponentWordIndex,
-        countdown:
-          action.status === "playing" ? null : state.countdown,
-        timeLeft:
-          action.status === "playing" ? action.timeLeft : state.timeLeft,
-        gameState:
-          action.status === "playing"
-            ? "playing"
-            : action.status === "countdown"
-              ? "countdown"
-              : "waiting",
-      };
-
-    case "GAME_END":
-      return {
-        ...state,
-        rematchState: "idle",
-        incomingRematch: null,
-        modeSeconds: action.modeSeconds,
-        gameResults: action.results,
-        input: "",
-        gameState: "finished",
-      };
-
-    case "OPPONENT_DISCONNECTED":
-      return {
-        ...state,
-        rematchState: "idle",
-        incomingRematch: null,
-        postMatchRating: null,
-        input: "",
-        gameState: "finished",
-        gameResults: action.results,
-      };
-
-    case "REMATCH_PENDING":
-      return { ...state, rematchState: "pending" };
-
-    case "REMATCH_REQUESTED":
-      return { ...state, incomingRematch: action.incomingRematch };
-
-    case "REMATCH_DECLINED":
-      return { ...state, rematchState: "declined", incomingRematch: null };
-
-    case "REMATCH_TIMEOUT":
-      return { ...state, rematchState: "timeout", incomingRematch: null };
-
-    case "REMATCH_UNAVAILABLE":
-      return { ...state, rematchState: "unavailable", incomingRematch: null };
-
-    case "SET_REMATCH_STATE":
-      return { ...state, rematchState: action.rematchState };
-
-    case "CLEAR_INCOMING_REMATCH":
-      return { ...state, incomingRematch: null };
-
-    case "TICK":
-      return { ...state, timeLeft: action.timeLeft };
-
-    case "INPUT_CHANGE":
-      return { ...state, input: action.input };
-
-    case "SUBMIT_SUCCESS":
-      return {
-        ...state,
-        myScore: state.myScore + 1,
-        currentWordIndex: Math.min(
-          state.currentWordIndex + 1,
-          state.words.length
-        ),
-        input: "",
-      };
-
-    case "SET_POST_MATCH_RATING":
-      return { ...state, postMatchRating: action.postMatchRating };
-
-    default:
-      return state;
-  }
+  return buildMatchInitialState({ gameState: "waiting", modeSeconds });
 }
 
 function useGameSession() {
@@ -252,21 +71,25 @@ function useGameSession() {
       incomingRematch,
     },
     dispatch,
-  ] = useReducer(gameReducer, initialModeSeconds, buildInitialGameState);
+  ] = useReducer(matchReducer, initialModeSeconds, buildInitialGameState);
   const activeGameIdRef = useRef(null);
   const [showGuestUpgrade, setShowGuestUpgrade] = useState(false);
   const [playerPreferences] = usePlayerPreferences();
   const isCoarsePointer = useIsCoarsePointer();
   const viewport = useViewport();
-  const [userStatsLoaded, setUserStatsLoaded] = useState(false);
-  const [userStats, setUserStats] = useState(() => ({
-    username:
-      currentUser?.displayName || currentUser?.email?.split("@")[0] || "Player",
-    avatarId: "avatar1",
-    rating: 800,
-    gamesPlayed: 0,
-    gamesWon: 0,
-  }));
+  const { stats: fetchedStats, loading: statsLoading } = useStats();
+  const queryClient = useQueryClient();
+  const userStats = useMemo(
+    () =>
+      fetchedStats ?? {
+        username:
+          currentUser?.displayName || currentUser?.email?.split("@")[0] || "Player",
+        rating: 800,
+        gamesPlayed: 0,
+        gamesWon: 0,
+      },
+    [currentUser, fetchedStats]
+  );
   const handleWebSocketMessageRef = useRef(null);
   const inputRef = useRef(null);
   const timerRef = useRef(null);
@@ -309,18 +132,6 @@ function useGameSession() {
     }
   }, []);
 
-  useEffect(() => {
-    if (!currentUser) return;
-
-    setUserStats((prev) => ({
-      ...prev,
-      username:
-        prev?.username && prev.username !== "Player"
-          ? prev.username
-          : currentUser.displayName || currentUser.email?.split("@")[0] || "Player",
-    }));
-  }, [currentUser]);
-
   const submitWordIfCorrect = useCallback(
     (rawInput) => {
       if (gameState !== "playing" || !wsRef.current) return false;
@@ -350,25 +161,6 @@ function useGameSession() {
     },
     [currentWord, gameState]
   );
-
-  const { stats: fetchedStats, loading: statsLoading } = useStats();
-  const queryClient = useQueryClient();
-
-  useEffect(() => {
-    if (statsLoading) return;
-
-    if (fetchedStats) {
-      setUserStats(fetchedStats);
-    } else {
-      setUserStats({
-        username: currentUser?.displayName || currentUser?.email?.split("@")[0] || "Player",
-        rating: 800,
-        gamesPlayed: 0,
-        gamesWon: 0,
-      });
-    }
-    setUserStatsLoaded(true);
-  }, [fetchedStats, statsLoading, currentUser]);
 
   const connectQueue = useCallback(async () => {
     if (!userStats || !currentUser) return;
@@ -418,7 +210,6 @@ function useGameSession() {
             userInfo: {
               username: userStats.username,
               rating: Number.isFinite(Number(queueRating)) ? Number(queueRating) : 800,
-              avatarId: userStats.avatarId || "avatar1",
             },
           })
         );
@@ -516,7 +307,6 @@ function useGameSession() {
               userInfo: {
                 username: userStats?.username || "player",
                 rating: Number.isFinite(Number(queueRating)) ? Number(queueRating) : 800,
-                avatarId: userStats?.avatarId || "avatar1",
               },
             })
           );
@@ -574,18 +364,19 @@ function useGameSession() {
     };
   }, [cleanup]);
 
-  // react-doctor-disable-next-line no-effect-chain -- Stats-load effect (199) sets userStats + userStatsLoaded; this effect intentionally runs one render later so connectQueue's closure sees the real stats (not the default 800) for the JOIN_QUEUE payload. A second purpose: reconnect to the queue when MATCH_ABORTED flips gameState back to "waiting". Merging would either send the default rating or drop the abort-reconnect path.
+// Wait for the stats fetch to settle so the JOIN_QUEUE payload carries the real
+  // rating (not the default 800). Also reconnects to the queue when MATCH_ABORTED
+  // flips gameState back to "waiting".
   useEffect(() => {
     if (
-      userStatsLoaded &&
-      userStats &&
+      !statsLoading &&
       gameState === "waiting" &&
       !wsRef.current &&
       !isConnectingRef.current
     ) {
       connectQueue();
     }
-  }, [connectQueue, gameState, userStats, userStatsLoaded]);
+  }, [connectQueue, gameState, statsLoading]);
 
   useEffect(() => {
     handleWebSocketMessageRef.current = (message) => {
@@ -734,14 +525,12 @@ function useGameSession() {
             player1: {
               id: currentUser.uid,
               username: userStats.username,
-              avatarId: userStats.avatarId,
               score: myScore,
               won: true,
             },
             player2: {
               id: opponent?.id || "disconnected",
               username: opponent?.username || "Opponent",
-              avatarId: opponent?.avatarId || "avatar1",
               score: opponentScore,
               won: false,
             },
@@ -817,11 +606,13 @@ function useGameSession() {
       postMatchRating,
     });
 
-    // Update local user stats for immediate UI update
-    setUserStats((prev) => ({
-      ...prev,
-      rating: postMatchRating,
-    }));
+    // Update the cached stats for an immediate UI update. The invalidation in
+    // updateGameResults refetches the authoritative rating from the server.
+    if (currentUser) {
+      queryClient.setQueryData(userKeys.stats(currentUser.uid), (old) =>
+        old ? { ...old, rating: postMatchRating } : old
+      );
+    }
   };
 
   const updateGameResults = (results) => {
@@ -1111,7 +902,7 @@ function GameCountdownState({ userStats, opponent, countdown }) {
           <div className="flex items-center justify-center gap-4">
             <div className="text-right">
               <p className="inline-flex items-center gap-2 font-semibold">
-                <UserAvatar avatarId={userStats.avatarId} username={userStats.username} size="sm" />
+                <UserAvatar username={userStats.username} size="sm" />
                 <span>{userStats.username}</span>
               </p>
               <p className={`font-mono text-sm ${getRatingColor(userStats.rating)}`}>
@@ -1123,7 +914,7 @@ function GameCountdownState({ userStats, opponent, countdown }) {
             </div>
             <div className="text-left">
               <p className="inline-flex items-center gap-2 font-semibold">
-                <UserAvatar avatarId={opponent?.avatarId} username={opponent?.username || "Opponent"} size="sm" />
+                <UserAvatar username={opponent?.username || "Opponent"} size="sm" />
                 <span>{opponent?.username}</span>
               </p>
               <p className={`font-mono text-sm ${getRatingColor(opponent?.rating)}`}>
@@ -1177,7 +968,7 @@ function GamePlayingState({
         <Card className="border-primary/30 bg-primary/5">
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
-              <UserAvatar avatarId={userStats.avatarId} username={userStats.username} size="sm" />
+              <UserAvatar username={userStats.username} size="sm" />
               {userStats.username} (You)
             </CardTitle>
           </CardHeader>
@@ -1192,7 +983,7 @@ function GamePlayingState({
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
-              <UserAvatar avatarId={opponent?.avatarId} username={opponent?.username || "Opponent"} size="sm" />
+              <UserAvatar username={opponent?.username || "Opponent"} size="sm" />
               {opponent?.username}
             </CardTitle>
           </CardHeader>
@@ -1212,49 +1003,7 @@ function GamePlayingState({
             <p className="mb-4 font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">
               Type This Word
             </p>
-            <div className="relative inline-block font-mono text-4xl font-medium tracking-wider leading-none sm:text-5xl">
-              {(words[currentWordIndex] || "").split("").map((char, charIndex) => {
-                const typedChar = input[charIndex];
-                const isCurrentPosition = charIndex === input.length;
-                const isTyped = charIndex < input.length;
-                const isCorrect = isTyped && typedChar === char;
-                const isWrong = isTyped && typedChar !== char;
-                const renderedChar = char === " " ? "\u00A0" : char;
-                const renderedTypedChar = isWrong && typedChar === " " ? "_" : typedChar;
-
-                return (
-                  <span
-                    key={charIndex}
-                    className={`relative inline-block min-w-[0.45em] align-baseline ${
-                      isCorrect
-                        ? "text-primary"
-                        : isWrong
-                        ? "text-destructive"
-                        : "text-muted-foreground/50"
-                    }`}
-                  >
-                    {isCurrentPosition && (
-                      <span
-                        className="absolute -left-[2px] top-0 h-full w-[3px] bg-primary"
-                        style={{
-                          animation: "blink 1s ease-in-out infinite",
-                        }}
-                      />
-                    )}
-                    {isWrong ? renderedTypedChar : renderedChar}
-                  </span>
-                );
-              })}
-              {/* Cursor at end if all typed */}
-              {input.length === (words[currentWordIndex] || "").length && (
-                <span
-                  className="absolute -right-[2px] top-0 h-full w-[3px] bg-primary"
-                  style={{
-                    animation: "blink 1s ease-in-out infinite",
-                  }}
-                />
-              )}
-            </div>
+            <WordDisplay word={words[currentWordIndex]} input={input} />
           </div>
           <input
             ref={inputRef}
@@ -1383,7 +1132,7 @@ function GameResultsState({
               gameResults.player1.won ? "bg-primary/10" : "bg-muted/50"
             }`}>
               <p className="inline-flex items-center gap-2 font-semibold">
-                <UserAvatar avatarId={gameResults.player1.avatarId} username={gameResults.player1.username} size="sm" />
+                <UserAvatar username={gameResults.player1.username} size="sm" />
                 <span>{gameResults.player1.username}</span>
               </p>
               <p className="font-sans text-3xl font-bold">
@@ -1397,7 +1146,7 @@ function GameResultsState({
               gameResults.player2.won ? "bg-primary/10" : "bg-muted/50"
             }`}>
               <p className="inline-flex items-center gap-2 font-semibold">
-                <UserAvatar avatarId={gameResults.player2.avatarId} username={gameResults.player2.username} size="sm" />
+                <UserAvatar username={gameResults.player2.username} size="sm" />
                 <span>{gameResults.player2.username}</span>
               </p>
               <p className="font-sans text-3xl font-bold">

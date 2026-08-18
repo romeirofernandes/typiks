@@ -1,9 +1,9 @@
-import { verifyFirebaseIdToken } from '../middleware/firebaseAuth.js';
 import { generateSeed, generateWords, WORD_DIFFICULTIES } from '../utils/wordGenerator.js';
 import { resolveServerProfiles } from '../utils/serverProfiles.js';
 import { generateEntityId as createId } from '../services/ids.js';
 import { persistRankedMatchResult } from '../services/match-results.js';
 import { drizzle } from 'drizzle-orm/d1';
+import { WSCoordinator } from './WSCoordinator.js';
 
 export const DEFAULT_MODE_SECONDS = 60;
 export const ALLOWED_MODE_SECONDS = new Set([15, 30, 60]);
@@ -36,11 +36,9 @@ const PHASE = {
 // playing -> finished, or -> aborted) plus the pending alarm purpose is enough
 // to resume correctly after a restart/eviction. The 20s handoff timeout uses a
 // Durable Object alarm (restart-safe) rather than setTimeout.
-export class GameRoom {
+export class GameRoom extends WSCoordinator {
 	constructor(state, env) {
-		this.state = state;
-		this.env = env;
-		this.storage = state?.storage ?? null;
+		super(state, env);
 
 		// Persisted lifecycle state (mirrored in `roomState` storage key).
 		this.match = null; // { gameId, modeSeconds, player1:{id,userInfo}, player2:{id,userInfo}, createdAt }
@@ -51,16 +49,13 @@ export class GameRoom {
 		this.lastResults = null; // results of the most recently finished round
 		this.rematchState = { offerId: null, requesterId: null, expiresAt: null };
 
-		// Ephemeral connection / in-memory round state.
-		this.sessions = new Map(); // sessionId -> WebSocket
-		this.sessionOrder = new Map(); // sessionId -> monotonic connection order
-		this.playerToSession = new Map(); // playerId -> sessionId
+		// Ephemeral connection / in-memory round state. Sessions/sessionOrder/
+		// playerToSession come from the WSCoordinator base.
 		this.connectedPlayers = new Set(); // playerIds who have JOIN_GAME'd
 		this.activeGames = new Map(); // gameId -> active round data
 		this.playerToGame = new Map(); // playerId -> gameId
 		this.rematchOffers = new Map(); // offerId -> rematch offer
 		this.playerToRematchOffer = new Map(); // playerId -> offerId
-		this.nextSessionOrder = 0;
 		this.hydrated = false;
 		this.lastProgressPersistAt = 0;
 	}
@@ -72,24 +67,6 @@ export class GameRoom {
 		}
 
 		return parsed;
-	}
-
-	async authenticateAndGetPlayerId(message) {
-		const idToken = message?.idToken;
-		if (typeof idToken !== 'string' || idToken.length === 0) {
-			throw new Error('Missing idToken');
-		}
-		const claims = await verifyFirebaseIdToken(idToken, {
-			projectId: this.env.FIREBASE_PROJECT_ID,
-		});
-		return claims.uid;
-	}
-
-	jsonResponse(body, status = 200) {
-		return new Response(JSON.stringify(body), {
-			status,
-			headers: { 'Content-Type': 'application/json' },
-		});
 	}
 
 	// ----- Persistence & recovery -------------------------------------------
@@ -455,42 +432,46 @@ export class GameRoom {
 
 	// ----- WebSocket session handling ---------------------------------------
 
-	parseMessage(data) {
-		if (typeof data !== 'string') return null;
+	async handleMessage(message, ctx) {
+		const { sessionId, webSocket, getPlayerId, setPlayerId } = ctx;
+		const playerId = getPlayerId();
 
-		try {
-			const parsed = JSON.parse(data);
-			if (!parsed || typeof parsed !== 'object') {
-				return null;
-			}
-			return parsed;
-		} catch {
-			return null;
+		switch (message.type) {
+			case 'JOIN_GAME':
+				try {
+					setPlayerId(await this.handleJoinGame(message, webSocket, sessionId));
+				} catch (error) {
+					console.error('JOIN_GAME failed:', error);
+					try {
+						webSocket.send(JSON.stringify({ type: 'ERROR', error: 'UNAUTHORIZED' }));
+					} catch {
+						// ignore
+					}
+					webSocket.close(1008, 'Unauthorized');
+				}
+				break;
+
+			case 'PLAYER_INPUT':
+				if (playerId) {
+					this.handlePlayerInput(playerId, message.input);
+				}
+				break;
+
+			case 'REMATCH_REQUEST':
+				if (playerId) {
+					await this.handleRematchRequest(playerId);
+				}
+				break;
+
+			case 'REMATCH_RESPONSE':
+				if (playerId) {
+					await this.handleRematchResponse(playerId, message.action);
+				}
+				break;
+
+			default:
+				break;
 		}
-	}
-
-	isSocketOpen(webSocket) {
-		if (!webSocket) return false;
-
-		const openStates = [WebSocket.OPEN, WebSocket.READY_STATE_OPEN, 1].filter((state) => Number.isFinite(state));
-		return openStates.includes(webSocket.readyState);
-	}
-
-	handleSessionTermination(sessionId, playerId) {
-		this.sessions.delete(sessionId);
-		this.sessionOrder.delete(sessionId);
-
-		if (!playerId) {
-			return;
-		}
-
-		const ownedSessionId = this.playerToSession.get(playerId);
-		if (ownedSessionId !== sessionId) {
-			return;
-		}
-
-		this.handlePlayerDisconnect(playerId);
-		this.playerToSession.delete(playerId);
 	}
 
 	// ----- Rematch -----------------------------------------------------------
@@ -630,26 +611,6 @@ export class GameRoom {
 		await this.createGame();
 	}
 
-	closeSession(sessionId, code = 1000, reason = 'Session replaced') {
-		const previousSocket = this.sessions.get(sessionId);
-		if (!previousSocket) {
-			return;
-		}
-
-		try {
-			previousSocket.close(code, reason);
-		} catch {
-			// ignore close errors from stale sockets
-		}
-
-		this.sessions.delete(sessionId);
-		this.sessionOrder.delete(sessionId);
-	}
-
-	getSessionOrder(sessionId) {
-		return this.sessionOrder.get(sessionId) ?? -1;
-	}
-
 	buildProgressPayload(game) {
 		return {
 			player1: {
@@ -689,7 +650,6 @@ export class GameRoom {
 				id: opponent.id,
 				username: opponent.userInfo.username,
 				rating: opponent.userInfo.rating,
-				avatarId: opponent.userInfo.avatarId,
 			},
 			words: game.words,
 			duration: game.endTime ? Math.max(0, game.endTime - Date.now()) : 0,
@@ -697,73 +657,6 @@ export class GameRoom {
 		});
 
 		return true;
-	}
-
-	async handleSession(webSocket) {
-		webSocket.accept();
-
-		const sessionId = this.generateSessionId();
-		this.sessions.set(sessionId, webSocket);
-		this.sessionOrder.set(sessionId, this.nextSessionOrder++);
-
-		let playerId = null;
-
-		webSocket.addEventListener('message', async (event) => {
-			try {
-				const message = this.parseMessage(event.data);
-				if (!message || typeof message.type !== 'string') {
-					return;
-				}
-
-				switch (message.type) {
-					case 'JOIN_GAME':
-						try {
-							playerId = await this.handleJoinGame(message, webSocket, sessionId);
-						} catch (error) {
-							console.error('JOIN_GAME failed:', error);
-							try {
-								webSocket.send(JSON.stringify({ type: 'ERROR', error: 'UNAUTHORIZED' }));
-							} catch {
-								// ignore
-							}
-							webSocket.close(1008, 'Unauthorized');
-						}
-						break;
-
-					case 'PLAYER_INPUT':
-						if (playerId) {
-							this.handlePlayerInput(playerId, message.input);
-						}
-						break;
-
-					case 'REMATCH_REQUEST':
-						if (playerId) {
-							await this.handleRematchRequest(playerId);
-						}
-						break;
-
-					case 'REMATCH_RESPONSE':
-						if (playerId) {
-							await this.handleRematchResponse(playerId, message.action);
-						}
-						break;
-
-					default:
-						break;
-				}
-			} catch (error) {
-				console.error('Error handling WebSocket message:', error);
-			}
-		});
-
-		webSocket.addEventListener('close', () => {
-			this.handleSessionTermination(sessionId, playerId);
-		});
-
-		webSocket.addEventListener('error', (error) => {
-			console.error('WebSocket error:', error);
-			this.handleSessionTermination(sessionId, playerId);
-		});
 	}
 
 	async handleJoinGame(message, webSocket, sessionId) {
@@ -784,21 +677,10 @@ export class GameRoom {
 			throw new Error('Not part of this match');
 		}
 
-		const previousSessionId = this.playerToSession.get(playerId);
-		if (
-			previousSessionId &&
-			previousSessionId !== sessionId &&
-			this.getSessionOrder(previousSessionId) > this.getSessionOrder(sessionId)
-		) {
-			this.closeSession(sessionId, 1000, 'Superseded by newer session');
+		if (!this.claimSession(playerId, sessionId)) {
 			return playerId;
 		}
 
-		if (previousSessionId && previousSessionId !== sessionId) {
-			this.closeSession(previousSessionId, 1000, 'Replaced by newer session');
-		}
-
-		this.playerToSession.set(playerId, sessionId);
 		this.connectedPlayers.add(playerId);
 
 		if (this.rebindPlayerToCurrentGame(playerId, sessionId)) {
@@ -817,10 +699,6 @@ export class GameRoom {
 		}
 
 		return playerId;
-	}
-
-	generateSessionId() {
-		return createId('session');
 	}
 
 	async createGame() {
@@ -892,7 +770,6 @@ export class GameRoom {
 				id: match.player2.id,
 				username: match.player2.userInfo.username,
 				rating: match.player2.userInfo.rating,
-				avatarId: match.player2.userInfo.avatarId,
 			},
 		});
 
@@ -904,7 +781,6 @@ export class GameRoom {
 				id: match.player1.id,
 				username: match.player1.userInfo.username,
 				rating: match.player1.userInfo.rating,
-				avatarId: match.player1.userInfo.avatarId,
 			},
 		});
 
@@ -1079,7 +955,6 @@ export class GameRoom {
 			player1: {
 				id: game.player1.id,
 				username: game.player1.userInfo.username,
-				avatarId: game.player1.userInfo.avatarId,
 				score: game.player1.score,
 				progress: game.player1.currentWordIndex,
 				won: player1Won,
@@ -1087,7 +962,6 @@ export class GameRoom {
 			player2: {
 				id: game.player2.id,
 				username: game.player2.userInfo.username,
-				avatarId: game.player2.userInfo.avatarId,
 				score: game.player2.score,
 				progress: game.player2.currentWordIndex,
 				won: player2Won,
@@ -1162,21 +1036,6 @@ export class GameRoom {
 		// No active round: we deliberately do NOT abort immediately during the
 		// handoff window. The single disconnect may be a transient reconnect;
 		// the wait alarm aborts the room at the deadline instead.
-	}
-
-	sendToPlayer(sessionId, message) {
-		if (typeof sessionId !== 'string' || sessionId.length === 0) {
-			return;
-		}
-
-		const webSocket = this.sessions.get(sessionId);
-		if (this.isSocketOpen(webSocket)) {
-			try {
-				webSocket.send(JSON.stringify(message));
-			} catch (error) {
-				console.error('Error sending message:', error);
-			}
-		}
 	}
 
 	sendToPlayers(game, message) {

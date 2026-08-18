@@ -1,7 +1,7 @@
-import { verifyFirebaseIdToken } from '../middleware/firebaseAuth.js';
 import { DEFAULT_MODE_SECONDS, ALLOWED_MODE_SECONDS } from './GameRoom.js';
 import { resolveServerProfiles } from '../utils/serverProfiles.js';
 import { generateEntityId as createId } from '../services/ids.js';
+import { WSCoordinator } from './WSCoordinator.js';
 
 const PENDING_GAME_TTL_MS = 60_000;
 
@@ -9,15 +9,11 @@ const PENDING_GAME_TTL_MS = 60_000;
 // owns the ranked queue. It only matches players and hands each match off to a
 // dedicated GameRoom instance. Queue traffic (JOIN_QUEUE / MATCH_FOUND) is tiny
 // compared to in-game message traffic, so a single instance is not a bottleneck.
-export class MatchmakingRoom {
+export class MatchmakingRoom extends WSCoordinator {
 	constructor(state, env) {
-		this.state = state;
-		this.env = env;
-		this.sessions = new Map(); // sessionId -> WebSocket
-		this.sessionOrder = new Map(); // sessionId -> monotonic connection order
+		super(state, env);
+
 		this.waitingPlayersByMode = new Map(); // modeSeconds -> Map(playerId -> waiting payload)
-		this.playerToSession = new Map(); // playerId -> sessionId
-		this.nextSessionOrder = 0;
 		this.pendingGames = new Map(); // gameId -> { expiresAt }
 	}
 
@@ -38,22 +34,10 @@ export class MatchmakingRoom {
 		return this.waitingPlayersByMode.get(modeSeconds);
 	}
 
-	async authenticateAndGetPlayerId(message) {
-		const idToken = message?.idToken;
-		if (typeof idToken !== 'string' || idToken.length === 0) {
-			throw new Error('Missing idToken');
-		}
-		const claims = await verifyFirebaseIdToken(idToken, {
-			projectId: this.env.FIREBASE_PROJECT_ID,
-		});
-		return claims.uid;
-	}
-
 	sanitizeUserInfo(userInfo) {
 		const safe = {
 			username: 'player',
 			rating: 800,
-			avatarId: 'avatar1',
 		};
 		if (!userInfo || typeof userInfo !== 'object') return safe;
 		if (typeof userInfo.username === 'string' && userInfo.username.trim().length > 0) {
@@ -63,9 +47,6 @@ export class MatchmakingRoom {
 		if (Number.isFinite(parsedRating)) {
 			safe.rating = Math.max(0, Math.min(3000, Math.floor(parsedRating)));
 		}
-		if (typeof userInfo.avatarId === 'string' && /^avatar([1-9]|10)$/.test(userInfo.avatarId.trim().toLowerCase())) {
-			safe.avatarId = userInfo.avatarId.trim().toLowerCase();
-		}
 		return safe;
 	}
 
@@ -73,7 +54,7 @@ export class MatchmakingRoom {
 		const webSocketPair = new WebSocketPair();
 		const [client, server] = Object.values(webSocketPair);
 
-		this.handleSession(server);
+		this.handleSession(server, request);
 
 		return new Response(null, {
 			status: 101,
@@ -81,142 +62,54 @@ export class MatchmakingRoom {
 		});
 	}
 
-	parseMessage(data) {
-		if (typeof data !== 'string') return null;
+	// ----- WebSocket session handling ---------------------------------------
 
-		try {
-			const parsed = JSON.parse(data);
-			if (!parsed || typeof parsed !== 'object') {
-				return null;
-			}
-			return parsed;
-		} catch {
-			return null;
+	async handleMessage(message, ctx) {
+		const { sessionId, webSocket, getPlayerId, setPlayerId } = ctx;
+		const playerId = getPlayerId();
+
+		switch (message.type) {
+			case 'JOIN_QUEUE':
+				try {
+					const joinedPlayerId = await this.authenticateAndGetPlayerId(message);
+
+					if (!this.claimSession(joinedPlayerId, sessionId)) {
+						break;
+					}
+
+					setPlayerId(joinedPlayerId);
+
+					const modeSeconds = this.normalizeModeSeconds(message.modeSeconds);
+					await this.addWaitingPlayer(
+						joinedPlayerId,
+						sessionId,
+						this.sanitizeUserInfo(message.userInfo),
+						modeSeconds
+					);
+				} catch (error) {
+					console.error('JOIN_QUEUE auth failed:', error);
+					try {
+						webSocket.send(JSON.stringify({ type: 'ERROR', error: 'UNAUTHORIZED' }));
+					} catch {
+						// ignore
+					}
+					webSocket.close(1008, 'Unauthorized');
+				}
+				break;
+
+			case 'LEAVE_QUEUE':
+				if (playerId) {
+					this.removeWaitingPlayer(playerId);
+				}
+				break;
+
+			default:
+				break;
 		}
 	}
 
-	isSocketOpen(webSocket) {
-		if (!webSocket) return false;
-
-		const openStates = [WebSocket.OPEN, WebSocket.READY_STATE_OPEN, 1].filter((state) => Number.isFinite(state));
-		return openStates.includes(webSocket.readyState);
-	}
-
-	handleSessionTermination(sessionId, playerId) {
-		this.sessions.delete(sessionId);
-		this.sessionOrder.delete(sessionId);
-
-		if (!playerId) {
-			return;
-		}
-
-		const ownedSessionId = this.playerToSession.get(playerId);
-		if (ownedSessionId !== sessionId) {
-			return;
-		}
-
+	handlePlayerDisconnect(playerId) {
 		this.removeWaitingPlayer(playerId);
-		this.playerToSession.delete(playerId);
-	}
-
-	closeSession(sessionId, code = 1000, reason = 'Session replaced') {
-		const previousSocket = this.sessions.get(sessionId);
-		if (!previousSocket) {
-			return;
-		}
-
-		try {
-			previousSocket.close(code, reason);
-		} catch {
-			// ignore close errors from stale sockets
-		}
-
-		this.sessions.delete(sessionId);
-		this.sessionOrder.delete(sessionId);
-	}
-
-	getSessionOrder(sessionId) {
-		return this.sessionOrder.get(sessionId) ?? -1;
-	}
-
-	async handleSession(webSocket) {
-		webSocket.accept();
-
-		const sessionId = createId("session");
-		this.sessions.set(sessionId, webSocket);
-		this.sessionOrder.set(sessionId, this.nextSessionOrder++);
-
-		let playerId = null;
-
-		webSocket.addEventListener('message', async (event) => {
-			try {
-				const message = this.parseMessage(event.data);
-				if (!message || typeof message.type !== 'string') {
-					return;
-				}
-
-				switch (message.type) {
-					case 'JOIN_QUEUE':
-						try {
-							playerId = await this.authenticateAndGetPlayerId(message);
-
-							const previousSessionId = this.playerToSession.get(playerId);
-							if (
-								previousSessionId &&
-								previousSessionId !== sessionId &&
-								this.getSessionOrder(previousSessionId) > this.getSessionOrder(sessionId)
-							) {
-								this.closeSession(sessionId, 1000, 'Superseded by newer session');
-								break;
-							}
-
-							if (previousSessionId && previousSessionId !== sessionId) {
-								this.closeSession(previousSessionId, 1000, 'Replaced by newer session');
-							}
-
-							this.playerToSession.set(playerId, sessionId);
-
-							const modeSeconds = this.normalizeModeSeconds(message.modeSeconds);
-							await this.addWaitingPlayer(
-								playerId,
-								sessionId,
-								this.sanitizeUserInfo(message.userInfo),
-								modeSeconds
-							);
-						} catch (error) {
-							console.error('JOIN_QUEUE auth failed:', error);
-							try {
-								webSocket.send(JSON.stringify({ type: 'ERROR', error: 'UNAUTHORIZED' }));
-							} catch {
-								// ignore
-							}
-							webSocket.close(1008, 'Unauthorized');
-						}
-						break;
-
-					case 'LEAVE_QUEUE':
-						if (playerId) {
-							this.removeWaitingPlayer(playerId);
-							this.playerToSession.delete(playerId);
-						}
-						break;
-
-					default:
-						break;
-				}
-			} catch (error) {
-				console.error('Error handling WebSocket message:', error);
-			}
-		});
-
-		webSocket.addEventListener('close', () => {
-			this.handleSessionTermination(sessionId, playerId);
-		});
-
-		webSocket.addEventListener('error', (error) => {
-			console.error('WebSocket error:', error);
-			this.handleSessionTermination(sessionId, playerId);
-		});
 	}
 
 	async addWaitingPlayer(playerId, sessionId, userInfo, modeSeconds = DEFAULT_MODE_SECONDS) {
@@ -318,7 +211,6 @@ export class MatchmakingRoom {
 				id: player2Id,
 				username: player2Profile.username,
 				rating: player2Profile.rating,
-				avatarId: player2Profile.avatarId,
 			},
 		});
 
@@ -330,7 +222,6 @@ export class MatchmakingRoom {
 				id: player1Id,
 				username: player1Profile.username,
 				rating: player1Profile.rating,
-				avatarId: player1Profile.avatarId,
 			},
 		});
 
@@ -342,20 +233,5 @@ export class MatchmakingRoom {
 		setTimeout(() => {
 			this.pendingGames.delete(gameId);
 		}, PENDING_GAME_TTL_MS);
-	}
-
-	sendToPlayer(sessionId, message) {
-		if (typeof sessionId !== 'string' || sessionId.length === 0) {
-			return;
-		}
-
-		const webSocket = this.sessions.get(sessionId);
-		if (this.isSocketOpen(webSocket)) {
-			try {
-				webSocket.send(JSON.stringify(message));
-			} catch (error) {
-				console.error('Error sending message:', error);
-			}
-		}
 	}
 }

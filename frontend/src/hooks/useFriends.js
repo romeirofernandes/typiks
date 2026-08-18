@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/api-client";
+import { subscribeToPresence } from "@/lib/websocket";
 import { meKeys, userKeys } from "@/lib/query-keys";
 
 const ACTION_DEBOUNCE_MS = 300;
@@ -131,11 +132,7 @@ export function useFriends(currentUser, { onAcceptInvite } = {}) {
     ].filter(Boolean);
 
     if (knownIds.length > 0) {
-      window.dispatchEvent(
-        new CustomEvent("typiks:presence-subscribe", {
-          detail: { userIds: knownIds },
-        })
-      );
+      subscribeToPresence(knownIds);
     }
 
     const onlineMap = presenceRef.current.online;

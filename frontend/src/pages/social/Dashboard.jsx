@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { m, useReducedMotion } from "framer-motion";
 import { useAuth } from "@/hooks/useAuth";
 import { useStats } from "@/hooks/useStats";
+import { useActivity } from "@/hooks/useActivity";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useNavigate } from "react-router-dom";
@@ -21,18 +22,9 @@ export default function Dashboard() {
   const reduceMotion = useReducedMotion();
 
   const { stats: userStats, loading: statsLoading } = useStats();
+  const { activity: activityData, maxCount: maxDailyCount, loading: activityLoading } =
+    useActivity(CONTRIBUTION_DAYS);
   const [selectedMode, setSelectedMode] = useState(15);
-
-  const activityQuery = useQuery({
-    queryKey: userKeys.activity(currentUser?.uid, CONTRIBUTION_DAYS),
-    queryFn: () =>
-      apiFetch(
-        currentUser,
-        `/api/users/${currentUser.uid}/activity?days=${CONTRIBUTION_DAYS}`
-      ).then(({ data }) => ({ activity: data.activity || [], maxCount: data.maxCount || 0 })),
-    enabled: Boolean(currentUser),
-    staleTime: 60 * 1000,
-  });
 
   const ratingTrendQuery = useQuery({
     queryKey: userKeys.ratingTrend(currentUser?.uid, selectedMode),
@@ -45,11 +37,9 @@ export default function Dashboard() {
     staleTime: 60 * 1000,
   });
 
-  const activityData = activityQuery.data?.activity ?? [];
-  const maxDailyCount = activityQuery.data?.maxCount ?? 0;
   const ratingTrend = ratingTrendQuery.data ?? [];
   const typeGraphDays = Math.max(28, CONTRIBUTION_DAYS - TYPEGRAPH_REDUCED_DAYS);
-  const loading = statsLoading || activityQuery.isPending || ratingTrendQuery.isPending;
+  const loading = statsLoading || activityLoading || ratingTrendQuery.isPending;
 
   const now = new Date();
   const currentHour = now.getHours();

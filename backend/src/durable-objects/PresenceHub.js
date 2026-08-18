@@ -1,16 +1,15 @@
-import { verifyFirebaseIdToken } from '../middleware/firebaseAuth.js';
+import { WSCoordinator } from './WSCoordinator.js';
 
 const PRESENCE_TIMEOUT_MS = 45_000;
 const ALARM_INTERVAL_MS = 15_000;
 
-export class PresenceHub {
+export class PresenceHub extends WSCoordinator {
 	constructor(controller, env) {
-		this.controller = controller;
-		this.env = env;
-		this.sessions = new Map();
-		this.userSessions = new Map();
-		this.sessionSubscriptions = new Map();
-		this.onlineStateByUser = new Map();
+		super(controller, env);
+
+		this.userSessions = new Map(); // userId -> Set(sessionId)
+		this.sessionSubscriptions = new Map(); // sessionId -> Set(userId)
+		this.onlineStateByUser = new Map(); // userId -> boolean
 	}
 
 	async fetch(request) {
@@ -19,7 +18,7 @@ export class PresenceHub {
 		if (request.headers.get('upgrade') === 'websocket') {
 			const webSocketPair = new WebSocketPair();
 			const [client, server] = Object.values(webSocketPair);
-			this.handleSession(server);
+			this.handleSession(server, request);
 			return new Response(null, {
 				status: 101,
 				webSocket: client,
@@ -57,7 +56,7 @@ export class PresenceHub {
 			for (const sessionId of sessionIds) {
 				const session = this.sessions.get(sessionId);
 				if (!session || !this.isSocketOpen(session.webSocket)) continue;
-				this.sendToSession(sessionId, {
+				this.sendToPlayer(sessionId, {
 					type: 'NOTIFICATION_POKE',
 					...payload,
 				});
@@ -70,10 +69,9 @@ export class PresenceHub {
 		return new Response('Not found', { status: 404 });
 	}
 
-	handleSession(webSocket) {
-		webSocket.accept();
-		const sessionId = this.generateSessionId();
+	// ----- WebSocket session handling ---------------------------------------
 
+	registerSession(sessionId, webSocket) {
 		this.sessions.set(sessionId, {
 			webSocket,
 			userId: null,
@@ -83,93 +81,78 @@ export class PresenceHub {
 		this.sessionSubscriptions.set(sessionId, new Set());
 
 		void this.ensureAlarm();
-
-		webSocket.addEventListener('message', async (event) => {
-			const payload = this.parseMessage(event.data);
-			if (!payload || typeof payload.type !== 'string') return;
-
-			const session = this.sessions.get(sessionId);
-			if (!session) return;
-
-			switch (payload.type) {
-				case 'AUTH': {
-					try {
-						const idToken = payload?.idToken;
-						if (typeof idToken !== 'string' || idToken.length === 0) {
-							throw new Error('Missing idToken');
-						}
-
-						const claims = await verifyFirebaseIdToken(idToken, {
-							projectId: this.env.FIREBASE_PROJECT_ID,
-						});
-
-						const userId = claims.uid;
-						this.bindSessionToUser(sessionId, userId);
-						session.visible = Boolean(payload?.visible);
-						session.lastPingAt = Date.now();
-						this.updateAndBroadcastPresence(userId);
-
-						this.sendToSession(sessionId, {
-							type: 'PRESENCE_AUTH_OK',
-						});
-						this.sendSnapshotToSession(sessionId);
-					} catch (error) {
-						this.sendToSession(sessionId, {
-							type: 'PRESENCE_AUTH_ERROR',
-							error: 'UNAUTHORIZED',
-						});
-						this.closeSession(sessionId, 1008, 'Unauthorized');
-					}
-					break;
-				}
-
-				case 'VISIBILITY': {
-					session.visible = Boolean(payload?.visible);
-					session.lastPingAt = Date.now();
-					if (session.userId) {
-						this.updateAndBroadcastPresence(session.userId);
-					}
-					break;
-				}
-
-				case 'PING': {
-					session.lastPingAt = Date.now();
-					if (session.userId) {
-						this.updateAndBroadcastPresence(session.userId);
-					}
-					break;
-				}
-
-				case 'SUBSCRIBE': {
-					const userIds = Array.isArray(payload?.userIds)
-						? payload.userIds.filter((id) => typeof id === 'string' && id.length > 0)
-						: [];
-					this.sessionSubscriptions.set(sessionId, new Set(userIds));
-					this.sendSnapshotToSession(sessionId);
-					break;
-				}
-
-				default:
-					break;
-			}
-		});
-
-		webSocket.addEventListener('close', () => {
-			this.removeSession(sessionId);
-		});
-
-		webSocket.addEventListener('error', () => {
-			this.removeSession(sessionId);
-		});
 	}
 
-	parseMessage(data) {
-		if (typeof data !== 'string') return null;
-		try {
-			const parsed = JSON.parse(data);
-			return parsed && typeof parsed === 'object' ? parsed : null;
-		} catch {
-			return null;
+	getSocket(sessionId) {
+		return this.sessions.get(sessionId)?.webSocket ?? null;
+	}
+
+	handleSessionTermination(sessionId) {
+		this.removeSession(sessionId);
+	}
+
+	// PresenceHub tracks its own AUTH flow (bindSessionToUser) instead of the
+	// playerId/claimSession supersede convention the ranked/room rooms use.
+	async handleMessage(payload, ctx) {
+		const { sessionId } = ctx;
+
+		const session = this.sessions.get(sessionId);
+		if (!session) return;
+
+		switch (payload.type) {
+			case 'AUTH': {
+				try {
+					const idToken = payload?.idToken;
+					const claims = await this.authenticateAndGetPlayerId({ idToken });
+
+					const userId = claims.uid;
+					this.bindSessionToUser(sessionId, userId);
+					session.visible = Boolean(payload?.visible);
+					session.lastPingAt = Date.now();
+					this.updateAndBroadcastPresence(userId);
+
+					this.sendToPlayer(sessionId, {
+						type: 'PRESENCE_AUTH_OK',
+					});
+					this.sendSnapshotToSession(sessionId);
+				} catch (error) {
+					this.sendToPlayer(sessionId, {
+						type: 'PRESENCE_AUTH_ERROR',
+						error: 'UNAUTHORIZED',
+					});
+					this.closeSession(sessionId, 1008, 'Unauthorized');
+				}
+				break;
+			}
+
+			case 'VISIBILITY': {
+				session.visible = Boolean(payload?.visible);
+				session.lastPingAt = Date.now();
+				if (session.userId) {
+					this.updateAndBroadcastPresence(session.userId);
+				}
+				break;
+			}
+
+			case 'PING': {
+				session.lastPingAt = Date.now();
+				if (session.userId) {
+					this.updateAndBroadcastPresence(session.userId);
+				}
+				break;
+			}
+
+			case 'SUBSCRIBE': {
+				const userIds = Array.isArray(payload?.userIds)
+					? payload.userIds.filter((id) => typeof id === 'string' && id.length > 0)
+					: [];
+				this.sessionSubscriptions.set(sessionId, new Set(userIds));
+				this.sendSnapshotToSession(sessionId);
+				break;
+			}
+
+			default:
+				break;
 		}
 	}
 
@@ -213,7 +196,7 @@ export class PresenceHub {
 	sendSnapshotToSession(sessionId) {
 		const subscriptions = this.sessionSubscriptions.get(sessionId);
 		if (!subscriptions || subscriptions.size === 0) {
-			this.sendToSession(sessionId, { type: 'PRESENCE_SNAPSHOT', onlineMap: {} });
+			this.sendToPlayer(sessionId, { type: 'PRESENCE_SNAPSHOT', onlineMap: {} });
 			return;
 		}
 
@@ -223,7 +206,7 @@ export class PresenceHub {
 			onlineMap[userId] = this.isUserOnline(userId, now);
 		}
 
-		this.sendToSession(sessionId, {
+		this.sendToPlayer(sessionId, {
 			type: 'PRESENCE_SNAPSHOT',
 			onlineMap,
 		});
@@ -239,7 +222,7 @@ export class PresenceHub {
 		this.onlineStateByUser.set(userId, nextOnline);
 		for (const [sessionId, subscriptions] of this.sessionSubscriptions.entries()) {
 			if (!subscriptions?.has(userId)) continue;
-			this.sendToSession(sessionId, {
+			this.sendToPlayer(sessionId, {
 				type: 'PRESENCE_UPDATE',
 				userId,
 				online: nextOnline,
@@ -247,7 +230,7 @@ export class PresenceHub {
 		}
 	}
 
-	isUserOnline(userId, now = Date.now()) {
+isUserOnline(userId, now = Date.now()) {
 		const sessionIds = this.userSessions.get(userId);
 		if (!sessionIds || sessionIds.size === 0) return false;
 
@@ -262,12 +245,6 @@ export class PresenceHub {
 		return false;
 	}
 
-	isSocketOpen(webSocket) {
-		if (!webSocket) return false;
-		const openStates = [WebSocket.OPEN, WebSocket.READY_STATE_OPEN, 1].filter((state) => Number.isFinite(state));
-		return openStates.includes(webSocket.readyState);
-	}
-
 	closeSession(sessionId, code = 1000, reason = 'Closing session') {
 		const session = this.sessions.get(sessionId);
 		if (!session) return;
@@ -277,16 +254,6 @@ export class PresenceHub {
 			// ignore close errors
 		}
 		this.removeSession(sessionId);
-	}
-
-	sendToSession(sessionId, payload) {
-		const session = this.sessions.get(sessionId);
-		if (!session || !this.isSocketOpen(session.webSocket)) return;
-		try {
-			session.webSocket.send(JSON.stringify(payload));
-		} catch {
-			// ignore send errors
-		}
 	}
 
 	generateSessionId() {
@@ -301,9 +268,9 @@ export class PresenceHub {
 	}
 
 	async ensureAlarm() {
-		const alarm = await this.controller.storage.getAlarm();
+		const alarm = await this.storage.getAlarm();
 		if (alarm == null) {
-			await this.controller.storage.setAlarm(Date.now() + ALARM_INTERVAL_MS);
+			await this.storage.setAlarm(Date.now() + ALARM_INTERVAL_MS);
 		}
 	}
 
@@ -320,7 +287,7 @@ export class PresenceHub {
 		}
 
 		if (this.sessions.size > 0) {
-			await this.controller.storage.setAlarm(Date.now() + ALARM_INTERVAL_MS);
+			await this.storage.setAlarm(Date.now() + ALARM_INTERVAL_MS);
 		}
 	}
 }

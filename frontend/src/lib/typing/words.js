@@ -4,16 +4,17 @@ function hasVowel(clean) {
   return clean.split("").some((char) => VOWELS.has(char));
 }
 
-export function buildWordBank(wordsJson) {
+export function buildWordBank(wordsJson, options = {}) {
+  const { minLength = 4, maxLength = 9 } = options;
   const seen = new Set();
   const source = Array.isArray(wordsJson) ? wordsJson : [];
   for (const word of source) {
     if (typeof word !== "string") continue;
     const clean = word.trim().toLowerCase();
-    if (!/^[a-z]+$/.test(clean)) continue;
-    if (clean.length < 4 || clean.length > 9) continue;
-    if (!hasVowel(clean)) continue;
-    if (new Set(clean).size <= 1) continue;
+    if (options.allowNonAlpha !== true && !/^[a-z]+$/.test(clean)) continue;
+    if (clean.length < minLength || clean.length > maxLength) continue;
+    if (options.requireVowel !== false && !hasVowel(clean)) continue;
+    if (options.requireUniqueChars !== false && new Set(clean).size <= 1) continue;
     seen.add(clean);
   }
   return Array.from(seen);

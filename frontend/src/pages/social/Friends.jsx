@@ -102,7 +102,7 @@ function AddFriendCard({
                     >
                       <div>
                         <p className="inline-flex items-center gap-2 font-semibold">
-                          <UserAvatar avatarId={user.avatarId} username={user.username} size="sm" />
+                          <UserAvatar username={user.username} size="sm" />
                           <span>{user.username}</span>
                         </p>
                         <p className="text-xs text-muted-foreground">Rating: {user.rating}</p>
@@ -160,7 +160,7 @@ function NotificationsCard({
               >
                 <div>
                   <p className="inline-flex items-center gap-2 font-semibold">
-                    <UserAvatar avatarId={request.senderAvatarId} username={request.senderUsername} size="sm" />
+                    <UserAvatar username={request.senderUsername} size="sm" />
                     <span>{request.senderUsername} sent you a friend request</span>
                   </p>
                   <p className="text-xs text-muted-foreground">
@@ -181,7 +181,7 @@ function NotificationsCard({
               >
                 <div>
                   <p className="inline-flex items-center gap-2 font-semibold">
-                    <UserAvatar avatarId={invite.inviterAvatarId} username={invite.inviterUsername} size="sm" />
+                    <UserAvatar username={invite.inviterUsername} size="sm" />
                     <span>{invite.inviterUsername} invited you to room {invite.roomCode}</span>
                   </p>
                   <p className="text-xs text-muted-foreground">
@@ -224,7 +224,7 @@ function RequestsGrid({ reduceMotion, incomingRequests, outgoingRequests, respon
               >
                 <div className="flex items-center justify-between gap-3">
                   <p className="inline-flex items-center gap-2 font-semibold">
-                    <UserAvatar avatarId={request.senderAvatarId} username={request.senderUsername} size="sm" />
+                    <UserAvatar username={request.senderUsername} size="sm" />
                     <span>{request.senderUsername}</span>
                   </p>
                   <p className="text-xs text-muted-foreground">
@@ -264,7 +264,7 @@ function RequestsGrid({ reduceMotion, incomingRequests, outgoingRequests, respon
               >
                 <div>
                   <p className="inline-flex items-center gap-2 font-semibold">
-                    <UserAvatar avatarId={request.receiverAvatarId} username={request.receiverUsername} size="sm" />
+                    <UserAvatar username={request.receiverUsername} size="sm" />
                     <span>{request.receiverUsername}</span>
                   </p>
                   <p className="text-xs text-muted-foreground">Waiting for response</p>
@@ -311,7 +311,7 @@ function FriendsList({ reduceMotion, friends, removeFriend }) {
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
                       <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
-                        <UserAvatar avatarId={friend.avatarId} username={friend.username} />
+                        <UserAvatar username={friend.username} />
                       </div>
                       <div>
                         <p className="font-semibold">{friend.username}</p>

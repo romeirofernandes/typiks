@@ -1,5 +1,6 @@
 import { useAuth } from "@/hooks/useAuth";
 import { useStats } from "@/hooks/useStats";
+import { useActivity } from "@/hooks/useActivity";
 import { m, useReducedMotion } from "framer-motion";
 import { usePlayerPreferences } from "@/hooks/usePlayerPreferences";
 import { TypeGraph } from "@/components/charts/TypeGraph";
@@ -7,13 +8,11 @@ import GuestUpgradePrompt from "@/components/auth/GuestUpgradePrompt";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { UserAvatar } from "@/components/ui/user-avatar";
 import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
-  AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
@@ -39,57 +38,63 @@ import {
   SUBMIT_KEY_OPTIONS,
 } from "@/lib/player-preferences";
 import { COUNTRIES } from "@/lib/countries";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  FEMALE_AVATAR_IDS,
-  MALE_AVATAR_IDS,
   RATING_TIERS,
   getTierByRating,
 } from "@/lib/player-meta";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/api-client";
 import { userKeys } from "@/lib/query-keys";
+import { UserAvatar } from "@/components/ui/user-avatar";
+import { cn } from "@/lib/utils";
+import { Check as CheckIcon, X as XIcon } from "lucide-react";
 
 const PROFILE_GRAPH_DAYS = 364;
 const UNSET_OPTION_VALUE = "__unset__";
-const DEFAULT_PROFILE_STATS = {
-  username: "",
-  rating: 800,
-  gamesPlayed: 0,
-  gamesWon: 0,
-  winRate: 0,
-  avatarId: "avatar1",
-};
 
 function useProfileSettings() {
   const { state: { currentUser } } = useAuth();
   const queryClient = useQueryClient();
   const [isLocationEditing, setIsLocationEditing] = useState(false);
   const [isSavingLocation, setIsSavingLocation] = useState(false);
-  const [profileStats, setProfileStats] = useState(DEFAULT_PROFILE_STATS);
-  const [isAvatarDialogOpen, setIsAvatarDialogOpen] = useState(false);
-  const [pendingAvatarId, setPendingAvatarId] = useState("avatar1");
-  const [isSavingAvatar, setIsSavingAvatar] = useState(false);
   const [playerPreferences, setPlayerPreferences] = usePlayerPreferences();
   const [isUsernameDialogOpen, setIsUsernameDialogOpen] = useState(false);
   const [usernameDraft, setUsernameDraft] = useState("");
   const [isSavingUsername, setIsSavingUsername] = useState(false);
   const [usernameError, setUsernameError] = useState("");
+  const [debouncedUsername, setDebouncedUsername] = useState("");
   const [showConnectAccount, setShowConnectAccount] = useState(false);
 
-  const activityQuery = useQuery({
-    queryKey: userKeys.activity(currentUser?.uid, PROFILE_GRAPH_DAYS),
-    queryFn: () =>
-      apiFetch(
-        currentUser,
-        `/api/users/${currentUser.uid}/activity?days=${PROFILE_GRAPH_DAYS}`
-      ).then(({ data }) => ({
-        activity: data.activity || [],
-        maxCount: data.maxCount || 0,
-      })),
-    enabled: Boolean(currentUser),
-    staleTime: 60 * 1000,
-  });
+  const { stats } = useStats();
+  const profileStats = useMemo(
+    () => ({
+      username: stats?.username ?? "",
+      rating: Number.isFinite(Number(stats?.rating)) ? Number(stats.rating) : 800,
+      gamesPlayed: Number.isFinite(Number(stats?.gamesPlayed))
+        ? Number(stats.gamesPlayed)
+        : 0,
+      gamesWon: Number.isFinite(Number(stats?.gamesWon)) ? Number(stats.gamesWon) : 0,
+      winRate: Number.isFinite(Number(stats?.winRate)) ? Number(stats.winRate) : 0,
+    }),
+    [stats]
+  );
+
+  const draftIsValid =
+    /^[a-z0-9._-]+$/i.test(usernameDraft.trim()) &&
+    usernameDraft.trim().length >= 3 &&
+    usernameDraft.trim().length <= 24;
+
+  useEffect(() => {
+    const timerId = setTimeout(() => {
+      const value = usernameDraft.trim().toLowerCase();
+      setDebouncedUsername(draftIsValid ? value : "");
+    }, 350);
+    return () => clearTimeout(timerId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usernameDraft]);
+
+  const { activity: activityData, maxCount } = useActivity(PROFILE_GRAPH_DAYS);
 
   const locationQuery = useQuery({
     queryKey: userKeys.location(currentUser?.uid),
@@ -111,14 +116,39 @@ function useProfileSettings() {
     staleTime: 5 * 60 * 1000,
   });
 
-  const activityData = activityQuery.data?.activity ?? [];
-  const maxCount = activityQuery.data?.maxCount ?? 0;
-
   const username =
     profileStats.username ||
     currentUser?.displayName ||
     currentUser?.email?.split("@")[0] ||
     "Player";
+
+  const usernameAvailabilityQuery = useQuery({
+    queryKey: userKeys.usernameAvailable(debouncedUsername),
+    queryFn: () =>
+      apiFetch(
+        currentUser,
+        `/api/users/username/available?username=${encodeURIComponent(debouncedUsername)}`
+      ).then(({ data }) => data),
+    enabled:
+      Boolean(currentUser) &&
+      Boolean(debouncedUsername) &&
+      debouncedUsername.toLowerCase() !== username.trim().toLowerCase(),
+    staleTime: 15 * 1000,
+  });
+
+  const usernameAvailability =
+    usernameDraft.trim().length === 0 ||
+    usernameDraft.trim().toLowerCase() === username.trim().toLowerCase()
+      ? "idle"
+      : !draftIsValid
+      ? "invalid"
+      : usernameDraft.trim().toLowerCase() !== debouncedUsername
+      ? "checking"
+      : usernameAvailabilityQuery.isFetching
+      ? "checking"
+      : usernameAvailabilityQuery.data?.available
+      ? "available"
+      : "taken";
   const submitKeyIds = Array.isArray(playerPreferences.submitKeyIds)
     ? playerPreferences.submitKeyIds
     : [playerPreferences.submitKeyId].filter(Boolean);
@@ -140,25 +170,6 @@ function useProfileSettings() {
         )
       )
     : 100;
-
-  const { stats } = useStats();
-
-  useEffect(() => {
-    if (!stats) return;
-    setProfileStats((prev) => ({
-      ...prev,
-      username: stats?.username || prev.username,
-      rating: Number.isFinite(Number(stats?.rating)) ? Number(stats.rating) : prev.rating,
-      gamesPlayed: Number.isFinite(Number(stats?.gamesPlayed))
-        ? Number(stats.gamesPlayed)
-        : prev.gamesPlayed,
-      gamesWon: Number.isFinite(Number(stats?.gamesWon))
-        ? Number(stats.gamesWon)
-        : prev.gamesWon,
-      winRate: Number.isFinite(Number(stats?.winRate)) ? Number(stats.winRate) : prev.winRate,
-      avatarId: stats?.avatarId || prev.avatarId,
-    }));
-  }, [stats]);
 
   useEffect(() => {
     const country = locationQuery.data?.country || "";
@@ -182,19 +193,7 @@ function useProfileSettings() {
           : savePlayerPreferences({ ...prev, nextWordCondition: apiCondition })
       );
     }
-
-    if (userQuery.data.avatarId) {
-      setProfileStats((prev) => ({
-        ...prev,
-        avatarId: userQuery.data.avatarId,
-      }));
-    }
   }, [userQuery.data, setPlayerPreferences]);
-
-  const openAvatarDialog = () => {
-    setPendingAvatarId(profileStats.avatarId || "avatar1");
-    setIsAvatarDialogOpen(true);
-  };
 
   const persistLocationMutation = useMutation({
     mutationFn: (country) =>
@@ -304,27 +303,6 @@ function useProfileSettings() {
     setIsLocationEditing(false);
   };
 
-  const handleSaveAvatar = async () => {
-    if (!currentUser || !pendingAvatarId) return;
-
-    const previousAvatar = profileStats.avatarId;
-    setIsSavingAvatar(true);
-    setProfileStats((prev) => ({ ...prev, avatarId: pendingAvatarId }));
-
-    try {
-      await persistPreferenceMutation.mutateAsync({
-        field: "avatarId",
-        value: pendingAvatarId,
-      });
-      setIsAvatarDialogOpen(false);
-    } catch (error) {
-      console.error("Failed to persist avatar:", error);
-      setProfileStats((prev) => ({ ...prev, avatarId: previousAvatar }));
-    } finally {
-      setIsSavingAvatar(false);
-    }
-  };
-
   const handleSaveUsername = async () => {
     if (!currentUser) return;
 
@@ -352,7 +330,9 @@ function useProfileSettings() {
           body: { username: value },
         }
       );
-      setProfileStats((prev) => ({ ...prev, username: data.username }));
+      queryClient.setQueryData(userKeys.stats(currentUser.uid), (old) =>
+        old ? { ...old, username: data.username } : old
+      );
       queryClient.invalidateQueries({
         queryKey: userKeys.detail(currentUser.uid),
       });
@@ -388,18 +368,13 @@ function useProfileSettings() {
     isSavingLocation,
     handleCountryChange,
     handleSaveLocation,
-    openAvatarDialog,
-    isAvatarDialogOpen,
-    setIsAvatarDialogOpen,
-    pendingAvatarId,
-    setPendingAvatarId,
-    isSavingAvatar,
-    handleSaveAvatar,
     isUsernameDialogOpen,
     setIsUsernameDialogOpen,
     usernameDraft,
     setUsernameDraft,
     usernameError,
+    setUsernameError,
+    usernameAvailability,
     isSavingUsername,
     handleSaveUsername,
     updatePreference,
@@ -427,8 +402,6 @@ function ProfileIdentitySection({
   reduceMotion,
   currentUser,
   username,
-  profileStats,
-  openAvatarDialog,
   setUsernameDraft,
   setUsernameError,
   setIsUsernameDialogOpen,
@@ -445,44 +418,30 @@ function ProfileIdentitySection({
       initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay: 0.12 }}
-      className="grid gap-4 sm:grid-cols-3"
+      className="grid gap-4 sm:grid-cols-2"
     >
       <div className="rounded-lg border border-border/70 bg-background/40 p-3">
         <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
           Username
         </p>
-        <div className="mt-1 flex items-center justify-between gap-3">
-          <p className="font-sans text-lg font-semibold">{username}</p>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={openUsernameDialog}
-          >
-            Change
-          </Button>
-        </div>
-      </div>
-      <div className="rounded-lg border border-border/70 bg-background/40 p-3">
-        <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
-          Avatar
-        </p>
-        <div className="mt-1 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <UserAvatar
-              avatarId={profileStats.avatarId}
-              username={username}
-              size="md"
-              expandOnClick
-            />
-            <p className="text-sm text-muted-foreground">{profileStats.avatarId}</p>
+        <div className="mt-1 flex items-center gap-3">
+          <UserAvatar
+            username={username}
+            size="lg"
+            plain
+            expandOnClick
+            className="transition-transform duration-200 hover:scale-105"
+          />
+          <div className="flex min-w-0 flex-1 items-center justify-between gap-3">
+            <p className="truncate font-sans text-lg font-semibold">{username}</p>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={openUsernameDialog}
+            >
+              Change
+            </Button>
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={openAvatarDialog}
-          >
-            Change
-          </Button>
         </div>
       </div>
       <div className="rounded-lg border border-border/70 bg-background/40 p-3">
@@ -749,22 +708,20 @@ function ProfilePreferencesSection({
 function UsernameDialog({
   isUsernameDialogOpen,
   setIsUsernameDialogOpen,
-usernameDraft,
+  username,
+  usernameDraft,
     setUsernameDraft,
     usernameError,
     setUsernameError,
+    usernameAvailability,
     isSavingUsername,
-  handleSaveUsername,
+    handleSaveUsername,
 }) {
   return (
     <AlertDialog open={isUsernameDialogOpen} onOpenChange={setIsUsernameDialogOpen}>
       <AlertDialogContent className="max-w-md">
         <AlertDialogHeader>
           <AlertDialogTitle>Change username</AlertDialogTitle>
-          <AlertDialogDescription>
-            Choose a unique username. It must be 3-24 characters and can only
-            contain letters, numbers, dots, dashes or underscores.
-          </AlertDialogDescription>
         </AlertDialogHeader>
 
         <form
@@ -774,20 +731,66 @@ usernameDraft,
           }}
           className="space-y-3"
         >
+          <div className="flex justify-center">
+            <UserAvatar username={usernameDraft.trim() || username} size="xl" plain />
+          </div>
           <div className="space-y-1">
-            <Label htmlFor="profile-username">Username</Label>
-            <Input
-              id="profile-username"
-              type="text"
-              value={usernameDraft}
-              onChange={(e) => {
-                setUsernameDraft(e.target.value);
-                setUsernameError("");
-              }}
-              minLength={3}
-              maxLength={24}
-              autoComplete="off"
-            />
+            <div className="relative">
+              <Input
+                id="profile-username"
+                type="text"
+                value={usernameDraft}
+                onChange={(e) => {
+                  setUsernameDraft(e.target.value);
+                  setUsernameError("");
+                }}
+                minLength={3}
+                maxLength={24}
+                autoComplete="off"
+                className={cn(
+                  "pr-9",
+                  usernameAvailability === "available" &&
+                    "border-emerald-500/60 focus-visible:ring-emerald-500/30",
+                  (usernameAvailability === "taken" ||
+                    usernameAvailability === "invalid") &&
+                    "border-destructive/60 focus-visible:ring-destructive/30"
+                )}
+              />
+              {usernameAvailability === "available" ? (
+                <CheckIcon
+                  size={16}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-emerald-500"
+                />
+              ) : usernameAvailability === "taken" ||
+                usernameAvailability === "invalid" ? (
+                <XIcon
+                  size={16}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-destructive"
+                />
+              ) : usernameAvailability === "checking" ? (
+                <span className="absolute right-3 top-1/2 size-3 -translate-y-1/2 animate-spin rounded-full border-2 border-amber-500/30 border-t-amber-500" />
+              ) : null}
+            </div>
+            {!usernameError && usernameAvailability !== "idle" ? (
+              <p
+                className={cn(
+                  "text-xs",
+                  usernameAvailability === "available"
+                    ? "text-emerald-500"
+                    : usernameAvailability === "checking"
+                    ? "text-amber-500"
+                    : "text-destructive"
+                )}
+              >
+                {usernameAvailability === "available"
+                  ? "Available"
+                  : usernameAvailability === "taken"
+                  ? "Already taken"
+                  : usernameAvailability === "invalid"
+                  ? "Not a valid username"
+                  : "Checking..."}
+              </p>
+            ) : null}
           </div>
           {usernameError ? (
             <p className="text-xs text-destructive">{usernameError}</p>
@@ -799,81 +802,6 @@ usernameDraft,
             </Button>
           </AlertDialogFooter>
         </form>
-      </AlertDialogContent>
-    </AlertDialog>
-  );
-}
-
-function AvatarDialog({
-  isAvatarDialogOpen,
-  setIsAvatarDialogOpen,
-  pendingAvatarId,
-  setPendingAvatarId,
-  username,
-  isSavingAvatar,
-  handleSaveAvatar,
-}) {
-  return (
-    <AlertDialog open={isAvatarDialogOpen} onOpenChange={setIsAvatarDialogOpen}>
-      <AlertDialogContent className="max-w-2xl">
-        <AlertDialogHeader>
-          <AlertDialogTitle>Choose your avatar</AlertDialogTitle>
-        </AlertDialogHeader>
-
-        <div className="space-y-4">
-          <div>
-            <p className="mb-2 text-xs uppercase tracking-[0.12em] text-muted-foreground">Male</p>
-            <div className="grid grid-cols-5 gap-2">
-              {MALE_AVATAR_IDS.map((avatarId) => {
-                const selected = pendingAvatarId === avatarId;
-                return (
-                  <button
-                    key={avatarId}
-                    type="button"
-                    onClick={() => setPendingAvatarId(avatarId)}
-                    className={`rounded-md border p-2 transition-colors ${
-                      selected
-                        ? "border-primary bg-primary/10"
-                        : "border-border/70 bg-card/30 hover:bg-card/50"
-                    }`}
-                  >
-                    <UserAvatar avatarId={avatarId} username={username} className="mx-auto" />
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div>
-            <p className="mb-2 text-xs uppercase tracking-[0.12em] text-muted-foreground">Female</p>
-            <div className="grid grid-cols-5 gap-2">
-              {FEMALE_AVATAR_IDS.map((avatarId) => {
-                const selected = pendingAvatarId === avatarId;
-                return (
-                  <button
-                    key={avatarId}
-                    type="button"
-                    onClick={() => setPendingAvatarId(avatarId)}
-                    className={`rounded-md border p-2 transition-colors ${
-                      selected
-                        ? "border-primary bg-primary/10"
-                        : "border-border/70 bg-card/30 hover:bg-card/50"
-                    }`}
-                  >
-                    <UserAvatar avatarId={avatarId} username={username} className="mx-auto" />
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={isSavingAvatar}>Cancel</AlertDialogCancel>
-          <AlertDialogAction onClick={handleSaveAvatar} disabled={isSavingAvatar}>
-            {isSavingAvatar ? "Saving..." : "Save Avatar"}
-          </AlertDialogAction>
-        </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
   );
@@ -898,19 +826,13 @@ const Profile = () => {
     isSavingLocation,
     handleCountryChange,
     handleSaveLocation,
-    openAvatarDialog,
-    isAvatarDialogOpen,
-    setIsAvatarDialogOpen,
-    pendingAvatarId,
-    setPendingAvatarId,
-    isSavingAvatar,
-    handleSaveAvatar,
     isUsernameDialogOpen,
     setIsUsernameDialogOpen,
     usernameDraft,
     setUsernameDraft,
     usernameError,
     setUsernameError,
+    usernameAvailability,
     isSavingUsername,
     handleSaveUsername,
     updatePreference,
@@ -934,8 +856,6 @@ const Profile = () => {
           reduceMotion={reducerMotion}
           currentUser={currentUser}
           username={username}
-          profileStats={profileStats}
-          openAvatarDialog={openAvatarDialog}
           setUsernameDraft={setUsernameDraft}
           setUsernameError={setUsernameError}
           setIsUsernameDialogOpen={setIsUsernameDialogOpen}
@@ -976,21 +896,14 @@ const Profile = () => {
         <UsernameDialog
           isUsernameDialogOpen={isUsernameDialogOpen}
           setIsUsernameDialogOpen={setIsUsernameDialogOpen}
+          username={username}
           usernameDraft={usernameDraft}
           setUsernameDraft={setUsernameDraft}
           usernameError={usernameError}
+          setUsernameError={setUsernameError}
+          usernameAvailability={usernameAvailability}
           isSavingUsername={isSavingUsername}
           handleSaveUsername={handleSaveUsername}
-        />
-
-        <AvatarDialog
-          isAvatarDialogOpen={isAvatarDialogOpen}
-          setIsAvatarDialogOpen={setIsAvatarDialogOpen}
-          pendingAvatarId={pendingAvatarId}
-          setPendingAvatarId={setPendingAvatarId}
-          username={username}
-          isSavingAvatar={isSavingAvatar}
-          handleSaveAvatar={handleSaveAvatar}
         />
 
         <GuestUpgradePrompt

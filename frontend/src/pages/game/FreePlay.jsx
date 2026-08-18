@@ -11,6 +11,7 @@ import {
   formatSeconds,
 } from "@/lib/typing/metrics";
 import { SessionWpmChart } from "@/components/charts/SessionWpmChart";
+import { buildMatchInitialState, matchReducer } from "@/lib/match/matchReducer";
 import {
   FiClock,
   FiArrowLeft,
@@ -32,60 +33,6 @@ const VISIBLE_LINES = 3;
 const DOUBLE_ESC_WINDOW_MS = 400;
 
 const EMPTY_RUN = { index: 0, typed: [], records: [] };
-
-const SESSION_INITIAL_STATE = {
-  gameState: "setup",
-  countdown: null,
-  words: [],
-  samples: [],
-  results: null,
-  elapsedMs: 0,
-  remaining: 0,
-};
-
-function sessionReducer(state, action) {
-  switch (action.type) {
-    case "GO_TO_SETUP": {
-      return { ...SESSION_INITIAL_STATE };
-    }
-    case "START_SESSION": {
-      return {
-        ...SESSION_INITIAL_STATE,
-        words: action.words,
-        gameState: "countdown",
-        countdown: 3,
-        remaining: action.remaining,
-      };
-    }
-    case "COUNTDOWN": {
-      return { ...state, countdown: action.count };
-    }
-    case "GO": {
-      return { ...state, countdown: null, gameState: "playing" };
-    }
-    case "SET_REMAINING": {
-      return { ...state, remaining: action.value };
-    }
-    case "SET_ELAPSED": {
-      return { ...state, elapsedMs: action.value };
-    }
-    case "ADD_SAMPLE": {
-      const last = state.samples[state.samples.length - 1];
-      if (last && last.t === action.sample.t) return state;
-      return { ...state, samples: [...state.samples, action.sample] };
-    }
-    case "FINISH": {
-      return {
-        ...state,
-        gameState: "finished",
-        results: action.results,
-        elapsedMs: action.elapsed,
-      };
-    }
-    default:
-      return state;
-  }
-}
 
 function Stepper({ label, value, min, max, step, onChange, suffix = "" }) {
   const decrease = () => onChange(Math.max(min, value - step));
@@ -608,7 +555,7 @@ function useFreePlaySession() {
 
   const [wordBank, setWordBank] = useState([]);
   const [run, setRun] = useState(EMPTY_RUN);
-  const [session, dispatch] = useReducer(sessionReducer, SESSION_INITIAL_STATE);
+  const [session, dispatch] = useReducer(matchReducer, buildMatchInitialState());
   const { gameState, countdown, words, samples, results, elapsedMs, remaining } = session;
 
   const inputRef = useRef(null);

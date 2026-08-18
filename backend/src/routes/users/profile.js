@@ -6,12 +6,11 @@ import { requireFirebaseAuth } from '../../middleware/firebaseAuth.js';
 import { generateGuestEmail, generateGuestUsername, isGuestEmail } from '../../utils/guest.js';
 import {
 	countryFromIpHeader,
-	normalizeAvatarId,
 	normalizeOptionalLocationValue,
 	normalizeUsername,
 } from '../../services/validation.js';
 import { ensureUserModeRows } from '../../services/user-stats.js';
-import { getRandomDefaultAvatarId, randomSuffix } from '../../services/ids.js';
+import { randomSuffix } from '../../services/ids.js';
 import { logger } from '../../services/logger.js';
 
 const profileRouter = new Hono();
@@ -38,7 +37,6 @@ profileRouter.post('/', requireAuth, async (c) => {
 		const db = drizzle(c.env.DB);
 		const body = await c.req.json().catch(() => ({}));
 		const requestedUsername = body?.username;
-		const requestedAvatarId = normalizeAvatarId(body?.avatarId);
 		const auth = c.get('auth');
 		const uid = auth?.uid;
 		const email = auth?.email;
@@ -125,7 +123,6 @@ profileRouter.post('/', requireAuth, async (c) => {
 						id: uid,
 						username: chosenUsername,
 						email: profileEmail,
-						avatarId: requestedAvatarId || getRandomDefaultAvatarId(),
 						gamesPlayed: 0,
 						gamesWon: 0,
 						gamesLost: 0,
@@ -166,6 +163,30 @@ profileRouter.post('/', requireAuth, async (c) => {
 	}
 });
 
+// Case-insensitive username availability check (excludes the requester).
+profileRouter.get('/username/available', requireAuth, async (c) => {
+	try {
+		const db = drizzle(c.env.DB);
+		const auth = c.get('auth');
+		const raw = c.req.query('username');
+		const username = normalizeUsername(raw);
+		if (!username) {
+			return c.json({ available: false, valid: false }, 200);
+		}
+
+		const taken = await db
+			.select({ id: users.id })
+			.from(users)
+			.where(and(sql`lower(${users.username}) = ${username}`, ne(users.id, auth?.uid)))
+			.limit(1);
+
+		return c.json({ available: taken.length === 0, valid: true }, 200);
+	} catch (error) {
+		logger.error('Failed to check username availability', { error: error?.message });
+		return c.json({ error: 'Failed to check username availability' }, 500);
+	}
+});
+
 profileRouter.get('/:id', requireAuth, async (c) => {
 	try {
 		const db = drizzle(c.env.DB);
@@ -202,34 +223,20 @@ profileRouter.patch('/:id/preferences', requireAuth, async (c) => {
 		const rawCondition = hasCondition ? String(body.nextWordCondition).trim().toLowerCase() : '';
 		const nextWordCondition =
 			rawCondition === 'manual' ? 'manual' : rawCondition === 'auto' ? 'auto' : null;
-		const hasAvatarId = typeof body?.avatarId === 'string';
-		const avatarId = hasAvatarId ? normalizeAvatarId(body.avatarId) : null;
 
-		if (!hasCondition && !hasAvatarId) {
+		if (!hasCondition) {
 			return c.json({ error: 'No updatable preferences provided' }, 400);
 		}
 
-		if (hasCondition && !nextWordCondition) {
+		if (!nextWordCondition) {
 			return c.json({ error: 'nextWordCondition must be auto or manual' }, 400);
-		}
-
-		if (hasAvatarId && !avatarId) {
-			return c.json({ error: 'avatarId is invalid' }, 400);
-		}
-
-		const updateData = {};
-		if (hasCondition) {
-			updateData.nextWordCondition = nextWordCondition;
-		}
-		if (hasAvatarId) {
-			updateData.avatarId = avatarId;
 		}
 
 		const rows = await db
 			.update(users)
-			.set(updateData)
+			.set({ nextWordCondition })
 			.where(eq(users.id, uid))
-			.returning({ nextWordCondition: users.nextWordCondition, avatarId: users.avatarId });
+			.returning({ nextWordCondition: users.nextWordCondition });
 
 		if (rows.length === 0) {
 			return c.json({ error: 'User not found' }, 404);
@@ -237,7 +244,6 @@ profileRouter.patch('/:id/preferences', requireAuth, async (c) => {
 
 		return c.json({
 			nextWordCondition: rows[0].nextWordCondition,
-			avatarId: rows[0].avatarId,
 		});
 	} catch (error) {
 		logger.error('Failed to update user preferences', { error: error?.message });

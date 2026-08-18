@@ -19,14 +19,24 @@ export function modeStatsRowToDto(row) {
 	};
 }
 
+// Single owner of the derived `users.rating` cache: it is always the highest
+// rating across a user's ranked mode rows. Mode ratings only ever rise through
+// this function (a loss drops a mode row but never the cache).
+export function deriveHighestRating(modeStatsRows) {
+	if (!modeStatsRows.length) return DEFAULT_RATING;
+	return modeStatsRows.reduce(
+		(highest, row) => Math.max(highest, Number(row.rating ?? DEFAULT_RATING)),
+		DEFAULT_RATING
+	);
+}
+
 export async function getHighestModeRating(db, userId) {
 	const rows = await db
 		.select({ rating: userModeStats.rating })
 		.from(userModeStats)
 		.where(eq(userModeStats.userId, userId));
 
-	if (!rows.length) return DEFAULT_RATING;
-	return rows.reduce((max, row) => Math.max(max, Number(row.rating || DEFAULT_RATING)), DEFAULT_RATING);
+	return deriveHighestRating(rows);
 }
 
 export async function ensureUserModeRows(db, userId) {

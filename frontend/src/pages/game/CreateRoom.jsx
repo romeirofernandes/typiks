@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { m, AnimatePresence } from "framer-motion";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
@@ -20,8 +20,10 @@ import {
   NEXT_WORD_CONDITIONS,
 } from "@/lib/player-preferences";
 import { FiCopy, FiCheck, FiUsers, FiClock, FiHash, FiLogOut, FiPlay, FiSettings, FiPlus, FiTrash2, FiSend } from "react-icons/fi";
-import { apiFetch, getServerBaseUrl } from "@/lib/api-client";
+import { apiFetch } from "@/lib/api-client";
 import { meKeys } from "@/lib/query-keys";
+import { openWebSocket, subscribeToPresence } from "@/lib/websocket";
+import { WordDisplay } from "@/components/game/WordDisplay";
 
 function sanitizeRoomCode(rawCode) {
   if (typeof rawCode !== "string") return "";
@@ -60,52 +62,6 @@ function clampSettingValue(rawValue, min, max, fallback) {
   return Math.min(max, Math.max(min, parsed));
 }
 
-const TypingWordDisplay = memo(function TypingWordDisplay({ word, input }) {
-  const activeWord = String(word || "");
-  const activeInput = String(input || "");
-
-  return (
-    <div className="relative inline-block font-mono text-4xl font-medium leading-none tracking-wider sm:text-5xl">
-      {activeWord.split("").map((char, charIndex) => {
-        const typedChar = activeInput[charIndex];
-        const isCurrentPosition = charIndex === activeInput.length;
-        const isTyped = charIndex < activeInput.length;
-        const isCorrect = isTyped && typedChar === char;
-        const isWrong = isTyped && typedChar !== char;
-        const renderedChar = char === " " ? "\u00A0" : char;
-        const renderedTypedChar = isWrong && typedChar === " " ? "_" : typedChar;
-
-        return (
-          <span
-            key={charIndex}
-            className={`relative inline-block min-w-[0.45em] align-baseline transition-colors duration-75 ${
-              isCorrect
-                ? "text-primary"
-                : isWrong
-                  ? "text-destructive"
-                  : "text-muted-foreground/50"
-            }`}
-          >
-            {isCurrentPosition ? (
-              <span
-                className="absolute -left-[2px] top-0 h-full w-[3px] bg-primary"
-                style={{ animation: "blink 1s ease-in-out infinite" }}
-              />
-            ) : null}
-            {isWrong ? renderedTypedChar : renderedChar}
-          </span>
-        );
-      })}
-      {activeInput.length === activeWord.length && activeWord ? (
-        <span
-          className="absolute -right-[2px] top-0 h-full w-[3px] bg-primary"
-          style={{ animation: "blink 1s ease-in-out infinite" }}
-        />
-      ) : null}
-    </div>
-  );
-});
-
 function useRoomSession() {
   const { state: { currentUser } } = useAuth();
   const location = useLocation();
@@ -124,14 +80,14 @@ function useRoomSession() {
   const myTeamIdRef = useRef(null);
   const inputRef = useRef(null);
   const autoJoinHandledRef = useRef(false);
-  const userInfoRef = useRef({ username: "Player", rating: 800, avatarId: "avatar1" });
+  const userInfoRef = useRef({ username: "Player", rating: 800 });
 
   const [wsStatus, setWsStatus] = useState("idle");
   const [roomState, setRoomState] = useState(null);
   const [roomCode, setRoomCode] = useState("");
   const [joinCode, setJoinCode] = useState("");
   const [settingsForm, setSettingsForm] = useState(defaultSettings);
-  const [userInfo, setUserInfo] = useState({ username: "Player", rating: 800, avatarId: "avatar1" });
+  const [userInfo, setUserInfo] = useState({ username: "Player", rating: 800 });
   const [busy, setBusy] = useState(false);
   const [entryMode, setEntryMode] = useState("create");
   const [countdown, setCountdown] = useState(null);
@@ -163,14 +119,12 @@ function useRoomSession() {
           currentUser?.email?.split("@")[0] ||
           "Player",
         rating: Number.isFinite(statsPayload.rating) ? statsPayload.rating : 800,
-        avatarId: statsPayload.avatarId || "avatar1",
       });
     } else {
       setUserInfo({
         username:
           currentUser?.displayName || currentUser?.email?.split("@")[0] || "Player",
         rating: 800,
-        avatarId: "avatar1",
       });
     }
   }, [statsPayload, statsLoading, currentUser]);
@@ -357,11 +311,6 @@ function useRoomSession() {
 
       const idToken = await currentUser.getIdToken();
       if (!isMountedRef.current) return;
-      const baseUrl = getServerBaseUrl();
-      const wsBaseUrl = baseUrl
-        .replace(/^http:/i, "ws:")
-        .replace(/^https:/i, "wss:")
-        .replace(/\/$/, "");
 
       manualDisconnectRef.current = true;
       cleanupSocket();
@@ -369,7 +318,7 @@ function useRoomSession() {
       setWsStatus("connecting");
 
       // react-doctor-disable-next-line effect-needs-cleanup -- socket stored in wsRef, closed by cleanupSocket() on unmount; isMountedRef guard prevents creation after unmount
-      const ws = new WebSocket(new URL(`/ws/room/${cleanCode}`, wsBaseUrl));
+      const ws = openWebSocket(`/ws/room/${cleanCode}`);
       wsRef.current = ws;
 
       ws.onopen = () => {
@@ -691,7 +640,7 @@ function useRoomSession() {
 
   const rivalProgress = useMemo(() => {
     if (!game?.progress || !currentUser) {
-      return { username: "Opponent", score: 0, currentWordIndex: 0, avatarId: "avatar1" };
+      return { username: "Opponent", score: 0, currentWordIndex: 0 };
     }
 
     const others = game.progress.filter((entry) => entry.playerId !== currentUser.uid);
@@ -705,7 +654,7 @@ function useRoomSession() {
 
     const candidateProgress = filteredOthers.length > 0 ? filteredOthers : others;
     if (candidateProgress.length === 0) {
-      return { username: "Opponent", score: 0, currentWordIndex: 0, avatarId: "avatar1" };
+      return { username: "Opponent", score: 0, currentWordIndex: 0 };
     }
 
     return candidateProgress.reduce((best, candidate) => {
@@ -1000,11 +949,7 @@ function useRoomSession() {
 
     const userIds = friendsForInvite.flatMap((friend) => (friend.id ? [friend.id] : []));
     if (userIds.length > 0) {
-      window.dispatchEvent(
-        new CustomEvent("typiks:presence-subscribe", {
-          detail: { userIds },
-        })
-      );
+      subscribeToPresence(userIds);
     }
 
     const handlePresenceUpdate = (event) => {
@@ -1627,7 +1572,7 @@ function InviteFriendsCard({
                 >
                   <div>
                     <p className="inline-flex items-center gap-2 font-semibold">
-                      <UserAvatar avatarId={friend.avatarId} username={friend.username} size="sm" />
+                      <UserAvatar username={friend.username} size="sm" />
                       <span>{friend.username}</span>
                     </p>
                     <p className="text-xs text-muted-foreground">
@@ -1679,7 +1624,7 @@ function FfaMembersCard({ roomState }) {
               <div className={`flex h-8 w-8 items-center justify-center rounded-full ${
                 member.isLeader ? "bg-primary/20 text-primary" : "bg-muted"
               }`}>
-                <UserAvatar avatarId={member.avatarId} username={member.username} size="sm" />
+                <UserAvatar username={member.username} size="sm" />
               </div>
               <div>
                 <p className="font-semibold">
@@ -1821,7 +1766,7 @@ function CoopTeamsCard({
                       <div key={member.id} className="flex items-center justify-between rounded bg-muted/40 px-2 py-1.5">
                         <div className="flex items-center gap-2">
                           <span className="inline-flex items-center gap-2 text-sm font-medium">
-                            <UserAvatar avatarId={member.avatarId} username={member.username} size="sm" />
+                            <UserAvatar username={member.username} size="sm" />
                             <span>{member.username}</span>
                           </span>
                           {member.isLeader && (
@@ -2019,7 +1964,7 @@ function RoomPlayingScreen({
         <Card className="border-primary/30 bg-primary/5">
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
-              <UserAvatar avatarId={userInfo.avatarId} username={userInfo.username} size="sm" />
+              <UserAvatar username={userInfo.username} size="sm" />
               {userInfo.username} (You)
             </CardTitle>
           </CardHeader>
@@ -2034,7 +1979,7 @@ function RoomPlayingScreen({
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
-              <UserAvatar avatarId={rivalProgress.avatarId} username={rivalProgress.username} size="sm" />
+              <UserAvatar username={rivalProgress.username} size="sm" />
               {rivalProgress.username}
             </CardTitle>
           </CardHeader>
@@ -2078,7 +2023,7 @@ function RoomPlayingScreen({
             <p className="mb-2 font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">
               Type This Word
             </p>
-            <TypingWordDisplay word={currentWord} input={liveSwitcherInput} />
+            <WordDisplay word={currentWord} input={liveSwitcherInput} />
           </div>
           {switcherTurn ? (
             <p className="-mt-2 text-center text-xs text-muted-foreground">
@@ -2251,7 +2196,7 @@ function RoomResultsScreen({
                           className="grid grid-cols-[minmax(0,1fr)_64px_70px] items-center gap-2 rounded border border-border/40 px-2 py-1.5"
                         >
                           <span className="inline-flex items-center gap-2 truncate text-sm font-medium">
-                            <UserAvatar avatarId={member.avatarId} username={member.username} size="sm" />
+                            <UserAvatar username={member.username} size="sm" />
                             <span className="truncate">{member.username}</span>
                           </span>
                           <span className="text-right font-mono text-xs text-muted-foreground">
@@ -2280,7 +2225,7 @@ function RoomResultsScreen({
               >
                 <div>
                   <p className="inline-flex items-center gap-2 font-semibold">
-                    <UserAvatar avatarId={entry.avatarId} username={entry.username} size="sm" />
+                    <UserAvatar username={entry.username} size="sm" />
                     <span>#{index + 1} {entry.username}</span>
                   </p>
                   <p className="text-xs text-muted-foreground">{entry.correctChars ?? 0} chars</p>

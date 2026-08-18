@@ -7,9 +7,9 @@ import {
     users,
 } from '../db/schema.js';
 import { calculateNewRatings } from '../utils/rating.js';
-import { ensureUserModeRows } from './user-stats.js';
+import { ensureUserModeRows, deriveHighestRating } from './user-stats.js';
 import { generateEntityId } from './ids.js';
-import { DEFAULT_RATING, GAME_STATUS_FINISHED } from '../config.js';
+import { GAME_STATUS_FINISHED } from '../config.js';
 
 // Pure rating computation shared by ranked persistence + tests.
 export function computeRankedOutcome(playerModeStats, opponentModeStats, { playerWon, isDraw }) {
@@ -141,20 +141,12 @@ export async function persistRankedMatchResult(db, input) {
     await Promise.all([ensureUserModeRows(db, player1.id), ensureUserModeRows(db, player2.id)]);
 
     const [playerModeRows, opponentModeRows] = await Promise.all([
-        db
-            .select()
-            .from(userModeStats)
-            .where(and(eq(userModeStats.userId, player1.id), eq(userModeStats.modeSeconds, modeSeconds)))
-            .limit(1),
-        db
-            .select()
-            .from(userModeStats)
-            .where(and(eq(userModeStats.userId, player2.id), eq(userModeStats.modeSeconds, modeSeconds)))
-            .limit(1),
+        db.select().from(userModeStats).where(eq(userModeStats.userId, player1.id)),
+        db.select().from(userModeStats).where(eq(userModeStats.userId, player2.id)),
     ]);
 
-    const playerModeStats = playerModeRows[0];
-    const opponentModeStats = opponentModeRows[0];
+    const playerModeStats = playerModeRows.find((row) => row.modeSeconds === modeSeconds);
+    const opponentModeStats = opponentModeRows.find((row) => row.modeSeconds === modeSeconds);
 
     if (!playerModeStats || !opponentModeStats) {
         throw new Error(`Failed to initialize mode stats for match ${gameId}`);
@@ -170,8 +162,14 @@ export async function persistRankedMatchResult(db, input) {
     const playerPlacement = isDraw ? 1 : Boolean(player1.won) ? 1 : 2;
     const opponentPlacement = isDraw ? 1 : Boolean(player2.won) ? 1 : 2;
 
-    const nextPlayerRating = Math.max(Number(playerRow[0].rating ?? DEFAULT_RATING), playerRating);
-    const nextOpponentRating = Math.max(Number(opponentRow[0].rating ?? DEFAULT_RATING), opponentRating);
+    // users.rating is a derived cache owned by user-stats: the peak across the
+// user's ranked mode rows, recomputed for the mode just played.
+    const nextPlayerRating = deriveHighestRating(
+        playerModeRows.map((row) => (row.modeSeconds === modeSeconds ? { ...row, rating: playerRating } : row))
+    );
+    const nextOpponentRating = deriveHighestRating(
+        opponentModeRows.map((row) => (row.modeSeconds === modeSeconds ? { ...row, rating: opponentRating } : row))
+    );
 
     await db.batch([
         db.insert(matches).values({
