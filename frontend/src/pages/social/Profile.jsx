@@ -48,7 +48,7 @@ import { apiFetch } from "@/lib/api-client";
 import { userKeys } from "@/lib/query-keys";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { cn } from "@/lib/utils";
-import { Check as CheckIcon, X as XIcon } from "lucide-react";
+import { CheckmarkCircle01Icon, Cancel01Icon } from "hugeicons-react";
 
 const PROFILE_GRAPH_DAYS = 364;
 const UNSET_OPTION_VALUE = "__unset__";
@@ -757,13 +757,13 @@ function UsernameDialog({
                 )}
               />
               {usernameAvailability === "available" ? (
-                <CheckIcon
+                <CheckmarkCircle01Icon
                   size={16}
                   className="absolute right-2.5 top-1/2 -translate-y-1/2 text-emerald-500"
                 />
               ) : usernameAvailability === "taken" ||
                 usernameAvailability === "invalid" ? (
-                <XIcon
+                <Cancel01Icon
                   size={16}
                   className="absolute right-2.5 top-1/2 -translate-y-1/2 text-destructive"
                 />

@@ -27,9 +27,12 @@ import {
   Menu01Icon,
   RankingIcon,
   UserIcon,
-  DashboardSquare01Icon
+  DashboardSquare01Icon,
+  BotIcon,
+  Login01Icon,
+  UserMultipleIcon,
+  GameController01Icon
 } from "hugeicons-react";
-import { Bot, DoorOpen, Users, Gamepad2 } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
 import { meKeys } from "@/lib/query-keys";
 
@@ -402,28 +405,28 @@ export default function AppShell() {
       {
         key: "create-room",
         label: "Unranked Match",
-        icon: DoorOpen,
+        icon: Login01Icon,
         active: location.pathname === "/create-room",
         onClick: () => navigate("/create-room"),
       },
       {
         key: "bot-mode",
         label: "Bot Mode",
-        icon: Bot,
+        icon: BotIcon,
         active: location.pathname === "/bot-mode",
         onClick: () => navigate("/bot-mode"),
       },
       {
         key: "freeplay",
         label: "Free Play",
-        icon: Gamepad2,
+        icon: GameController01Icon,
         active: location.pathname === "/freeplay",
         onClick: () => navigate("/freeplay"),
       },
       {
         key: "friends",
         label: "Friends",
-        icon: Users,
+        icon: UserMultipleIcon,
         active: location.pathname === "/friends",
         onClick: () => navigate("/friends"),
         badgeCount: notificationCounts.pendingFriendRequests + notificationCounts.pendingRoomInvites,

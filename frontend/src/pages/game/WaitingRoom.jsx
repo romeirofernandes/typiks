@@ -5,7 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DotLoader } from "@/components/ui/dot-loader";
-import { FiArrowRight, FiZap } from "react-icons/fi";
+import { ArrowRight01Icon, ZapIcon } from "hugeicons-react";
 
 const WaitingRoom = () => {
   const navigate = useNavigate();
@@ -27,7 +27,7 @@ const WaitingRoom = () => {
                 transition={{ duration: 0.25, delay: 0.06 }}
                 className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/20"
               >
-                <FiZap className="h-8 w-8 text-primary" />
+                <ZapIcon className="h-8 w-8 text-primary" />
               </m.div>
               <m.div
                 initial={{ opacity: 0, y: reduceMotion ? 0 : 8 }}
@@ -86,7 +86,7 @@ const WaitingRoom = () => {
                   onClick={() => navigate("/game", { state: { fromDashboard: true } })}
                 >
                   Enter Game
-                  <FiArrowRight className="h-4 w-4" />
+                  <ArrowRight01Icon className="h-4 w-4" />
                 </Button>
               </m.div>
             </CardContent>

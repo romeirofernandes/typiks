@@ -13,13 +13,13 @@ import {
 import { SessionWpmChart } from "@/components/charts/SessionWpmChart";
 import { buildMatchInitialState, matchReducer } from "@/lib/match/matchReducer";
 import {
-  FiClock,
-  FiArrowLeft,
-  FiMinus,
-  FiPlus,
-  FiRotateCw,
-  FiCheck,
-} from "react-icons/fi";
+  Clock01Icon,
+  ArrowLeft01Icon,
+  MinusSignIcon,
+  PlusSignIcon,
+  RotateClockwiseIcon,
+  CheckmarkCircle01Icon,
+} from "hugeicons-react";
 
 const TIME_PRESETS = [15, 30, 60];
 const WORDS_PRESETS = [10, 25, 50];
@@ -50,7 +50,7 @@ function Stepper({ label, value, min, max, step, onChange, suffix = "" }) {
           onClick={decrease}
           disabled={value <= min}
         >
-          <FiMinus className="h-4 w-4" />
+          <MinusSignIcon className="h-4 w-4" />
         </Button>
         <div className="min-w-16 text-center font-mono text-lg font-semibold tabular-nums">
           {value}
@@ -64,7 +64,7 @@ function Stepper({ label, value, min, max, step, onChange, suffix = "" }) {
           onClick={increase}
           disabled={value >= max}
         >
-          <FiPlus className="h-4 w-4" />
+          <PlusSignIcon className="h-4 w-4" />
         </Button>
       </div>
     </div>
@@ -177,12 +177,12 @@ function FreePlayHeader({ configLabel, gameState, sessionConfig, remaining, run 
       {gameState === "playing" ? (
         sessionConfig.type === "time" ? (
           <div className="flex items-center gap-2 rounded-full bg-primary/10 px-4 py-2 font-mono text-lg font-bold tabular-nums text-primary">
-            <FiClock className="h-4 w-4" />
+            <Clock01Icon className="h-4 w-4" />
             {remaining}
           </div>
         ) : (
           <div className="flex items-center gap-2 rounded-full bg-primary/10 px-4 py-2 font-mono text-lg font-bold tabular-nums text-primary">
-            <FiCheck className="h-4 w-4" />
+            <CheckmarkCircle01Icon className="h-4 w-4" />
             {run.index} / {sessionConfig.target}
           </div>
         )
@@ -530,10 +530,10 @@ function FreePlayResultsScreen({ configLabel, results, samples, onPlayAgain, onG
           <SessionWpmChart samples={samples} />
 
           <Button onClick={onPlayAgain} className="w-full gap-2">
-            <FiRotateCw className="h-4 w-4" /> Play Again
+            <RotateClockwiseIcon className="h-4 w-4" /> Play Again
           </Button>
           <Button variant="outline" onClick={onGoToSetup} className="w-full gap-2">
-            <FiArrowLeft className="h-4 w-4" /> Change Mode
+            <ArrowLeft01Icon className="h-4 w-4" /> Change Mode
           </Button>
           <p className="text-center font-mono text-xs text-muted-foreground">
             Press Enter to play again

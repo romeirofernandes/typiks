@@ -11,7 +11,7 @@ import {
   getSubmitKeyOptionById,
   NEXT_WORD_CONDITIONS,
 } from "@/lib/player-preferences";
-import { FiUser, FiClock, FiArrowLeft, FiZap, FiCpu } from "react-icons/fi";
+import { UserIcon, Clock01Icon, ArrowLeft01Icon, ZapIcon, CpuIcon } from "hugeicons-react";
 import { buildMatchInitialState, matchReducer } from "@/lib/match/matchReducer";
 import { WordDisplay } from "@/components/game/WordDisplay";
 import { buildWordBank, pickWords } from "@/lib/typing/words";
@@ -40,7 +40,7 @@ function BotHeader({ modeSeconds, timeLeft, gameState }) {
 
       {gameState === "playing" ? (
         <div className="flex items-center gap-2 rounded-full bg-primary/10 px-4 py-2 font-mono text-lg font-bold tabular-nums text-primary">
-          <FiClock className="h-4 w-4" />
+          <Clock01Icon className="h-4 w-4" />
           {timeLeft}
         </div>
       ) : null}
@@ -71,7 +71,7 @@ function BotConfigureCard({
         />
         <CardHeader className="relative py-2 sm:py-6">
           <CardTitle className="flex items-center gap-2">
-            <FiCpu className="h-4 w-4" /> Configure Bot
+            <CpuIcon className="h-4 w-4" /> Configure Bot
           </CardTitle>
         </CardHeader>
         <CardContent className="relative flex flex-1 flex-col justify-center gap-4 py-3 sm:gap-8 sm:py-8">
@@ -188,7 +188,7 @@ function BotPlayingScreen({
         <Card className="border-primary/30 bg-primary/5">
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
-              <FiUser className="h-3 w-3" /> You
+              <UserIcon className="h-3 w-3" /> You
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -200,7 +200,7 @@ function BotPlayingScreen({
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
-              <FiCpu className="h-3 w-3" /> Bot
+              <CpuIcon className="h-3 w-3" /> Bot
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -322,10 +322,10 @@ function BotResultScreen({ title, myScore, opponentScore, onPlayAgain, onBackToD
           </div>
 
           <Button onClick={onPlayAgain} className="w-full gap-2">
-            <FiZap className="h-4 w-4" /> Play Again
+            <ZapIcon className="h-4 w-4" /> Play Again
           </Button>
           <Button variant="outline" onClick={onBackToDashboard} className="w-full gap-2">
-            <FiArrowLeft className="h-4 w-4" /> Back to Dashboard
+            <ArrowLeft01Icon className="h-4 w-4" /> Back to Dashboard
           </Button>
         </CardContent>
       </Card>

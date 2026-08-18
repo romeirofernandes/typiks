@@ -3,8 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { m, useReducedMotion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { StarIcon } from "@radix-ui/react-icons";
-import { TbAward } from "react-icons/tb";
+import { Award01Icon, StarIcon } from "hugeicons-react";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { getTierByRating } from "@/lib/player-meta";
 import { apiFetch } from "@/lib/api-client";
@@ -13,11 +12,11 @@ import { leaderboardKeys } from "@/lib/query-keys";
 function getRankIcon(rank) {
   switch (rank) {
     case 1:
-      return <TbAward className="h-5 w-5 text-chart-1" />;
+      return <Award01Icon className="h-5 w-5 text-chart-1" />;
     case 2:
-      return <TbAward className="h-5 w-5 text-chart-2" />;
+      return <Award01Icon className="h-5 w-5 text-chart-2" />;
     case 3:
-      return <TbAward className="h-5 w-5 text-chart-3" />;
+      return <Award01Icon className="h-5 w-5 text-chart-3" />;
     default:
       return null;
   }

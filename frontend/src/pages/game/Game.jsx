@@ -19,7 +19,15 @@ import {
   getSubmitKeyOptionById,
   NEXT_WORD_CONDITIONS,
 } from "@/lib/player-preferences";
-import { FiClock, FiArrowLeft, FiZap, FiTrendingUp, FiCheck, FiX, FiSave } from "react-icons/fi";
+import {
+  Clock01Icon,
+  ArrowLeft01Icon,
+  ZapIcon,
+  ChartUpIcon,
+  CheckmarkCircle01Icon,
+  Cancel01Icon,
+  FloppyDiskIcon,
+} from "hugeicons-react";
 import GuestUpgradePrompt from "@/components/auth/GuestUpgradePrompt";
 import { userKeys } from "@/lib/query-keys";
 import { openWebSocket } from "@/lib/websocket";
@@ -789,7 +797,7 @@ function GameHeader({ modeSeconds, gameState, timeLeft }) {
 
       {gameState === "playing" && (
         <div className="flex items-center gap-2 rounded-full bg-primary/10 px-4 py-2 font-mono text-lg font-bold tabular-nums text-primary">
-          <FiClock className="h-4 w-4" />
+          <Clock01Icon className="h-4 w-4" />
           {formatTime(timeLeft)}
         </div>
       )}
@@ -813,7 +821,7 @@ function GameErrorState({ connectionError, onBack }) {
               animate={{ scale: 1, opacity: 1 }}
               className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-destructive/20"
             >
-              <FiZap className="h-8 w-8 text-destructive" />
+              <ZapIcon className="h-8 w-8 text-destructive" />
             </m.div>
             <CardTitle className="font-sans text-destructive">
               {connectionError?.title || "Connection Lost"}
@@ -824,7 +832,7 @@ function GameErrorState({ connectionError, onBack }) {
               {connectionError?.message || "Could not connect to the game server."}
             </p>
             <Button onClick={onBack} className="w-full gap-2">
-              <FiArrowLeft className="h-4 w-4" />
+              <ArrowLeft01Icon className="h-4 w-4" />
               Back to Dashboard
             </Button>
           </CardContent>
@@ -850,7 +858,7 @@ function GameWaitingState({ queueRating, onCancel }) {
             transition={{ type: "spring", stiffness: 200 }}
             className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/20"
           >
-            <FiZap className="h-8 w-8 text-primary" />
+            <ZapIcon className="h-8 w-8 text-primary" />
           </m.div>
           <CardTitle className="font-sans">Finding Opponent</CardTitle>
         </CardHeader>
@@ -861,7 +869,7 @@ function GameWaitingState({ queueRating, onCancel }) {
               Searching for players...
             </p>
             <div className="flex items-center justify-center gap-2">
-              <FiTrendingUp className="h-4 w-4 text-muted-foreground" />
+              <ChartUpIcon className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm text-muted-foreground">
                 Your Rating:{" "}
                 <span className={`font-semibold ${getRatingColor(queueRating)}`}>
@@ -875,7 +883,7 @@ function GameWaitingState({ queueRating, onCancel }) {
             onClick={onCancel}
             className="w-full gap-2"
           >
-            <FiArrowLeft className="h-4 w-4" />
+            <ArrowLeft01Icon className="h-4 w-4" />
             Cancel
           </Button>
         </CardContent>
@@ -1161,7 +1169,7 @@ function GameResultsState({
           {/* Rating Update */}
           {userStats && (
             <div className="flex items-center justify-center gap-2 rounded-md bg-muted/50 p-3">
-              <FiTrendingUp className="h-4 w-4 text-muted-foreground" />
+              <ChartUpIcon className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm text-muted-foreground">
                 New Rating:{" "}
                 <span
@@ -1174,7 +1182,7 @@ function GameResultsState({
           )}
 
           <Button onClick={onBack} className="w-full gap-2">
-            <FiArrowLeft className="h-4 w-4" />
+            <ArrowLeft01Icon className="h-4 w-4" />
             Back to Dashboard
           </Button>
           {currentUser?.isAnonymous ? (
@@ -1183,7 +1191,7 @@ function GameResultsState({
               onClick={() => setShowGuestUpgrade(true)}
               className="w-full gap-2"
             >
-              <FiSave className="h-4 w-4" />
+              <FloppyDiskIcon className="h-4 w-4" />
               Save progress
             </Button>
           ) : null}
@@ -1222,11 +1230,11 @@ function RematchRequestToast({ incomingRematch, onRespond }) {
           </p>
           <div className="grid grid-cols-2 gap-2">
             <Button onClick={() => onRespond("accept")} size="sm" className="gap-1.5">
-              <FiCheck className="h-3.5 w-3.5" />
+              <CheckmarkCircle01Icon className="h-3.5 w-3.5" />
               Accept
             </Button>
             <Button onClick={() => onRespond("reject")} size="sm" variant="outline" className="gap-1.5">
-              <FiX className="h-3.5 w-3.5" />
+              <Cancel01Icon className="h-3.5 w-3.5" />
               Decline
             </Button>
           </div>

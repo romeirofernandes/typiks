@@ -19,7 +19,20 @@ import {
   getSubmitKeyOptionById,
   NEXT_WORD_CONDITIONS,
 } from "@/lib/player-preferences";
-import { FiCopy, FiCheck, FiUsers, FiClock, FiHash, FiLogOut, FiPlay, FiSettings, FiPlus, FiTrash2, FiSend, FiLink } from "react-icons/fi";
+import {
+  Copy01Icon,
+  CheckmarkCircle01Icon,
+  UserMultiple02Icon,
+  Clock01Icon,
+  HashtagIcon,
+  Logout01Icon,
+  PlayIcon,
+  Settings01Icon,
+  PlusSignIcon,
+  Delete02Icon,
+  MailSend01Icon,
+  Link01Icon,
+} from "hugeicons-react";
 import { apiFetch } from "@/lib/api-client";
 import { getRoomLink } from "@/lib/links";
 import { meKeys } from "@/lib/query-keys";
@@ -1255,7 +1268,7 @@ function CreateRoomForm({
           <div className="grid gap-4 sm:grid-cols-3">
             <label className="space-y-2.5">
               <span className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
-                <FiUsers className="h-3.5 w-3.5" /> Max Players
+                <UserMultiple02Icon className="h-3.5 w-3.5" /> Max Players
               </span>
               <Input
                 type="number"
@@ -1269,7 +1282,7 @@ function CreateRoomForm({
 
             <label className="space-y-2.5">
               <span className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
-                <FiClock className="h-3.5 w-3.5" /> Round Time (s)
+                <Clock01Icon className="h-3.5 w-3.5" /> Round Time (s)
               </span>
               <Input
                 type="number"
@@ -1283,7 +1296,7 @@ function CreateRoomForm({
 
             <label className="space-y-2.5">
               <span className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
-                <FiHash className="h-3.5 w-3.5" /> Word Count
+                <HashtagIcon className="h-3.5 w-3.5" /> Word Count
               </span>
               <Input
                 type="number"
@@ -1411,14 +1424,14 @@ function RoomEntryScreen({
       {/* Mode Selection Cards */}
       <div className="grid gap-4 md:grid-cols-2">
         <ModeSelectCard
-          icon={<FiSettings className={`h-4 w-4 ${entryMode === "create" ? "text-primary-foreground" : ""}`} />}
+          icon={<Settings01Icon className={`h-4 w-4 ${entryMode === "create" ? "text-primary-foreground" : ""}`} />}
           label="Create"
           title="Create a New Room"
           selected={entryMode === "create"}
           onSelect={() => setEntryMode("create")}
         />
         <ModeSelectCard
-          icon={<FiUsers className={`h-4 w-4 ${entryMode === "join" ? "text-primary-foreground" : ""}`} />}
+          icon={<UserMultiple02Icon className={`h-4 w-4 ${entryMode === "join" ? "text-primary-foreground" : ""}`} />}
           label="Join"
           title="Join with Code"
           selected={entryMode === "join"}
@@ -1491,7 +1504,7 @@ function RoomCodeCard({
                           animate={{ scale: 1, opacity: 1 }}
                           exit={{ scale: 0.95, opacity: 0 }}
                         >
-                          <FiCheck className="h-4 w-4 text-foreground" />
+                          <CheckmarkCircle01Icon className="h-4 w-4 text-foreground" />
                         </m.div>
                       ) : (
                         <m.div
@@ -1500,7 +1513,7 @@ function RoomCodeCard({
                           animate={{ scale: 1, opacity: 1 }}
                           exit={{ scale: 0.95, opacity: 0 }}
                         >
-                          <FiCopy className="h-4 w-4" />
+                          <Copy01Icon className="h-4 w-4" />
                         </m.div>
                       )}
                     </AnimatePresence>
@@ -1531,9 +1544,9 @@ function RoomCodeCard({
                 disabled={linkCopied}
               >
                 {linkCopied ? (
-                  <FiCheck className="h-4 w-4" />
+                  <CheckmarkCircle01Icon className="h-4 w-4" />
                 ) : (
-                  <FiLink className="h-4 w-4" />
+                  <Link01Icon className="h-4 w-4" />
                 )}
                 {linkCopied ? "Link copied!" : "Copy invite link"}
               </Button>
@@ -1544,12 +1557,12 @@ function RoomCodeCard({
                 disabled={!canStartGame}
                 className="gap-2"
               >
-                <FiPlay className="h-4 w-4" />
+                <PlayIcon className="h-4 w-4" />
                 Start Game
               </Button>
             )}
             <Button variant="outline" onClick={leaveRoom} className="gap-2">
-              <FiLogOut className="h-4 w-4" />
+              <Logout01Icon className="h-4 w-4" />
               Leave
             </Button>
           </div>
@@ -1569,7 +1582,7 @@ function InviteFriendsCard({
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 font-sans text-base">
-          <FiSend className="h-4 w-4" />
+          <MailSend01Icon className="h-4 w-4" />
           Invite Friends
         </CardTitle>
       </CardHeader>
@@ -1622,7 +1635,7 @@ function FfaMembersCard({ roomState, me, gameMode, myTeamId, sendSocketMessage }
       <CardHeader className="pb-4">
         <CardTitle className="flex items-center justify-between font-sans text-lg">
           <span className="flex items-center gap-2">
-            <FiUsers className="h-4 w-4" />
+            <UserMultiple02Icon className="h-4 w-4" />
             Players
           </span>
           <span className="font-mono text-sm text-muted-foreground">
@@ -1675,7 +1688,7 @@ function FfaMembersCard({ roomState, me, gameMode, myTeamId, sendSocketMessage }
                   className="h-8 gap-2 px-3"
                   size="sm"
                 >
-                  {me?.ready ? <FiCheck className="h-4 w-4" /> : null}
+                  {me?.ready ? <CheckmarkCircle01Icon className="h-4 w-4" /> : null}
                   {me?.ready ? "Ready" : gameMode === "coop" && !myTeamId ? "Join Team First" : "Set Ready"}
                 </Button>
               )}
@@ -1707,7 +1720,7 @@ function CoopTeamsCard({
       <CardHeader className="pb-4">
         <CardTitle className="flex items-center justify-between font-sans text-lg">
           <span className="flex items-center gap-2">
-            <FiUsers className="h-4 w-4" />
+            <UserMultiple02Icon className="h-4 w-4" />
             Teams
           </span>
           <span className="font-mono text-sm text-muted-foreground">
@@ -1726,7 +1739,7 @@ function CoopTeamsCard({
               onClick={() => sendSocketMessage({ type: "ROOM_ADD_TEAM" })}
               disabled={coopTeams.length >= (roomState?.members?.length || 0)}
             >
-              <FiPlus className="h-4 w-4" />
+              <PlusSignIcon className="h-4 w-4" />
               Add Team
             </Button>
           </div>
@@ -1787,7 +1800,7 @@ function CoopTeamsCard({
                     disabled={players.length > 0}
                     onClick={() => sendSocketMessage({ type: "ROOM_REMOVE_TEAM", teamId: team.id })}
                   >
-                    <FiTrash2 className="h-4 w-4" />
+                    <Delete02Icon className="h-4 w-4" />
                     Remove Team
                   </Button>
                 ) : null}
@@ -1849,7 +1862,7 @@ function RoomSettingsCard({
     <Card>
       <CardHeader className="pb-4">
         <CardTitle className="flex items-center gap-2 font-sans text-lg">
-          <FiSettings className="h-4 w-4" />
+          <Settings01Icon className="h-4 w-4" />
           Room Settings
           {isLeader && <span className="font-mono text-xs text-primary">(Leader)</span>}
         </CardTitle>
@@ -2030,7 +2043,7 @@ function RoomPlayingScreen({
           <div className="flex items-center justify-between">
             <CardTitle className="font-sans">In Match</CardTitle>
             <div className="flex items-center gap-2 rounded-full bg-primary/10 px-4 py-2 font-mono text-lg font-bold tabular-nums text-primary">
-              <FiClock className="h-4 w-4" />
+              <Clock01Icon className="h-4 w-4" />
               {timeLeft}s
             </div>
           </div>

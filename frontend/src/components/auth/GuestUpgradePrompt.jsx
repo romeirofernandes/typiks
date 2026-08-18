@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
-import { FiSave } from "react-icons/fi";
+import { FloppyDiskIcon } from "hugeicons-react";
 import { useProvisionUser } from "@/lib/users-api";
 import {
   AlertDialog,
@@ -118,7 +118,7 @@ export default function GuestUpgradePrompt({ open, onOpenChange }) {
               </div>
               {error ? <p className="text-xs text-destructive">{error}</p> : null}
               <Button type="submit" className="w-full gap-1.5" disabled={loading}>
-                {loading ? <Spinner className="size-4" /> : <FiSave className="h-4 w-4" />}
+                {loading ? <Spinner className="size-4" /> : <FloppyDiskIcon className="h-4 w-4" />}
                 {loading ? "Saving..." : "Save my progress"}
               </Button>
             </form>
