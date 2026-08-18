@@ -4,22 +4,81 @@ import { openWebSocket } from "@/lib/websocket";
 const PRESENCE_PING_INTERVAL_MS = 15000;
 const PRESENCE_RECONNECT_MS = 2000;
 
+// Module-level presence store and subscription registry. No window events —
+// consumers register callbacks directly and read state on demand, so the
+// presence fan-out is testable without a DOM bridge and cannot leak across
+// module instances.
+const presenceSubscribers = new Set();
+const presenceOnline = new Map();
+const updateListeners = new Set();
+const snapshotListeners = new Set();
+let pushPresenceSubscription = null;
+
 /**
- * Owns the single presence WebSocket for the app: AUTH handshake, PING keepalive,
- * visibility pokes, subscriber tracking, auto-reconnect, and fan-out of
- * PRESENCE_UPDATE / PRESENCE_SNAPSHOT / NOTIFICATION_POKE messages to the rest
- * of the app via window CustomEvents.
+ * Request presence updates for a set of user ids. The ids are merged into a
+ * module-level registry and pushed to the shared presence socket (owned by
+ * usePresenceSocket) on the next open. Safe to call from anywhere; no-op
+ * without ids or before the socket exists (subscriptions are re-pushed on
+ * connect).
+ */
+export function subscribeToPresence(userIds) {
+  const ids = Array.isArray(userIds) ? userIds.filter(Boolean) : [];
+  if (ids.length === 0) return;
+
+  let changed = false;
+  for (const id of ids) {
+    if (typeof id !== "string" || !id) continue;
+    if (presenceSubscribers.has(id)) continue;
+    presenceSubscribers.add(id);
+    changed = true;
+  }
+
+  if (changed) {
+    pushPresenceSubscription?.();
+  }
+}
+
+/**
+ * Subscribe to per-user presence transitions. The listener is called with
+ * `(userId, online)` whenever the server reports a change. Returns an
+ * unsubscribe function.
+ */
+export function subscribeToPresenceUpdates(listener) {
+  updateListeners.add(listener);
+  return () => updateListeners.delete(listener);
+}
+
+/**
+ * Subscribe to full presence snapshots (called with the online map the server
+ * sends on (re)connect). Returns an unsubscribe function.
+ */
+export function subscribeToPresenceSnapshots(listener) {
+  snapshotListeners.add(listener);
+  return () => snapshotListeners.delete(listener);
+}
+
+/**
+ * Current known online state, as a Map of userId -> boolean. Sync read for
+ * applying presence to freshly loaded lists.
+ */
+export function getPresenceOnline() {
+  return new Map(presenceOnline);
+}
+
+/**
+ * Owns the single presence WebSocket for the app: AUTH handshake, PING
+ * keepalive, visibility pokes, subscriber tracking, auto-reconnect, and
+ * fan-out of PRESENCE_UPDATE / PRESENCE_SNAPSHOT messages to the module's
+ * subscribers. `onNotificationPoke` fires when the server pushes a realtime
+ * notification (e.g. a new friend request or room invite).
  *
- * Subscribers publish intent with `subscribeToPresence(userIds)` (see
- * @/lib/websocket). Consumers listen for `typiks:presence-update` and
- * `typiks:presence-snapshot`. `onNotificationPoke` fires when the server pushes
- * a realtime notification (e.g. a new friend request or room invite).
+ * Consume via `subscribeToPresence(userIds)` and
+ * `subscribeToPresenceUpdates` / `subscribeToPresenceSnapshots`.
  */
 export function usePresenceSocket({ currentUser, onNotificationPoke }) {
   const presenceSocketRef = useRef(null);
   const presencePingTimerRef = useRef(null);
   const presenceReconnectTimerRef = useRef(null);
-  const presenceSubscribersRef = useRef(new Set());
   const onNotificationPokeRef = useRef(onNotificationPoke);
   onNotificationPokeRef.current = onNotificationPoke;
 
@@ -54,44 +113,26 @@ export function usePresenceSocket({ currentUser, onNotificationPoke }) {
 
     const broadcastPresenceUpdate = (userId, online) => {
       if (!userId) return;
-      window.dispatchEvent(
-        new CustomEvent("typiks:presence-update", {
-          detail: { userId, online: Boolean(online) },
-        })
-      );
+      presenceOnline.set(userId, Boolean(online));
+      updateListeners.forEach((listener) => listener(userId, Boolean(online)));
     };
 
     const broadcastPresenceSnapshot = (onlineMap) => {
       if (!onlineMap || typeof onlineMap !== "object") return;
-      window.dispatchEvent(
-        new CustomEvent("typiks:presence-snapshot", {
-          detail: { onlineMap },
-        })
-      );
+      for (const [userId, online] of Object.entries(onlineMap)) {
+        if (userId) presenceOnline.set(userId, Boolean(online));
+      }
+      snapshotListeners.forEach((listener) => listener(onlineMap));
     };
 
-    const pushPresenceSubscription = () => {
+    const pushSubscriptions = () => {
       sendPresenceMessage({
         type: "SUBSCRIBE",
-        userIds: Array.from(presenceSubscribersRef.current),
+        userIds: Array.from(presenceSubscribers),
       });
     };
 
-    const handlePresenceSubscribeEvent = (event) => {
-      const ids = Array.isArray(event?.detail?.userIds) ? event.detail.userIds : [];
-      let changed = false;
-
-      for (const id of ids) {
-        if (typeof id !== "string" || !id) continue;
-        if (presenceSubscribersRef.current.has(id)) continue;
-        presenceSubscribersRef.current.add(id);
-        changed = true;
-      }
-
-      if (changed) {
-        pushPresenceSubscription();
-      }
-    };
+    pushPresenceSubscription = pushSubscriptions;
 
     const connectPresenceSocket = async () => {
       try {
@@ -108,7 +149,7 @@ export function usePresenceSocket({ currentUser, onNotificationPoke }) {
             idToken,
             visible: document.visibilityState === "visible",
           });
-          pushPresenceSubscription();
+          pushSubscriptions();
 
           clearPresenceTimers();
           presencePingTimerRef.current = window.setInterval(() => {
@@ -174,13 +215,11 @@ export function usePresenceSocket({ currentUser, onNotificationPoke }) {
 
     void connectPresenceSocket();
     document.addEventListener("visibilitychange", handleVisibility);
-    window.addEventListener("typiks:presence-subscribe", handlePresenceSubscribeEvent);
     onNotificationPokeRef.current?.();
 
     return () => {
       isMounted = false;
       document.removeEventListener("visibilitychange", handleVisibility);
-      window.removeEventListener("typiks:presence-subscribe", handlePresenceSubscribeEvent);
       clearPresenceTimers();
       if (presenceSocketRef.current) {
         try {
@@ -190,6 +229,7 @@ export function usePresenceSocket({ currentUser, onNotificationPoke }) {
         }
         presenceSocketRef.current = null;
       }
+      pushPresenceSubscription = null;
     };
   }, [currentUser]);
 }

@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/api-client";
-import { subscribeToPresence } from "@/lib/websocket";
+import {
+  getPresenceOnline,
+  subscribeToPresence,
+  subscribeToPresenceSnapshots,
+  subscribeToPresenceUpdates,
+} from "@/hooks/usePresenceSocket";
 import { meKeys, userKeys } from "@/lib/query-keys";
 
 const ACTION_DEBOUNCE_MS = 300;
@@ -12,7 +17,6 @@ export function useFriends(currentUser, { onAcceptInvite } = {}) {
   const [username, setUsername] = useState("");
   const [feedback, setFeedback] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const presenceRef = useRef({ online: new Map() });
   const sendRequestDebounceRef = useRef(null);
   const searchInputRef = useRef(null);
 
@@ -135,40 +139,33 @@ export function useFriends(currentUser, { onAcceptInvite } = {}) {
       subscribeToPresence(knownIds);
     }
 
-    const onlineMap = presenceRef.current.online;
+    const onlineMap = getPresenceOnline();
     friends.forEach((friend) => {
-      if (friend.id in onlineMap) applyPresence(friend.id, onlineMap.get(friend.id));
+      if (onlineMap.has(friend.id)) applyPresence(friend.id, onlineMap.get(friend.id));
     });
   }, [currentUser, friends, incomingRequests, outgoingRequests, roomInvites, applyPresence]);
 
   useEffect(() => {
     if (!currentUser) return;
 
-    const onlineMap = presenceRef.current.online;
-
-    const handlePresenceUpdate = (event) => {
-      const userId = event?.detail?.userId;
-      const online = Boolean(event?.detail?.online);
+    const handlePresenceUpdate = (userId, online) => {
       if (!userId) return;
-      onlineMap.set(userId, online);
       applyPresence(userId, online);
     };
 
-    const handlePresenceSnapshot = (event) => {
-      const snapshot = event?.detail?.onlineMap;
-      if (!snapshot || typeof snapshot !== "object") return;
-      for (const [userId, online] of Object.entries(snapshot)) {
-        onlineMap.set(userId, Boolean(online));
+    const handlePresenceSnapshot = (onlineMap) => {
+      if (!onlineMap || typeof onlineMap !== "object") return;
+      for (const [userId, online] of Object.entries(onlineMap)) {
         applyPresence(userId, Boolean(online));
       }
     };
 
-    window.addEventListener("typiks:presence-update", handlePresenceUpdate);
-    window.addEventListener("typiks:presence-snapshot", handlePresenceSnapshot);
+    const unsubscribeUpdate = subscribeToPresenceUpdates(handlePresenceUpdate);
+    const unsubscribeSnapshot = subscribeToPresenceSnapshots(handlePresenceSnapshot);
 
     return () => {
-      window.removeEventListener("typiks:presence-update", handlePresenceUpdate);
-      window.removeEventListener("typiks:presence-snapshot", handlePresenceSnapshot);
+      unsubscribeUpdate();
+      unsubscribeSnapshot();
     };
   }, [currentUser, applyPresence]);
 

@@ -17,8 +17,9 @@ import m0006 from '../migrations/0006_presence_and_room_invites.sql?raw';
 import m0007 from '../migrations/0007_user_avatar_id.sql?raw';
 import m0008 from '../migrations/0008_match_persistence.sql?raw';
 import m0009 from '../migrations/0009_drop_avatar_id.sql?raw';
+import m0010 from '../migrations/0010_foreign_keys.sql?raw';
 
-const MIGRATIONS = [m0000, m0001, m0002, m0003, m0004, m0005, m0006, m0007, m0008, m0009];
+const MIGRATIONS = [m0000, m0001, m0002, m0003, m0004, m0005, m0006, m0007, m0008, m0009, m0010];
 
 // The test pool runs a local (non-remote) D1; apply the schema exactly once.
 // exec() in the pool rejects multi-line statements, so each statement is
@@ -386,6 +387,48 @@ describe('match persistence seams (real D1)', () => {
 
 			await assertRankedCacheIsHighestModeRating('mia');
 			await assertRankedCacheIsHighestModeRating('noah');
+		});
+	});
+
+	describe('foreign keys (migration 0010)', () => {
+		async function foreignKeysFor(table) {
+			const { results } = await env.DB.prepare(
+				`select "table", "from", "to" from pragma_foreign_key_list('${table}')`
+			).all();
+			return results.map((row) => ({ from: row.from, to: row.to, table: row.table }));
+		}
+
+		it('declares the normalized-model foreign keys', async () => {
+			const pk = await foreignKeysFor('match_participants');
+			expect(pk).toContainEqual({ from: 'match_id', to: 'id', table: 'matches' });
+			expect(pk).toContainEqual({ from: 'user_id', to: 'id', table: 'users' });
+			expect(pk).toContainEqual({ from: 'opponent_id', to: 'id', table: 'users' });
+
+			const us = await foreignKeysFor('user_settings');
+			expect(us).toContainEqual({ from: 'user_id', to: 'id', table: 'users' });
+
+			const rm = await foreignKeysFor('rooms');
+			expect(rm).toContainEqual({ from: 'owner_id', to: 'id', table: 'users' });
+
+			const members = await foreignKeysFor('room_members');
+			expect(members).toContainEqual({ from: 'room_code', to: 'room_code', table: 'rooms' });
+			expect(members).toContainEqual({ from: 'user_id', to: 'id', table: 'users' });
+		});
+
+		it('enforces the match_participants -> matches foreign key', async () => {
+			await seedUser('carol');
+
+			await expect(
+				db.insert(matchParticipants).values({
+					matchId: 'no-such-match',
+					userId: 'carol',
+					score: 0,
+					opponentScore: 0,
+					progress: 0,
+					correctChars: 0,
+					createdAt: new Date(),
+				})
+			).rejects.toThrow(/insert into "match_participants"/i);
 		});
 	});
 });

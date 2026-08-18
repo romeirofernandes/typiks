@@ -1131,10 +1131,10 @@ function GameResultsState({
             <div className={`rounded-md p-4 text-center ${
               gameResults.player1.won ? "bg-primary/10" : "bg-muted/50"
             }`}>
-              <p className="inline-flex items-center gap-2 font-semibold">
-                <UserAvatar username={gameResults.player1.username} size="sm" />
-                <span>{gameResults.player1.username}</span>
-              </p>
+              <div className="flex flex-col items-center gap-2">
+                <UserAvatar username={gameResults.player1.username} size="md" plain />
+                <span className="font-semibold">{gameResults.player1.username}</span>
+              </div>
               <p className="font-sans text-3xl font-bold">
                 {gameResults.player1.score}
               </p>
@@ -1145,10 +1145,10 @@ function GameResultsState({
             <div className={`rounded-md p-4 text-center ${
               gameResults.player2.won ? "bg-primary/10" : "bg-muted/50"
             }`}>
-              <p className="inline-flex items-center gap-2 font-semibold">
-                <UserAvatar username={gameResults.player2.username} size="sm" />
-                <span>{gameResults.player2.username}</span>
-              </p>
+              <div className="flex flex-col items-center gap-2">
+                <UserAvatar username={gameResults.player2.username} size="md" plain />
+                <span className="font-semibold">{gameResults.player2.username}</span>
+              </div>
               <p className="font-sans text-3xl font-bold">
                 {gameResults.player2.score}
               </p>
@@ -1297,7 +1297,11 @@ const Game = () => {
         )}
 
         {gameState === "countdown" && (
-          <GameCountdownState userStats={userStats} opponent={opponent} countdown={countdown} />
+          <GameCountdownState
+            userStats={userStats}
+            opponent={opponent}
+            countdown={countdown}
+          />
         )}
 
         {gameState === "playing" && (

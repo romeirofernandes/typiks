@@ -20,6 +20,7 @@ const FreePlay = lazy(() => import("./pages/game/FreePlay"));
 const Friends = lazy(() => import("./pages/social/Friends"));
 const CreateRoom = lazy(() => import("./pages/game/CreateRoom"));
 const TheGlobe = lazy(() => import("./pages/social/TheGlobe"));
+const JoinLink = lazy(() => import("./pages/JoinLink"));
 
 export default function App() {
   return (
@@ -34,6 +35,7 @@ export default function App() {
         >
           <Routes>
             <Route path="/" element={<NewLanding />} />
+            <Route path="/join/:code" element={<JoinLink />} />
             <Route path="/signup" element={<SignUp />} />
             <Route path="/signin" element={<SignIn />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />

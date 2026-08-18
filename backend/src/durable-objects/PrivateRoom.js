@@ -1551,10 +1551,37 @@ export class PrivateRoom extends WSCoordinator {
 		);
 	}
 
+	async roomStatus(request) {
+		await this.hydrate();
+
+		const exists = Boolean(this.ownerId);
+		const maxPlayers = this.settings?.maxPlayers ?? DEFAULT_ROOM_SETTINGS.maxPlayers;
+
+		return new Response(
+			JSON.stringify({
+				code: this.roomCode,
+				exists,
+				live: exists && this.members.size > 0,
+				full: exists && this.members.size >= maxPlayers,
+				inProgress: exists && this.gameState !== 'lobby',
+				memberCount: this.members.size,
+				maxPlayers,
+			}),
+			{
+				status: 200,
+				headers: { 'Content-Type': 'application/json' },
+			}
+		);
+	}
+
 	async fetch(request) {
 		const url = new URL(request.url);
 		if (request.method === 'POST' && url.pathname.endsWith('/configure')) {
 			return this.configureRoom(request);
+		}
+
+		if (request.method === 'GET' && url.pathname.endsWith('/status')) {
+			return this.roomStatus(request);
 		}
 
 		const upgradeHeader = request.headers.get('upgrade');

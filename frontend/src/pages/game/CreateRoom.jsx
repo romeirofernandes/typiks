@@ -19,10 +19,16 @@ import {
   getSubmitKeyOptionById,
   NEXT_WORD_CONDITIONS,
 } from "@/lib/player-preferences";
-import { FiCopy, FiCheck, FiUsers, FiClock, FiHash, FiLogOut, FiPlay, FiSettings, FiPlus, FiTrash2, FiSend } from "react-icons/fi";
+import { FiCopy, FiCheck, FiUsers, FiClock, FiHash, FiLogOut, FiPlay, FiSettings, FiPlus, FiTrash2, FiSend, FiLink } from "react-icons/fi";
 import { apiFetch } from "@/lib/api-client";
+import { getRoomLink } from "@/lib/links";
 import { meKeys } from "@/lib/query-keys";
-import { openWebSocket, subscribeToPresence } from "@/lib/websocket";
+import { openWebSocket } from "@/lib/websocket";
+import {
+  subscribeToPresence,
+  subscribeToPresenceSnapshots,
+  subscribeToPresenceUpdates,
+} from "@/hooks/usePresenceSocket";
 import { WordDisplay } from "@/components/game/WordDisplay";
 
 function sanitizeRoomCode(rawCode) {
@@ -97,6 +103,7 @@ function useRoomSession() {
   const [teamTypingInput, setTeamTypingInput] = useState("");
   const [gameResult, setGameResult] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
   const [invitingFriendIds, setInvitingFriendIds] = useState([]);
   const [pendingInviteFriendIds, setPendingInviteFriendIds] = useState([]);
   const [teamNameDrafts, setTeamNameDrafts] = useState({});
@@ -182,6 +189,7 @@ function useRoomSession() {
   }, []);
 
   useEffect(() => {
+    isMountedRef.current = true;
     const typingSync = typingSyncRef.current;
     return () => {
       isMountedRef.current = false;
@@ -490,6 +498,18 @@ function useRoomSession() {
       setTimeout(() => setCopied(false), 2000);
     } catch {
       toast.error("Could not copy room code automatically.");
+    }
+  };
+
+  const copyRoomLink = async () => {
+    if (!roomCode || linkCopied) return;
+
+    try {
+      await navigator.clipboard.writeText(getRoomLink(roomCode));
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    } catch {
+      toast.error("Could not copy invite link automatically.");
     }
   };
 
@@ -952,9 +972,7 @@ function useRoomSession() {
       subscribeToPresence(userIds);
     }
 
-    const handlePresenceUpdate = (event) => {
-      const userId = event?.detail?.userId;
-      const online = Boolean(event?.detail?.online);
+    const handlePresenceUpdate = (userId, online) => {
       if (!userId) return;
 
       queryClient.setQueryData(meKeys.friends(), (old = []) =>
@@ -962,8 +980,7 @@ function useRoomSession() {
       );
     };
 
-    const handlePresenceSnapshot = (event) => {
-      const onlineMap = event?.detail?.onlineMap;
+    const handlePresenceSnapshot = (onlineMap) => {
       if (!onlineMap || typeof onlineMap !== "object") return;
 
       queryClient.setQueryData(meKeys.friends(), (old = []) =>
@@ -975,12 +992,12 @@ function useRoomSession() {
       );
     };
 
-    window.addEventListener("typiks:presence-update", handlePresenceUpdate);
-    window.addEventListener("typiks:presence-snapshot", handlePresenceSnapshot);
+    const unsubscribeUpdate = subscribeToPresenceUpdates(handlePresenceUpdate);
+    const unsubscribeSnapshot = subscribeToPresenceSnapshots(handlePresenceSnapshot);
 
     return () => {
-      window.removeEventListener("typiks:presence-update", handlePresenceUpdate);
-      window.removeEventListener("typiks:presence-snapshot", handlePresenceSnapshot);
+      unsubscribeUpdate();
+      unsubscribeSnapshot();
     };
   }, [friendsForInvite, isInRoom, isLobbyState, queryClient]);
 
@@ -1119,6 +1136,8 @@ function useRoomSession() {
     sendSocketMessage,
     leaveRoom,
     copyRoomCode,
+    copyRoomLink,
+    linkCopied,
     assignMeToTeam,
     updateTeamName,
     commitTeamName,
@@ -1436,11 +1455,10 @@ function RoomCodeCard({
   isLobbyState,
   copied,
   copyRoomCode,
+  linkCopied,
+  copyRoomLink,
   isLeader,
-  me,
   sendSocketMessage,
-  gameMode,
-  myTeamId,
   canStartGame,
   leaveRoom,
 }) {
@@ -1505,20 +1523,21 @@ function RoomCodeCard({
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            {!isLeader && isLobbyState ? (
-              <div className="inline-flex items-center rounded-md border border-border/60 bg-background/60 p-1">
-                <Button
-                  variant={me?.ready ? "default" : "ghost"}
-                  onClick={() => sendSocketMessage({ type: "ROOM_SET_READY", ready: !me?.ready })}
-                  disabled={gameMode === "coop" && !myTeamId}
-                  className="h-8 gap-2 px-3"
-                  size="sm"
-                >
-                  {me?.ready ? <FiCheck className="h-4 w-4" /> : null}
-                  {me?.ready ? "Ready" : gameMode === "coop" && !myTeamId ? "Join Team First" : "Set Ready"}
-                </Button>
-              </div>
-            ) : null}
+            {isLobbyState && (
+              <Button
+                variant="secondary"
+                onClick={copyRoomLink}
+                className="gap-2"
+                disabled={linkCopied}
+              >
+                {linkCopied ? (
+                  <FiCheck className="h-4 w-4" />
+                ) : (
+                  <FiLink className="h-4 w-4" />
+                )}
+                {linkCopied ? "Link copied!" : "Copy invite link"}
+              </Button>
+            )}
             {isLeader && isLobbyState && (
               <Button
                 onClick={() => sendSocketMessage({ type: "ROOM_START_GAME" })}
@@ -1597,7 +1616,7 @@ function InviteFriendsCard({
   );
 }
 
-function FfaMembersCard({ roomState }) {
+function FfaMembersCard({ roomState, me, gameMode, myTeamId, sendSocketMessage }) {
   return (
     <Card>
       <CardHeader className="pb-4">
@@ -1638,15 +1657,29 @@ function FfaMembersCard({ roomState }) {
                 </p>
               </div>
             </div>
-            <span
-              className={`rounded-full px-3 py-1 font-mono text-xs ${
-                member.ready || member.isLeader
-                  ? "bg-primary/20 text-primary"
-                  : "bg-muted text-muted-foreground"
-              }`}
-            >
-              {member.isLeader ? "Ready" : member.ready ? "Ready" : "Waiting"}
-            </span>
+            <div className="flex items-center gap-2">
+              <span
+                className={`rounded-full px-3 py-1 font-mono text-xs ${
+                  member.ready || member.isLeader
+                    ? "bg-primary/20 text-primary"
+                    : "bg-muted text-muted-foreground"
+                }`}
+              >
+                {member.isLeader ? "Ready" : member.ready ? "Ready" : "Waiting"}
+              </span>
+              {me?.id === member.id && !member.isLeader && (
+                <Button
+                  variant={me?.ready ? "default" : "ghost"}
+                  onClick={() => sendSocketMessage({ type: "ROOM_SET_READY", ready: !me?.ready })}
+                  disabled={gameMode === "coop" && !myTeamId}
+                  className="h-8 gap-2 px-3"
+                  size="sm"
+                >
+                  {me?.ready ? <FiCheck className="h-4 w-4" /> : null}
+                  {me?.ready ? "Ready" : gameMode === "coop" && !myTeamId ? "Join Team First" : "Set Ready"}
+                </Button>
+              )}
+            </div>
           </m.div>
         ))}
       </CardContent>
@@ -2305,6 +2338,8 @@ export default function CreateRoom() {
     sendSocketMessage,
     leaveRoom,
     copyRoomCode,
+    copyRoomLink,
+    linkCopied,
     assignMeToTeam,
     updateTeamName,
     commitTeamName,
@@ -2409,11 +2444,10 @@ export default function CreateRoom() {
             isLobbyState={isLobbyState}
             copied={copied}
             copyRoomCode={copyRoomCode}
+            linkCopied={linkCopied}
+            copyRoomLink={copyRoomLink}
             isLeader={isLeader}
-            me={me}
             sendSocketMessage={sendSocketMessage}
-            gameMode={settingsForm.gameMode}
-            myTeamId={myTeamId}
             canStartGame={canStartGame}
             leaveRoom={leaveRoom}
           />
@@ -2430,7 +2464,13 @@ export default function CreateRoom() {
           {isLobbyState && (
             <div className="grid gap-6 lg:grid-cols-2">
               {settingsForm.gameMode === "ffa" ? (
-                <FfaMembersCard roomState={roomState} />
+                <FfaMembersCard
+                  roomState={roomState}
+                  me={me}
+                  gameMode={settingsForm.gameMode}
+                  myTeamId={myTeamId}
+                  sendSocketMessage={sendSocketMessage}
+                />
               ) : (
                 <CoopTeamsCard
                   roomState={roomState}

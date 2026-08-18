@@ -163,9 +163,9 @@ export const matches = sqliteTable(
 export const matchParticipants = sqliteTable(
     'match_participants',
     {
-        matchId: text('match_id').notNull(),
-        userId: text('user_id').notNull(),
-        opponentId: text('opponent_id'),
+        matchId: text('match_id').notNull().references(() => matches.id, { onDelete: 'cascade' }),
+        userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+        opponentId: text('opponent_id').references(() => users.id, { onDelete: 'set null' }),
         placement: integer('placement').notNull().default(0),
         result: text('result'), // 'win' | 'loss' | 'draw', null for team modes
         score: integer('score').notNull().default(0),
@@ -190,7 +190,7 @@ export const matchParticipants = sqliteTable(
 export const userSettings = sqliteTable(
     'user_settings',
     {
-        userId: text('user_id').primaryKey(),
+        userId: text('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
         regionAnalyticsConsent: integer('region_analytics_consent').notNull().default(0),
         createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
         updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
@@ -201,7 +201,7 @@ export const rooms = sqliteTable(
     'rooms',
     {
         roomCode: text('room_code').primaryKey(),
-        ownerId: text('owner_id').notNull(),
+        ownerId: text('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
         name: text('name').notNull().default(''),
         visibility: text('visibility').notNull().default('private'),
         status: text('status').notNull().default('open'),
@@ -219,8 +219,8 @@ export const rooms = sqliteTable(
 export const roomMembers = sqliteTable(
     'room_members',
     {
-        roomCode: text('room_code').notNull(),
-        userId: text('user_id').notNull(),
+        roomCode: text('room_code').notNull().references(() => rooms.roomCode, { onDelete: 'cascade' }),
+        userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
         role: text('role').notNull().default('member'),
         joinedAt: integer('joined_at', { mode: 'timestamp' }).notNull(),
         leftAt: integer('left_at', { mode: 'timestamp' }),

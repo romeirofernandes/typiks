@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useState } from "react";
 import { signInWithEmailAndPassword, signInWithPopup } from "firebase/auth";
 import { auth, googleProvider } from "@/firebase";
@@ -20,11 +20,16 @@ import { useProvisionUser } from "@/lib/users-api";
 
 export function LoginForm({ className, ...props }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const provisionUser = useProvisionUser();
+
+  // Where to send the user after login. Guest join links pass a `from` so a
+  // sign-in returns them to the room they were invited to.
+  const redirectTo = location.state?.from || "/dashboard";
 
   const handleEmailLogin = async (e) => {
     e.preventDefault();
@@ -32,7 +37,7 @@ export function LoginForm({ className, ...props }) {
 
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      navigate("/dashboard");
+      navigate(redirectTo);
     } catch (error) {
       console.error("Login error:", error);
       alert(error.message);
@@ -55,7 +60,7 @@ export function LoginForm({ className, ...props }) {
         body: { username: displayName },
       });
 
-      navigate("/dashboard");
+      navigate(redirectTo);
     } catch (error) {
       console.error("Google login error:", error);
       alert(error.message);

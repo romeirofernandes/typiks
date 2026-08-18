@@ -39,6 +39,12 @@ function coerceInteger(value, fallback) {
 	return parsed;
 }
 
+function sanitizeRoomCode(rawRoomCode) {
+	if (typeof rawRoomCode !== 'string') return null;
+	const code = rawRoomCode.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+	return code.length === 6 ? code : null;
+}
+
 function normalizeRoomSettings(rawSettings = {}) {
 	const maxPlayers = coerceInteger(rawSettings.maxPlayers, ROOM_LIMITS.maxPlayers);
 	const roundTimeSeconds = coerceInteger(rawSettings.roundTimeSeconds, 60);
@@ -135,6 +141,34 @@ roomsRouter.post('/', requireAuth, async (c) => {
 	} catch (error) {
 		logger.error('Failed to create room', { error: error?.message });
 		return c.json({ error: 'Failed to create room' }, 500);
+	}
+});
+
+// Public: check whether a room is joinable before the visitor signs in. No
+// auth — a link visitor has no token yet. Do NOT attach requireFirebaseAuth.
+roomsRouter.get('/:code/status', async (c) => {
+	try {
+		const code = sanitizeRoomCode(c.req.param('code'));
+		if (!code) {
+			return c.json({ error: 'Invalid room code' }, 400);
+		}
+
+		const roomId = c.env.PRIVATE_ROOM.idFromName(`room-${code}`);
+		const roomStub = c.env.PRIVATE_ROOM.get(roomId);
+
+		const statusRequest = new Request('https://private-room.internal/status', {
+			method: 'GET',
+		});
+		const statusResponse = await roomStub.fetch(statusRequest);
+		const payload = await statusResponse.json().catch(() => null);
+
+		return c.json(
+			payload && typeof payload === 'object' ? payload : { code, exists: false },
+			statusResponse.ok ? 200 : 502
+		);
+	} catch (error) {
+		logger.error('Failed to check room status', { error: error?.message });
+		return c.json({ error: 'Failed to check room status' }, 500);
 	}
 });
 

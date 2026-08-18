@@ -295,6 +295,79 @@ describe('PrivateRoom start guards', () => {
 	});
 });
 
+describe('PrivateRoom roomStatus', () => {
+	it('reports an unconfigured room as non-existent', async () => {
+		const room = createRoom();
+		const response = await room.roomStatus(new Request('https://private-room.internal/status'));
+		const payload = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(payload).toMatchObject({
+			exists: false,
+			live: false,
+			full: false,
+			inProgress: false,
+			memberCount: 0,
+			maxPlayers: 8,
+		});
+	});
+
+	it('reports a live lobby room as joinable', async () => {
+		const room = createRoom();
+		room.roomCode = 'ABCDEF';
+		room.ownerId = 'leader';
+		addMember(room, 'leader');
+		addMember(room, 'p2');
+
+		const response = await room.roomStatus(new Request('https://private-room.internal/status'));
+		const payload = await response.json();
+
+		expect(payload).toMatchObject({
+			code: 'ABCDEF',
+			exists: true,
+			live: true,
+			full: false,
+			inProgress: false,
+			memberCount: 2,
+			maxPlayers: 8,
+		});
+	});
+
+	it('reports a full room', async () => {
+		const room = createRoom();
+		room.roomCode = 'ABCDEF';
+		room.ownerId = 'leader';
+		room.settings.maxPlayers = 2;
+		addMember(room, 'leader');
+		addMember(room, 'p2');
+
+		const response = await room.roomStatus(new Request('https://private-room.internal/status'));
+		const payload = await response.json();
+
+		expect(payload.full).toBe(true);
+		expect(payload.memberCount).toBe(2);
+		expect(payload.maxPlayers).toBe(2);
+	});
+
+	it('reports an in-progress room while preserving join facts', async () => {
+		const room = createRoom();
+		room.roomCode = 'ABCDEF';
+		room.ownerId = 'leader';
+		addMember(room, 'leader');
+		makePlayingGame(room);
+		room.abortTimers();
+
+		const response = await room.roomStatus(new Request('https://private-room.internal/status'));
+		const payload = await response.json();
+
+		expect(payload).toMatchObject({
+			exists: true,
+			live: true,
+			inProgress: true,
+		});
+	});
+});
+
 describe('PrivateRoom persistence & recovery', () => {
 	it('persists and restores room state across an eviction', async () => {
 		const storage = createFakeStorage();
